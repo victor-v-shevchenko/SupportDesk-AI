@@ -34,7 +34,7 @@ jobs:
         run: |
           dotnet tool restore
           dotnet restore
-          npm --prefix web ci
+          npm --prefix web ci --ignore-scripts
 
       # The Sonar scanner turns off TreatWarningsAsErrors while it analyzes, so this build enforces it
       - name: Build (warnings as errors)
@@ -95,8 +95,8 @@ jobs:
       - name: Install gitleaks
         run: |
           base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
-          curl -sSfLO "$base/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          curl -sSfLO "$base/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          curl --proto "=https" --tlsv1.2 -sSfLO "$base/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl --proto "=https" --tlsv1.2 -sSfLO "$base/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
           grep "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" "gitleaks_${GITLEAKS_VERSION}_checksums.txt" | sha256sum --check
           tar -xzf "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" gitleaks
           rm "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" "gitleaks_${GITLEAKS_VERSION}_checksums.txt"
