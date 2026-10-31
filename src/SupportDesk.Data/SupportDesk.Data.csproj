@@ -12,4 +12,9 @@
     <ProjectReference Include="..\SupportDesk.Core\SupportDesk.Core.csproj" />
   </ItemGroup>
 
+  <!-- seed/ goes next to the app (and the test assemblies), where SeedOptions looks for it by default -->
+  <ItemGroup>
+    <Content Include="..\..\seed\**\*" LinkBase="seed" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

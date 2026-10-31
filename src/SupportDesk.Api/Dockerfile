@@ -7,6 +7,8 @@ COPY src/SupportDesk.Core/SupportDesk.Core.csproj src/SupportDesk.Core/
 COPY src/SupportDesk.Data/SupportDesk.Data.csproj src/SupportDesk.Data/
 RUN dotnet restore src/SupportDesk.Api/SupportDesk.Api.csproj
 COPY src/ src/
+# Copied into the app by SupportDesk.Data.csproj; seeded at startup in Development
+COPY seed/ seed/
 RUN dotnet publish src/SupportDesk.Api/SupportDesk.Api.csproj -c Release --no-restore -o /app
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0

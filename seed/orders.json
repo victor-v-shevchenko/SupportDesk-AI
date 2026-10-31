@@ -1,0 +1,12 @@
+[
+  { "orderNumber": "KO-204118", "status": "Delivered", "carrier": "UPS", "lastUpdate": "2026-10-03T16:42:00Z", "lastEvent": "Delivered, left at front door" },
+  { "orderNumber": "KO-204377", "status": "Delivered", "carrier": "USPS", "lastUpdate": "2026-10-09T13:15:00Z", "lastEvent": "Delivered to mailbox" },
+  { "orderNumber": "KO-205002", "status": "Delayed", "carrier": "FedEx", "lastUpdate": "2026-10-11T07:30:00Z", "lastEvent": "Weather delay at the Memphis hub; new delivery date pending" },
+  { "orderNumber": "KO-205219", "status": "Processing", "carrier": null, "lastUpdate": "2026-10-17T09:05:00Z", "lastEvent": "Payment confirmed; waiting to be picked at the Boise warehouse" },
+  { "orderNumber": "KO-205640", "status": "Cancelled", "carrier": null, "lastUpdate": "2026-10-14T18:20:00Z", "lastEvent": "Cancelled at the customer's request; refund issued to the original payment method" },
+  { "orderNumber": "KO-206013", "status": "Delivered", "carrier": "UPS", "lastUpdate": "2026-10-06T11:48:00Z", "lastEvent": "Delivered, signed for by resident" },
+  { "orderNumber": "KO-206288", "status": "Shipped", "carrier": "UPS", "lastUpdate": "2026-10-23T22:10:00Z", "lastEvent": "Departed facility in Salt Lake City, UT" },
+  { "orderNumber": "KO-206731", "status": "Delayed", "carrier": "DHL Express", "lastUpdate": "2026-10-16T05:55:00Z", "lastEvent": "Held at customs in Toronto, waiting for import duties to be paid" },
+  { "orderNumber": "KO-207054", "status": "Processing", "carrier": null, "lastUpdate": "2026-10-20T15:00:00Z", "lastEvent": "Order received; payment authorized" },
+  { "orderNumber": "KO-207390", "status": "Delivered", "carrier": "FedEx", "lastUpdate": "2026-10-02T14:27:00Z", "lastEvent": "Delivered to front desk" }
+]
