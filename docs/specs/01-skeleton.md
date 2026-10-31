@@ -149,38 +149,38 @@ Entities, seed data, any LLM code.
 ## Acceptance criteria
 
 **Build and run**
-- [ ] "Reopen in Container" on a fresh clone (with `.env` filled in) finishes with no other manual steps, and `dotnet build` and `dotnet test --filter "Category!=Eval"` pass inside it
-- [ ] `docker compose up` at the repository root starts db, api and web with the credentials from `.env`; `GET /api/health` returns `200` with `"database": "ok"`; with the database stopped it returns `503`
-- [ ] Without `.env`, `docker compose up` stops with the "Copy .env.example to .env…" message
-- [ ] The Angular shell loads at `http://localhost:4200` and calls the API through the proxy
-- [ ] An integration test starts PostgreSQL + pgvector with Testcontainers, applies the migrations and checks that the `vector` extension exists. It passes in the dev container and in CI
-- [ ] The CLAUDE.md commands table matches what actually works
+- [x] "Reopen in Container" on a fresh clone (with `.env` filled in) finishes with no other manual steps, and `dotnet build` and `dotnet test --filter "Category!=Eval"` pass inside it
+- [x] `docker compose up` at the repository root starts db, api and web with the credentials from `.env`; `GET /api/health` returns `200` with `"database": "ok"`; with the database stopped it returns `503`
+- [x] Without `.env`, `docker compose up` stops with the "Copy .env.example to .env…" message
+- [x] The Angular shell loads at `http://localhost:4200` and calls the API through the proxy
+- [x] An integration test starts PostgreSQL + pgvector with Testcontainers, applies the migrations and checks that the `vector` extension exists. It passes in the dev container and in CI
+- [x] The CLAUDE.md commands table matches what actually works
 
 **CI and GitHub**
-- [ ] CI runs on push and pull request and is green on `main`
-- [ ] Branch protection is on for `main` with the CI checks required (the Sonar gate becomes required in step 3b, see Scope), as shown by `gh api repos/victor-v-shevchenko/SupportDesk-AI/branches/main/protection`
-- [ ] The repository allows only squash merging and deletes branches after merge
-- [ ] The test pull request was opened, showed the deliberate issue and the gate result, and was closed without merging
+- [x] CI runs on push and pull request and is green on `main`
+- [x] Branch protection is on for `main` with the CI checks required (the Sonar gate becomes required in step 3b, see Scope), as shown by `gh api repos/victor-v-shevchenko/SupportDesk-AI/branches/main/protection`
+- [x] The repository allows only squash merging and deletes branches after merge
+- [x] The test pull request was opened, showed the deliberate issue and the gate result, and was closed without merging
 
 **Secrets**
-- [ ] No secrets in the repo: no API keys, passwords or connection strings with credentials in any committed file, including `appsettings*.json`, `docker-compose.yml`, `.devcontainer/` and the CI workflow
-- [ ] `.env.example` at the root lists every secret (database user, password, database name, each API key) with empty or placeholder values, and `.env` is gitignored
-- [ ] `gitleaks` runs on every push over the full history and fails the build when it finds a secret
-- [ ] `SONAR_TOKEN` is only in GitHub Actions secrets; the SonarQube Cloud user token isn't in any committed file
+- [x] No secrets in the repo: no API keys, passwords or connection strings with credentials in any committed file, including `appsettings*.json`, `docker-compose.yml`, `.devcontainer/` and the CI workflow
+- [x] `.env.example` at the root lists every secret (database user, password, database name, each API key) with empty or placeholder values, and `.env` is gitignored
+- [x] `gitleaks` runs on every push over the full history and fails the build when it finds a secret
+- [x] `SONAR_TOKEN` is only in GitHub Actions secrets; the SonarQube Cloud user token isn't in any committed file
 
 **Code quality**
-- [ ] `dotnet build` uses `AnalysisLevel` `latest-recommended` with warnings as errors, and the skeleton builds clean
-- [ ] SonarQube Cloud analyzes `main` and pull requests from CI, shows C# and TypeScript results with coverage from both, and posts the quality gate result on pull requests
-- [ ] Migrations, generated files, seed data and fixtures are excluded from analysis and coverage
-- [ ] `sonar/SonarQube.Analysis.xml` exists, is passed to the scanner, and has no rule exclusions yet
-- [ ] PLAN.md 11 states the gate's actual current conditions and how TypeScript files are included in the analysis
-- [ ] After "Reopen in Container", SonarQube for IDE is installed and, once the user token is entered, binds to the project from the committed binding file with no other setup
-- [ ] The deliberate Sonar issue in the test pull request shows in the VS Code Problems panel and in the SonarQube Cloud analysis of that pull request
-- [ ] .NET coverage reaches SonarQube Cloud in OpenCover format (the coverage figure for C# isn't empty)
+- [x] `dotnet build` uses `AnalysisLevel` `latest-recommended` with warnings as errors, and the skeleton builds clean
+- [x] SonarQube Cloud analyzes `main` and pull requests from CI, shows C# and TypeScript results with coverage from both, and posts the quality gate result on pull requests
+- [x] Migrations, generated files, seed data and fixtures are excluded from analysis and coverage
+- [x] `sonar/SonarQube.Analysis.xml` exists, is passed to the scanner, and has no rule exclusions yet
+- [x] PLAN.md 11 states the gate's actual current conditions and how TypeScript files are included in the analysis
+- [x] After "Reopen in Container", SonarQube for IDE is installed and, once the user token is entered, binds to the project from the committed binding file with no other setup
+- [x] The deliberate Sonar issue in the test pull request shows in the VS Code Problems panel and in the SonarQube Cloud analysis of that pull request
+- [x] .NET coverage reaches SonarQube Cloud in OpenCover format (the coverage figure for C# isn't empty)
 
 **Workflow tools**
-- [ ] The reviewer subagent runs and returns a review of a test diff; CLAUDE.md says whether it uses limited Bash or gets the diff in its prompt
-- [ ] The Playwright MCP server opens the Angular shell from inside the container and takes a screenshot
+- [x] The reviewer subagent runs and returns a review of a test diff; CLAUDE.md says whether it uses limited Bash or gets the diff in its prompt
+- [x] The Playwright MCP server opens the Angular shell from inside the container and takes a screenshot
 
 ## Tests
 
