@@ -23,6 +23,9 @@ public static class HealthEndpoints
 
         return TypedResults.Json(new HealthResponse("degraded", "unavailable"), statusCode: StatusCodes.Status503ServiceUnavailable);
     }
+
+    // Deliberate Sonar issue for the step 1 test pull request (S1144, unused private member). Never merged.
+    private static string UnusedHelper() => "unused";
 }
 
 public sealed record HealthResponse(string Status, string Database);
