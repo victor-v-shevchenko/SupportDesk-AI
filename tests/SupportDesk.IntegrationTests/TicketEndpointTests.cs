@@ -183,6 +183,7 @@ public class TicketEndpointTests(PostgresFixture postgres)
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        Assert.DoesNotContain("Exception", await response.Content.ReadAsStringAsync(Ct), StringComparison.Ordinal);
     }
 
     [Fact]

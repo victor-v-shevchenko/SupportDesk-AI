@@ -13,6 +13,13 @@ Entry format (from CLAUDE.md):
 - Test: <test name that now covers it>
 ```
 
+## 2026-10-31 — Waiting for the startup lock timed out after 30 seconds
+- Step: 2
+- Found by: review subagent
+- What was wrong: the `pg_advisory_lock` call used Npgsql's default 30-second command timeout, so an instance waiting behind a slow first migration would still fail to start.
+- Fix: the lock call has no command timeout; cancellation still comes from `ApplicationStopping` (step 2 PR).
+- Test: none; a test would have to hold the lock for over 30 seconds in CI. `SeedingTests.Two_instances_starting_at_once_seed_once_without_failing` covers the lock itself
+
 ## 2026-10-31 — Malformed ticket body returned 500 in Development
 - Step: 2
 - Found by: review subagent

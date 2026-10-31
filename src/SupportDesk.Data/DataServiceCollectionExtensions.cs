@@ -16,6 +16,9 @@ public static class DataServiceCollectionExtensions
 {
     public const string ConnectionStringName = "SupportDesk";
 
+    /// <summary>Any fixed value; PostgreSQL advisory locks are keyed by a 64-bit number agreed between the callers.</summary>
+    private const long StartupLockKey = 0x5355505044534B;
+
     public static IServiceCollection AddSupportDeskData(this IServiceCollection services)
     {
         services.AddOptions<DatabaseOptions>()
@@ -41,9 +44,6 @@ public static class DataServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>Any fixed value; PostgreSQL advisory locks are keyed by a 64-bit number agreed between the callers.</summary>
-    private const long StartupLockKey = 0x5355505044534B;
-
     /// <summary>
     /// Applies the migrations, then loads <c>seed/</c> (see <see cref="SupportDeskSeeder"/>). Holds a PostgreSQL advisory
     /// lock throughout, so two instances starting against one database run this one after the other instead of racing.
@@ -53,10 +53,11 @@ public static class DataServiceCollectionExtensions
         await using var scope = services.CreateAsyncScope();
         var connectionString = scope.ServiceProvider.GetRequiredService<IOptions<DatabaseOptions>>().Value.ConnectionString;
 
-        // Its own connection, so the lock outlives the connections EF opens and closes
+        // Its own connection, so the lock outlives the connections EF opens and closes. Closing it releases the lock too
         await using var lockConnection = new NpgsqlConnection(connectionString);
         await lockConnection.OpenAsync(cancellationToken);
-        await ExecuteAsync(lockConnection, "SELECT pg_advisory_lock(@key)", cancellationToken);
+        // No command timeout: waiting for another instance's first migration can take longer than the default 30 seconds
+        await ExecuteAsync(lockConnection, "SELECT pg_advisory_lock(@key)", commandTimeoutSeconds: 0, cancellationToken);
         try
         {
             await scope.ServiceProvider.GetRequiredService<SupportDeskDbContext>().Database.MigrateAsync(cancellationToken);
@@ -64,14 +65,20 @@ public static class DataServiceCollectionExtensions
         }
         finally
         {
-            // A pooled connection keeps session locks when it goes back to the pool, so release it explicitly
-            await ExecuteAsync(lockConnection, "SELECT pg_advisory_unlock(@key)", CancellationToken.None);
+            try
+            {
+                await ExecuteAsync(lockConnection, "SELECT pg_advisory_unlock(@key)", commandTimeoutSeconds: 30, CancellationToken.None);
+            }
+            catch (NpgsqlException)
+            {
+                // The connection is broken, which already ended the session and its lock; keep the original exception
+            }
         }
     }
 
-    private static async Task ExecuteAsync(NpgsqlConnection connection, string sql, CancellationToken cancellationToken)
+    private static async Task ExecuteAsync(NpgsqlConnection connection, string sql, int commandTimeoutSeconds, CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = new NpgsqlCommand(sql, connection) { CommandTimeout = commandTimeoutSeconds };
         command.Parameters.AddWithValue("key", StartupLockKey);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
