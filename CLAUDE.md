@@ -28,17 +28,17 @@ Run inside the dev container.
 | --- | --- |
 | Start everything (dev container) | `docker compose up -d db` then `dotnet run --project src/SupportDesk.Api` and `npm --prefix web start` |
 | Start everything (Docker only) | `docker compose up --build` |
-| Start with the fake model | `AI__Chat__Provider=Fake AI__Embeddings__Provider=Fake dotnet run --project src/SupportDesk.Api` |
+| Start with the fake model (from step 3a; until then the variables are ignored) | `AI__Chat__Provider=Fake AI__Embeddings__Provider=Fake dotnet run --project src/SupportDesk.Api` |
 | Build | `dotnet build` |
 | Restore local tools (`dotnet ef`, Sonar scanner) | `dotnet tool restore` |
 | Tests (CI set) | `dotnet test --filter "Category!=Eval"` |
 | Tests with coverage (as CI) | `dotnet test --filter "Category!=Eval" --collect:"XPlat Code Coverage" --settings tests/coverage.runsettings` |
-| Evaluation (real model, costs money with a hosted provider) | `dotnet test tests/SupportDesk.Eval --filter Category=Eval` |
+| Evaluation (from step 3b; real model, costs money with a hosted provider) | `dotnet test tests/SupportDesk.Eval --filter Category=Eval` |
 | Angular tests and lint | `npm --prefix web test -- --watch=false` and `npm --prefix web run lint` |
 | Angular tests with coverage (as CI) | `npm --prefix web run test:ci` |
 | End-to-end tests | `npm --prefix web run e2e` |
 | New migration | `dotnet ef migrations add <Name> --project src/SupportDesk.Data --startup-project src/SupportDesk.Api` |
-| Regenerate embedding fixtures | `dotnet run --project tools/EmbedFixtures` |
+| Regenerate embedding fixtures (from step 4) | `dotnet run --project tools/EmbedFixtures` |
 
 Keep this table correct: when a step changes a command, update it in the same pull request.
 
@@ -115,7 +115,7 @@ Keep this table correct: when a step changes a command, update it in the same pu
 ## Review
 
 - The `reviewer` subagent (`.claude/agents/reviewer.md`) runs on a different model from the one that wrote the code and can't edit files
-- Give it the spec path and the branch name. It reads the spec, this file and `git diff main...HEAD`, and returns findings ranked by severity
+- Give it the spec path and the branch name. It reads the spec, this file and `git diff main...HEAD`, and returns findings ranked by severity. It runs `git diff`, `git log` and `git show` itself through limited Bash in its `tools` line (checked with Claude Code 2.1.314), so the diff doesn't go in its prompt
 - Every finding is fixed or answered with a reason in the pull request. A real bug gets a failing test, then the fix, then an entry in `docs/ai-log.md`
 - After major fixes, run the reviewer again
 
