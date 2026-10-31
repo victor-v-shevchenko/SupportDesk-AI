@@ -170,6 +170,21 @@ public class TicketEndpointTests(PostgresFixture postgres)
         Assert.Equal([field], problem?.Errors.Keys);
     }
 
+    [Theory]
+    [InlineData("{ \"subject\": ")]
+    [InlineData("null")]
+    [InlineData("{ \"subject\": 5, \"body\": \"b\", \"customerName\": \"c\" }")]
+    public async Task Create_returns_400_problem_details_for_a_body_that_is_not_a_ticket(string body)
+    {
+        await using var api = await SeededApi.StartAsync(postgres, Ct);
+
+        using var content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+        var response = await api.Client.PostAsync(Tickets, content, Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+    }
+
     [Fact]
     public async Task Create_with_every_field_invalid_lists_every_field_and_saves_nothing()
     {

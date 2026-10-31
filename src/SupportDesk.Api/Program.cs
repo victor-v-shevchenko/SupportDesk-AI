@@ -14,8 +14,7 @@ app.UseStatusCodePages();
 
 if (app.Environment.IsDevelopment())
 {
-    await app.Services.MigrateSupportDeskDatabaseAsync(app.Lifetime.ApplicationStopping);
-    await app.Services.SeedSupportDeskDatabaseAsync(app.Lifetime.ApplicationStopping);
+    await app.Services.MigrateAndSeedSupportDeskDatabaseAsync(app.Lifetime.ApplicationStopping);
 }
 
 app.MapHealthEndpoints();

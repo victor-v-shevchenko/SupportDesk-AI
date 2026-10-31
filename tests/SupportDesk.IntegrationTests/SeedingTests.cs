@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using SupportDesk.Api.Endpoints;
+using SupportDesk.Data;
 using SupportDesk.Data.Seeding;
 
 namespace SupportDesk.IntegrationTests;
@@ -41,9 +42,8 @@ public class SeedingTests(PostgresFixture postgres)
         }
 
         await using var db = first.CreateDbContext();
-        var seedTickets = await SeedFiles.ReadTicketsAsync(SeedPath.Value, Ct);
-        Assert.Equal(seedTickets.Count, await db.Tickets.CountAsync(Ct));
-        Assert.Equal(12, await db.Articles.CountAsync(Ct));
+        Assert.Equal((await SeedFiles.ReadTicketsAsync(SeedPath.Value, Ct)).Count, await db.Tickets.CountAsync(Ct));
+        Assert.Equal((await SeedFiles.ReadArticlesAsync(SeedPath.Value, Ct)).Count, await db.Articles.CountAsync(Ct));
     }
 
     [Fact]
@@ -65,13 +65,29 @@ public class SeedingTests(PostgresFixture postgres)
         }
 
         await using var check = first.CreateDbContext();
-        Assert.Equal(25, await check.Tickets.CountAsync(Ct));
+        var seedTickets = await SeedFiles.ReadTicketsAsync(SeedPath.Value, Ct);
+        Assert.Equal(seedTickets.Count, await check.Tickets.CountAsync(Ct));
         Assert.True(await check.Tickets.AnyAsync(t => t.Number == "T-1005", Ct));
         // Tickets are user data: an existing one is never overwritten from the file
         Assert.Equal("Edited by an agent", (await check.Tickets.SingleAsync(t => t.Number == "T-1006", Ct)).Subject);
         var refunds = await check.Articles.SingleAsync(a => a.Slug == "refunds", Ct);
         Assert.StartsWith("This article explains how long refunds take", refunds.BodyMarkdown, StringComparison.Ordinal);
-        Assert.Equal(12, await check.Articles.CountAsync(Ct));
+        Assert.Equal((await SeedFiles.ReadArticlesAsync(SeedPath.Value, Ct)).Count, await check.Articles.CountAsync(Ct));
+    }
+
+    [Fact]
+    public async Task Two_instances_starting_at_once_seed_once_without_failing()
+    {
+        var connectionString = await postgres.CreateDatabaseAsync(Ct);
+        await using var first = new ApiFactory(connectionString, "Development");
+        await using var second = new ApiFactory(connectionString, "Development");
+
+        // CreateClient starts the host, which migrates and seeds
+        await Task.WhenAll(Task.Run(first.CreateClient, Ct), Task.Run(second.CreateClient, Ct));
+
+        await using var db = new SupportDeskDbContext(new DbContextOptionsBuilder<SupportDeskDbContext>().UseNpgsql(connectionString).Options);
+        Assert.Equal((await SeedFiles.ReadTicketsAsync(SeedPath.Value, Ct)).Count, await db.Tickets.CountAsync(Ct));
+        Assert.Equal((await SeedFiles.ReadArticlesAsync(SeedPath.Value, Ct)).Count, await db.Articles.CountAsync(Ct));
     }
 
     [Fact]
@@ -86,6 +102,7 @@ public class SeedingTests(PostgresFixture postgres)
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var created = await response.Content.ReadFromJsonAsync<TicketDetailResponse>(JsonDefaults.Options, Ct);
-        Assert.Equal("T-1026", created?.Number);
+        var highest = (await SeedFiles.ReadTicketsAsync(SeedPath.Value, Ct)).Max(t => int.Parse(t.Number[2..], System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal($"T-{highest + 1}", created?.Number);
     }
 }

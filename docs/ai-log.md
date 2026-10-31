@@ -13,6 +13,20 @@ Entry format (from CLAUDE.md):
 - Test: <test name that now covers it>
 ```
 
+## 2026-10-31 — Malformed ticket body returned 500 in Development
+- Step: 2
+- Found by: review subagent
+- What was wrong: Minimal APIs throw `BadHttpRequestException` for an unreadable body in Development, and the exception handler turned it into a `500` instead of a `400`.
+- Fix: `ExceptionHandlerOptions.StatusCodeSelector` keeps that exception's status code (step 2 PR).
+- Test: `TicketEndpointTests.Create_returns_400_problem_details_for_a_body_that_is_not_a_ticket`
+
+## 2026-10-31 — Two instances starting together crashed on migration
+- Step: 2 (the migration race dates from step 1)
+- Found by: review subagent
+- What was wrong: two API instances starting against one empty database both ran the migrations, and one failed with `relation "ticket_numbers" already exists`; seeding had the same race on the unique ticket number.
+- Fix: migrations and seeding run under one PostgreSQL advisory lock in `MigrateAndSeedSupportDeskDatabaseAsync` (step 2 PR).
+- Test: `SeedingTests.Two_instances_starting_at_once_seed_once_without_failing`
+
 ## 2026-10-31 — Created ticket's timestamp differed from the stored one
 - Step: 2
 - Found by: test
