@@ -1,9 +1,10 @@
+using SupportDesk.Api;
 using SupportDesk.Api.Endpoints;
 using SupportDesk.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddProblemDetails();
+builder.Services.AddSupportDeskApi();
 builder.Services.AddSupportDeskData();
 
 var app = builder.Build();
@@ -13,9 +14,11 @@ app.UseStatusCodePages();
 
 if (app.Environment.IsDevelopment())
 {
-    await app.Services.MigrateSupportDeskDatabaseAsync(app.Lifetime.ApplicationStopping);
+    await app.Services.MigrateAndSeedSupportDeskDatabaseAsync(app.Lifetime.ApplicationStopping);
 }
 
 app.MapHealthEndpoints();
+app.MapTicketEndpoints();
+app.MapArticleEndpoints();
 
 await app.RunAsync();

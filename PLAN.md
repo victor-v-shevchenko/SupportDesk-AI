@@ -93,6 +93,10 @@ docs/
 - **Enums:** `Category` = Billing, Shipping, Returns, Account, Technical, Other. `Priority` = Low, Normal, High, Urgent
 - **Orders** aren't an entity. The fake order service reads `seed/orders.json` (order number, status, carrier, last update). One seeded ticket references an order number that isn't in the file
 - **Fictional data:** an online outdoor-gear store called Kestrel Outfitters. About 25 tickets, 12 articles, 10 orders
+- **Seeding:** runs at startup in Development, after the migrations, and is safe on every start. Migrations and seeding run under one PostgreSQL advisory lock, so instances starting together against one database take turns instead of failing. Tickets are matched on `Number` and only missing ones are added; an existing ticket is never overwritten, since it may have been changed through the app. Articles are matched on `Slug`, added when missing and updated (with a new `UpdatedAt`) when the file's title or body changed, so editing a seed article reaches the database and, from step 4, its chunks
+- **Seed files:** `seed/` is copied next to the app by `SupportDesk.Data.csproj` (and into the Docker image). `Seed:Path` (default `seed`) is resolved from the app's base directory. Parsing is strict (unknown JSON fields fail), so a typo fails startup instead of seeding partial data. Each ticket in `tickets.json` also has `category` and `priority`: the labels it was written for, used to check that the seed covers every value. They aren't stored; classification starts as `NotRun`
+- **Ticket numbers:** `T-` plus a number from the PostgreSQL sequence `ticket_numbers` (starts at 1001). Seeded tickets carry their own numbers, so the seeder moves the sequence past the highest existing number; it never moves it back
+- **Lengths:** `Subject` ≤ 200, `Body` ≤ 5,000, `CustomerName` ≤ 200 characters, `OrderNumber` matches `KO-[0-9]{6}`. Lengths count UTF-16 code units (.NET `string.Length`), the same unit as the `varchar` limits, so an emoji counts as 2. `CreatedAt` is truncated to microseconds, PostgreSQL's precision, so the `201` response equals what a later `GET` returns
 
 ## 5. API
 
@@ -112,6 +116,13 @@ All routes are under `/api`. Errors use RFC 7807 problem details.
 | `GET /api/tickets/{id}/follow-ups` | Proposals and tasks for a ticket | 8 |
 | `POST /api/follow-ups/{proposalId}/confirm` | Create the task (idempotent) | 8 |
 | `GET /api/model-calls?ticketId=` | Usage and cost rows | 3b |
+
+- JSON is camelCase and enums are their names (`"Open"`, `"NotRun"`), never numbers
+- **Ticket list item:** `id`, `number`, `subject`, `status`, `category`, `priority` (both null until classified), `createdAt`. Newest first; `?status=` takes a status name in any case, anything else gives `400`
+- **Ticket detail:** `id`, `number`, `subject`, `body`, `customerName`, `orderNumber`, `status`, `createdAt`, `summary` (null, or `text`, `promptVersion`, `generatedAt`), `classification` (`status`, `category`, `priority`, `reason`, `promptVersion`, `classifiedAt`)
+- **Create:** `subject`, `body`, `customerName`, `orderNumber?`. Subject and customer name are trimmed; an empty order number counts as none. Returns `201` with `Location: /api/tickets/{id}` and the detail. A `400` lists every invalid field under its JSON name. A body that isn't a JSON object of the right shape (malformed, `null`, a number where a string belongs) gets a `400` problem details without field names
+- **Articles:** the list has `slug`, `title`, `updatedAt`, ordered by title; the detail adds `bodyMarkdown` (without the front matter)
+- An unknown ticket ID or article slug returns `404` problem details
 
 ## 6. LLM pipeline
 

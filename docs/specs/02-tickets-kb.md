@@ -30,6 +30,18 @@ Tickets and help articles are stored, seeded and shown in the UI. Seed data incl
 - Ticket list page (number, subject, status, created) and ticket detail page (all fields, empty slots for summary, classification and reply)
 - An API service in `web/src/app/api/` with typed models
 
+## Clarified during implementation
+
+These fill gaps in the scope above; the details are in PLAN.md 4 and 5.
+
+- **"When the tables are empty" and "idempotent":** seeding runs on every Development start and adds only what's missing, which covers both: an empty database gets everything, a restart adds nothing. Existing tickets are never overwritten. Articles whose file changed are updated, so edited seed articles reach the database (step 4 needs this to re-embed them)
+- **Category and priority in `tickets.json`:** the `Ticket` entity has no category or priority of its own, only the classification (step 7). So each seed ticket has `category` and `priority` fields with the labels it was written for, used to check coverage. They aren't stored, and classification starts as `NotRun`
+- **Orders:** orders aren't stored in the database (PLAN.md 4). The first criterion's "seeded with every … order file" is covered by tests that check `orders.json` against the tickets
+- **Customer name length:** at most 200 characters (the spec only said "required"), so the column has a limit
+- **Ticket numbers** for created tickets come from a PostgreSQL sequence that continues after the highest seeded number
+- **`?status=`** accepts a status name in any case; anything else returns `400` problem details naming `status`
+- **No create form or articles page in the UI:** the Angular scope lists only the ticket list and detail pages
+
 ## Out of scope
 
 Order service (step 8), chunks and embeddings (step 4), any LLM call.

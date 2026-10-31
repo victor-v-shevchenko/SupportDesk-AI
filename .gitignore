@@ -24,6 +24,8 @@ web/coverage/
 web/test-results/
 web/playwright-report/
 web/blob-report/
+# Playwright MCP snapshots and screenshots
+.playwright-mcp/
 
 # Sonar scanner work folders
 .sonarqube/
