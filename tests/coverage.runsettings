@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Passed to dotnet test with the XPlat Code Coverage collector; see the CLAUDE.md commands and ci.yml -->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <!-- Sonar reads OpenCover; coverlet writes Cobertura by default -->
+          <Format>opencover</Format>
+          <Include>[SupportDesk.*]*</Include>
+          <Exclude>[SupportDesk.*Tests]*,[SupportDesk.Eval]*</Exclude>
+          <ExcludeByFile>**/Migrations/*.cs</ExcludeByFile>
+          <ExcludeByAttribute>GeneratedCodeAttribute,CompilerGeneratedAttribute,ExcludeFromCodeCoverageAttribute</ExcludeByAttribute>
+          <SkipAutoProps>true</SkipAutoProps>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

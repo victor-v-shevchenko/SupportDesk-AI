@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+    env:
+      # Pull requests from forks and Dependabot get no secrets; they skip the Sonar steps
+      SONAR_ENABLED: ${{ secrets.SONAR_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Sonar needs the history to tell new code from old
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Restore
+        run: |
+          dotnet tool restore
+          dotnet restore
+          npm --prefix web ci
+
+      # The Sonar scanner turns off TreatWarningsAsErrors while it analyzes, so this build enforces it
+      - name: Build (warnings as errors)
+        run: dotnet build --no-restore
+
+      - name: Sonar begin
+        if: env.SONAR_ENABLED == 'true'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: >
+          dotnet sonarscanner begin
+          /o:"victor-v-shevchenko"
+          /k:"victor-v-shevchenko_SupportDesk-AI"
+          /d:sonar.host.url="https://sonarcloud.io"
+          /d:sonar.token="$SONAR_TOKEN"
+          /s:"$GITHUB_WORKSPACE/sonar/SonarQube.Analysis.xml"
+          /d:sonar.cs.opencover.reportsPaths="**/TestResults/**/coverage.opencover.xml"
+          /d:sonar.javascript.lcov.reportPaths="web/coverage/web/lcov.info"
+
+      - name: Build for analysis
+        if: env.SONAR_ENABLED == 'true'
+        run: dotnet build --no-restore --no-incremental
+
+      - name: .NET tests with coverage
+        run: >
+          dotnet test --no-build
+          --filter "Category!=Eval"
+          --collect:"XPlat Code Coverage"
+          --settings tests/coverage.runsettings
+
+      - name: Angular lint
+        run: npm --prefix web run lint
+
+      - name: Angular tests with coverage
+        # lcov paths are relative to web/; Sonar resolves them from the repository root
+        run: |
+          npm --prefix web run test:ci
+          sed -i 's|^SF:src/|SF:web/src/|' web/coverage/web/lcov.info
+
+      - name: Sonar end
+        if: env.SONAR_ENABLED == 'true'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
+
+  gitleaks:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    env:
+      GITLEAKS_VERSION: 8.30.1
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Scan the full history, not only the pushed commits
+          fetch-depth: 0
+
+      # The CLI instead of gitleaks-action: on later pushes the action only scans the pushed commits
+      - name: Install gitleaks
+        run: |
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          curl -sSfLO "$base/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfLO "$base/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          grep "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" "gitleaks_${GITLEAKS_VERSION}_checksums.txt" | sha256sum --check
+          tar -xzf "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" gitleaks
+          rm "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" "gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+
+      - name: Scan full history
+        run: ./gitleaks git --redact --verbose --exit-code 1 .

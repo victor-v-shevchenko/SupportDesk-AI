@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <UserSecretsId>supportdesk-api</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SupportDesk.Core\SupportDesk.Core.csproj" />
+    <ProjectReference Include="..\SupportDesk.Data\SupportDesk.Data.csproj" />
+  </ItemGroup>
+
+</Project>

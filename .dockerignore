@@ -1,0 +1,13 @@
+# Keep secrets and build output out of image build contexts
+.env
+.env.*
+!.env.example
+.git
+**/bin
+**/obj
+**/TestResults
+**/node_modules
+web/.angular
+web/coverage
+web/dist
+.sonarqube

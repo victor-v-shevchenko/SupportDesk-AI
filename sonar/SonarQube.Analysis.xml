@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Passed to "dotnet sonarscanner begin" with /s: in .github/workflows/ci.yml.
+  Every change here shows in a pull request diff. Rule exclusions and their reasons are listed in PLAN.md 11.
+-->
+<SonarQubeAnalysisProperties xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns="http://www.sonarsource.com/msbuild/integration/2015/1">
+
+  <!-- Files that aren't analyzed at all: generated code, data, build output -->
+  <Property Name="sonar.exclusions">**/Migrations/**,seed/**,tests/fixtures/**,**/bin/**,**/obj/**,**/node_modules/**,web/coverage/**,web/dist/**,web/.angular/**</Property>
+
+  <!-- Angular specs and Playwright tests are test code (the .NET test projects are detected from their project files) -->
+  <Property Name="sonar.test.inclusions">web/src/**/*.spec.ts,web/e2e/**</Property>
+
+  <!-- Not counted for coverage: tool configuration and the app bootstrap, which no unit test can run -->
+  <Property Name="sonar.coverage.exclusions">web/*.config.ts,web/*.config.js,web/*.conf.mjs,web/src/main.ts,**/Program.cs</Property>
+
+  <!-- Rule exclusions (sonar.issue.ignore.multicriteria): none yet; step 3b adds them -->
+
+</SonarQubeAnalysisProperties>
