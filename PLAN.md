@@ -46,6 +46,7 @@ Angular (web/)  ──HTTP/JSON, SSE──►  SupportDesk.Api (Minimal API)
 SupportDesk.slnx
 Directory.Build.props          nullable, warnings as errors, LangVersion
 Directory.Packages.props       central package versions
+global.json                    pinned .NET SDK (CI installs exactly this one)
 docker-compose.yml             db, api, web
 .env.example                   every secret with empty values; copied to .env (gitignored)
 .gitattributes                 LF line endings, so scripts run in the Linux container
@@ -274,7 +275,7 @@ These come from the current API and must be checked against the SDK version in u
 - **SonarQube Cloud quality gate:** the default "Sonar way" gate on new code. Checked on 2026-10-31 with the SonarQube Cloud API (`api/qualitygates/list`): security, reliability and maintainability rating A, security hotspots reviewed 100%, coverage at least 80%, duplicated lines at most 3%. The gate shows on pull requests from step 1 and is a required check from step 3b
 - **Excluded from analysis:** `**/Migrations/**`, generated files, `seed/**`, `tests/fixtures/**`, plus build output (`bin`, `obj`, `node_modules`, `web/coverage`, `web/dist`). Set as `sonar.exclusions` in `sonar/SonarQube.Analysis.xml`. Migrations are also left out of coverlet's report (`tests/coverage.runsettings`)
 - **Test code:** the .NET test projects are detected from their project files (`IsTestProject`); `web/src/**/*.spec.ts` and `web/e2e/**` are marked as tests with `sonar.test.inclusions`. Neither counts for coverage
-- **Coverage:** .NET through coverlet in OpenCover format (`tests/coverage.runsettings`), read from `**/TestResults/**/coverage.opencover.xml`. Angular through Vitest's lcov report at `web/coverage/web/lcov.info`; its paths are relative to `web/`, so CI prefixes them with `web/` before the Sonar `end` step. Tool configuration, `web/src/main.ts` and `Program.cs` are left out of coverage (`sonar.coverage.exclusions`)
+- **Coverage:** .NET through coverlet in OpenCover format (`tests/coverage.runsettings`), read from `**/TestResults/**/coverage.opencover.xml`. Angular through Vitest's lcov report at `web/coverage/web/lcov.info`; its paths are relative to `web/`, so CI prefixes them with `web/` before the Sonar `end` step. Tool configuration, `web/src/main.ts` and `src/SupportDesk.Api/Program.cs` (bootstrap only; wiring goes in testable extension methods) are left out of coverage (`sonar.coverage.exclusions`)
 - **TypeScript in the analysis:** SonarScanner for .NET (12.x) indexes the files outside MSBuild projects by default (`sonar.scanner.scanAll`), so `web/` is analyzed without a JavaScript project file in the solution
 - **Warnings as errors in CI:** the scanner turns off `TreatWarningsAsErrors` while it analyzes, so CI runs a plain `dotnet build` first and a second build between `begin` and `end`
 - **Local checks:** SonarQube for IDE in connected mode, with the same rules; it doesn't run the gate

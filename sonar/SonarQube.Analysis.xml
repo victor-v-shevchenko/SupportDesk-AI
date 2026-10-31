@@ -12,7 +12,7 @@
   <Property Name="sonar.test.inclusions">web/src/**/*.spec.ts,web/e2e/**</Property>
 
   <!-- Not counted for coverage: tool configuration and the app bootstrap, which no unit test can run -->
-  <Property Name="sonar.coverage.exclusions">web/*.config.ts,web/*.config.js,web/*.conf.mjs,web/src/main.ts,**/Program.cs</Property>
+  <Property Name="sonar.coverage.exclusions">web/*.config.ts,web/*.config.js,web/*.conf.mjs,web/src/main.ts,src/SupportDesk.Api/Program.cs</Property>
 
   <!-- Rule exclusions (sonar.issue.ignore.multicriteria): none yet; step 3b adds them -->
 

@@ -47,6 +47,7 @@ A fresh clone opens in the dev container, builds, runs an empty app against Post
 - `.github/workflows/ci.yml` on push and pull request: set up .NET 10 and Node, `dotnet build`, `dotnet test --filter "Category!=Eval"`, Angular lint and tests
 - Testcontainers works on the GitHub runner without extra setup
 - Secret scan with `gitleaks` on every push, with checkout `fetch-depth: 0` so it scans the full history. The gitleaks action is free for personal accounts; an organization account needs a license
+  - *Implemented with:* the pinned gitleaks CLI (checksum-verified) instead of the action, because on later pushes the action only scans the pushed commits
 
 **Code quality: SonarQube Cloud**
 - Create the project on SonarQube Cloud (free for public repositories), linked to the GitHub repository, and turn off its Automatic Analysis, because C# needs analysis from CI and the two can't run together
@@ -70,6 +71,7 @@ A fresh clone opens in the dev container, builds, runs an empty app against Post
 
 - The `end` step also needs `SONAR_TOKEN` in its environment and passes `/d:sonar.token="$SONAR_TOKEN"`. Adjust the coverage paths to where the tools actually write their reports
 - In `ci.yml`: checkout with `fetch-depth: 0` (Sonar needs the history to tell new code from old), install `dotnet-sonarscanner`, then `begin` → `dotnet build` → tests with coverage → Angular tests with coverage → `end`
+  - *Implemented with:* a plain `dotnet build` before `begin` as well, because the scanner turns off warnings as errors while it analyzes; and a `sed` step that prefixes the Angular lcov paths with `web/` (PLAN.md 11)
 - Coverage: `coverlet.collector` in the test projects, run with `--collect:"XPlat Code Coverage" --settings tests/coverage.runsettings`. The committed `tests/coverage.runsettings` sets `Format` to `opencover`, because coverlet writes Cobertura by default and the Sonar path below would then find no report. Passed as `sonar.cs.opencover.reportsPaths`; Angular tests with coverage in lcov format, passed as `sonar.javascript.lcov.reportPaths`. The coverage option depends on the test runner the Angular version uses (Karma or Vitest), so don't assume `--code-coverage`
 - Check that the TypeScript files in `web/` are actually analyzed. SonarScanner for .NET analyzes files that belong to MSBuild projects, so files outside them may need the scanner's all-files option or a JavaScript project file in the solution. Use whichever works with the installed scanner and write it down in PLAN.md 11
 - Exclusions: `**/Migrations/**`, generated files, `seed/**`, `tests/fixtures/**`; test projects are marked as test code, not counted for coverage

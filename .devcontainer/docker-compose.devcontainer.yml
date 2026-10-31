@@ -7,8 +7,8 @@ services:
     command: sleep infinity
     volumes:
       - .:/workspaces/SupportDesk-AI:cached
-    env_file:
-      - .env
+    # No env_file: Claude Code runs in this container and would pick up ANTHROPIC_API_KEY from .env.
+    # Pass only what the dev container needs. Keep the connection string in sync with docker-compose.yml.
     environment:
       ConnectionStrings__SupportDesk: "Host=db;Port=5432;Database=${POSTGRES_DB:?Copy .env.example to .env and set POSTGRES_DB};Username=${POSTGRES_USER:?Copy .env.example to .env and set POSTGRES_USER};Password=${POSTGRES_PASSWORD:?Copy .env.example to .env and set POSTGRES_PASSWORD}"
       # Ollama runs on the host

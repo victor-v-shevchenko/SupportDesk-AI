@@ -11,4 +11,6 @@ A support-ticket assistant with production-style LLM features: ASP.NET Core (.NE
    - **Docker only:** run `docker compose up --build`, then open http://localhost:4200 (API health: http://localhost:5080/api/health)
    - **Dev container:** open the folder in VS Code and run "Reopen in Container". Then `dotnet run --project src/SupportDesk.Api` and `npm --prefix web start`
 
+Run one way at a time: both use ports 4200, 5080 and 5432 (`docker compose stop api web` before running the apps in the dev container).
+
 The commands for building, testing and migrations are in [CLAUDE.md](CLAUDE.md#commands).
