@@ -158,7 +158,7 @@ Entities, seed data, any LLM code.
 
 **CI and GitHub**
 - [ ] CI runs on push and pull request and is green on `main`
-- [ ] Branch protection is on for `main` with the CI and Sonar checks required, as shown by `gh api repos/victor-v-shevchenko/SupportDesk-AI/branches/main/protection`
+- [ ] Branch protection is on for `main` with the CI checks required (the Sonar gate becomes required in step 3b, see Scope), as shown by `gh api repos/victor-v-shevchenko/SupportDesk-AI/branches/main/protection`
 - [ ] The repository allows only squash merging and deletes branches after merge
 - [ ] The test pull request was opened, showed the deliberate issue and the gate result, and was closed without merging
 

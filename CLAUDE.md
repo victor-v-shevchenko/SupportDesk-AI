@@ -55,7 +55,7 @@ Keep this table correct: when a step changes a command, update it in the same pu
 ## Static analysis
 
 - .NET analyzers run at `latest-recommended` with warnings as errors. Fix the warning; suppress only with `[SuppressMessage]` and a `Justification`, never with a project-wide `NoWarn`
-- SonarQube Cloud checks new code on every pull request with the default "Sonar way" gate; its conditions are listed in PLAN.md 11
+- SonarQube Cloud checks new code on every pull request with the default "Sonar way" gate and the "Sonar way comprehensive" quality profile; both are described in PLAN.md 11
 - Fix Sonar issues in code. If you think one is a false positive, explain it in the pull request and ask the user to mark it in SonarQube Cloud; you can't reach the account
 - Rule exclusions live only in `sonar/SonarQube.Analysis.xml`. Change that file only when a spec says so (step 3b), with each exclusion and its reason added to PLAN.md 11. Never lower the gate, add exclusions, or widen analysis exclusions to make a pull request pass; propose that to the user instead
 - Coverage only counts if a test would fail when the code is wrong: don't write tests just to raise the number
