@@ -48,14 +48,14 @@ Order service (step 8), chunks and embeddings (step 4), any LLM call.
 
 ## Acceptance criteria
 
-- [ ] A fresh database is seeded with every ticket, article and order file; restarting doesn't duplicate anything
-- [ ] Every category and every priority appears in the seed tickets at least once
-- [ ] At least 10 tickets have order numbers, one points to a missing order, and two contain injection attempts
-- [ ] Every article has front matter and at least two `##` sections
-- [ ] The list and detail endpoints return the documented shapes; an unknown ID or slug returns `404` problem details
-- [ ] `POST /api/tickets` creates a ticket and returns `201`; each invalid field gives a `400` that names it
-- [ ] The ticket list and detail pages show seeded data, with loading, empty and error states
-- [ ] Entities are never returned directly from endpoints
+- [x] A fresh database is seeded with every ticket, article and order file; restarting doesn't duplicate anything
+- [x] Every category and every priority appears in the seed tickets at least once
+- [x] At least 10 tickets have order numbers, one points to a missing order, and two contain injection attempts
+- [x] Every article has front matter and at least two `##` sections
+- [x] The list and detail endpoints return the documented shapes; an unknown ID or slug returns `404` problem details
+- [x] `POST /api/tickets` creates a ticket and returns `201`; each invalid field gives a `400` that names it
+- [x] The ticket list and detail pages show seeded data, with loading, empty and error states
+- [x] Entities are never returned directly from endpoints
 
 ## Tests
 
