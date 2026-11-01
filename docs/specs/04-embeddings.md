@@ -30,6 +30,21 @@ Articles are chunked and embedded, vectors are kept in step with content and mod
 **Angular**
 - A small search box on the articles page that calls `/api/search` and lists results with scores (useful for checking retrieval by hand)
 
+## Clarified during implementation
+
+These fill gaps in the scope above; the details are in PLAN.md 8 and 11.
+
+- **"The articles page" didn't exist:** step 2 built no articles page. This step adds a small one at `/articles` ("Knowledge base" in the header): the article list (title and slug, no detail view) and the search box. A search runs when the form is submitted, not on every keystroke, since each one is an embedding call
+- **Content hash for a chunk without a heading:** PLAN.md 8 said `heading + "\n" + text`. The hash is now over exactly the text that's embedded: `heading + "\n" + text`, or the text alone when there's no heading. That way the fixture vectors are looked up by the hash of the text being embedded
+- **Matching chunks in the sync:** stored rows are matched by content hash and model, not by position, so inserting or moving a section only updates ordinals instead of re-embedding everything after it. A renamed heading changes the hash, so that chunk is re-embedded and the old row deleted
+- **`ArticleChunk` lives in Data**, not Core: its column type is pgvector's `Vector`, and Core shouldn't depend on pgvector. Core works through `IArticleChunkStore`
+- **Search filters by the current embedding model**, so vectors from an earlier model are never compared with a query from another
+- **Top 3** in the criteria counts chunks: the expected article must be among the 3 nearest chunks (`k=3`), which is stricter than the 3 nearest articles
+- **Minimum similarity is 0.5**, not the 0.3 planned in PLAN.md 8: `mxbai-embed-large` gives about 0.3–0.4 to unrelated text (PLAN.md 8 has the numbers)
+- **`q` length** is counted after trimming, and a `k` that isn't a whole number gets the same `400` as one out of range
+- **Startup needs the embedding provider:** with the default Ollama embeddings, Development startup fails with a hint when Ollama or the model isn't available. The in-memory API in integration tests uses the fake providers unless a test overrides them
+- **Retrieval services** are registered by `AddSupportDeskRetrieval` in the API, separate from `AddSupportDeskAi`, so `tools/EmbedFixtures` can use the provider composition root without the database
+
 ## Out of scope
 
 Using retrieval in a prompt (step 5).

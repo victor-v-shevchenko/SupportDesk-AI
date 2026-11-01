@@ -8,6 +8,7 @@
     <!-- Npgsql.EntityFrameworkCore.PostgreSQL depends on an older EF Core patch; pin it to match Design -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.14" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageVersion Include="Pgvector.EntityFrameworkCore" Version="0.3.0" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.14" />
     <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.14" />
     <!-- AI: abstractions and pipeline in Core; provider packages only in Api -->

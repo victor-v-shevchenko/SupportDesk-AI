@@ -12,17 +12,22 @@ public class SupportDeskDbContext(DbContextOptions<SupportDeskDbContext> options
 
     public const int TicketNumberStart = 1001;
 
+    /// <summary>The size of <c>ArticleChunks.Embedding</c>; <c>AI:Embeddings:Dimensions</c> must match it.</summary>
+    public const int EmbeddingDimensions = 1024;
+
     public DbSet<Ticket> Tickets => Set<Ticket>();
 
     public DbSet<Article> Articles => Set<Article>();
 
     public DbSet<ModelCall> ModelCalls => Set<ModelCall>();
 
+    public DbSet<ArticleChunk> ArticleChunks => Set<ArticleChunk>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
 
-        // pgvector, for article chunk embeddings (step 4)
+        // pgvector, for article chunk embeddings
         modelBuilder.HasPostgresExtension("vector");
 
         modelBuilder.HasSequence<long>(TicketNumberSequence).StartsAt(TicketNumberStart);
@@ -75,6 +80,17 @@ public class SupportDeskDbContext(DbContextOptions<SupportDeskDbContext> options
             // No foreign key to Tickets: a usage row must never fail to save because of the ticket
             call.HasIndex(c => new { c.TicketId, c.Timestamp });
             call.HasIndex(c => c.Timestamp);
+        });
+
+        modelBuilder.Entity<ArticleChunk>(chunk =>
+        {
+            chunk.HasOne(c => c.Article).WithMany().HasForeignKey(c => c.ArticleId).OnDelete(DeleteBehavior.Cascade);
+            chunk.HasIndex(c => new { c.ArticleId, c.Ordinal });
+            chunk.Property(c => c.ContentHash).HasMaxLength(64).IsFixedLength();
+            chunk.Property(c => c.EmbeddingModel).HasMaxLength(ArticleChunk.EmbeddingModelMaxLength);
+            chunk.Property(c => c.Embedding).HasColumnType($"vector({EmbeddingDimensions})");
+            // Cosine distance (<=>), the operator search orders by; an index built for another operator wouldn't be used
+            chunk.HasIndex(c => c.Embedding).HasMethod("hnsw").HasOperators("vector_cosine_ops");
         });
     }
 }

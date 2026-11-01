@@ -26,7 +26,7 @@ Run inside the dev container.
 
 | Task | Command |
 | --- | --- |
-| Start everything (dev container) | `docker compose up -d db` then `dotnet run --project src/SupportDesk.Api` and `npm --prefix web start` |
+| Start everything (dev container; startup embeds the articles, so Ollama needs `mxbai-embed-large` pulled) | `docker compose up -d db` then `dotnet run --project src/SupportDesk.Api` and `npm --prefix web start` |
 | Start everything (Docker only) | `docker compose up --build` |
 | Start with the fake model | `AI__Chat__Provider=Fake AI__Embeddings__Provider=Fake dotnet run --project src/SupportDesk.Api` |
 | Ollama in Docker instead of on the host (optional) | `docker compose --profile ollama up -d ollama` then `docker compose exec ollama ollama pull qwen2.5:1.5b` (or `qwen2.5:7b`, about 4.7 GB) |
@@ -41,7 +41,7 @@ Run inside the dev container.
 | Angular tests with coverage (as CI) | `npm --prefix web run test:ci` |
 | End-to-end tests | `npm --prefix web run e2e` |
 | New migration | `dotnet ef migrations add <Name> --project src/SupportDesk.Data --startup-project src/SupportDesk.Api` |
-| Regenerate embedding fixtures (from step 4) | `dotnet run --project tools/EmbedFixtures` |
+| Regenerate embedding fixtures (needs Ollama with `mxbai-embed-large`; `ollama pull mxbai-embed-large`) | `dotnet run --project tools/EmbedFixtures` |
 
 Keep this table correct: when a step changes a command, update it in the same pull request.
 

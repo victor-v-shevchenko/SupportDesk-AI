@@ -8,5 +8,10 @@ export const routes: Routes = [
     title: 'Ticket · SupportDesk AI',
     loadComponent: () => import('./tickets/ticket-detail-page').then((m) => m.TicketDetailPage),
   },
+  {
+    path: 'articles',
+    title: 'Knowledge base · SupportDesk AI',
+    loadComponent: () => import('./articles/articles-page').then((m) => m.ArticlesPage),
+  },
   { path: '**', redirectTo: 'tickets' },
 ];

@@ -18,6 +18,14 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SupportDesk.Api\SupportDesk.Api.csproj" />
+    <!-- The fixture file types, so the tests read exactly what the tool writes -->
+    <ProjectReference Include="..\..\tools\EmbedFixtures\EmbedFixtures.csproj" />
+  </ItemGroup>
+
+  <!-- The committed embedding fixtures and the questions they were made for -->
+  <ItemGroup>
+    <Content Include="..\fixtures\embeddings\*.json" LinkBase="fixtures\embeddings" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\fixtures\retrieval-questions.json" Link="fixtures\retrieval-questions.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

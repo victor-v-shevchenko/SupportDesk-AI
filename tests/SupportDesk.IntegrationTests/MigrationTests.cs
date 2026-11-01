@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using SupportDesk.Data;
 
 namespace SupportDesk.IntegrationTests;
 
@@ -10,8 +9,7 @@ public class MigrationTests(PostgresFixture postgres)
     public async Task Migrations_apply_and_enable_the_vector_extension()
     {
         var ct = TestContext.Current.CancellationToken;
-        var options = new DbContextOptionsBuilder<SupportDeskDbContext>().UseNpgsql(postgres.ConnectionString).Options;
-        await using var db = new SupportDeskDbContext(options);
+        await using var db = TestDatabase.CreateDbContext(postgres.ConnectionString);
 
         await db.Database.MigrateAsync(ct);
 

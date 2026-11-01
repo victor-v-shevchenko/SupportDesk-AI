@@ -7,6 +7,7 @@ using Npgsql;
 using SupportDesk.Core.AI.Usage;
 using SupportDesk.Core.Articles;
 using SupportDesk.Core.Health;
+using SupportDesk.Core.Retrieval;
 using SupportDesk.Core.Tickets;
 using SupportDesk.Data.Repositories;
 using SupportDesk.Data.Seeding;
@@ -35,19 +36,21 @@ public static class DataServiceCollectionExtensions
             .ValidateOnStart();
 
         services.AddDbContext<SupportDeskDbContext>((provider, builder) =>
-            builder.UseNpgsql(provider.GetRequiredService<IOptions<DatabaseOptions>>().Value.ConnectionString));
+            builder.UseNpgsql(provider.GetRequiredService<IOptions<DatabaseOptions>>().Value.ConnectionString, npgsql => npgsql.UseVector()));
 
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<IDatabaseProbe, EfDatabaseProbe>();
         services.AddScoped<ITicketRepository, TicketRepository>();
         services.AddScoped<IArticleRepository, ArticleRepository>();
         services.AddScoped<IModelCallRepository, ModelCallRepository>();
+        services.AddScoped<IArticleChunkStore, ArticleChunkStore>();
         services.AddScoped<SupportDeskSeeder>();
         return services;
     }
 
     /// <summary>
-    /// Applies the migrations, then loads <c>seed/</c> (see <see cref="SupportDeskSeeder"/>). Holds a PostgreSQL advisory
+    /// Applies the migrations, loads <c>seed/</c> (see <see cref="SupportDeskSeeder"/>), then brings the article embeddings
+    /// up to date (see <see cref="EmbeddingSyncService"/>, registered with the AI services). Holds a PostgreSQL advisory
     /// lock throughout, so two instances starting against one database run this one after the other instead of racing.
     /// </summary>
     public static async Task MigrateAndSeedSupportDeskDatabaseAsync(this IServiceProvider services, CancellationToken cancellationToken)
@@ -64,6 +67,7 @@ public static class DataServiceCollectionExtensions
         {
             await scope.ServiceProvider.GetRequiredService<SupportDeskDbContext>().Database.MigrateAsync(cancellationToken);
             await scope.ServiceProvider.GetRequiredService<SupportDeskSeeder>().SeedAsync(cancellationToken);
+            await scope.ServiceProvider.GetRequiredService<EmbeddingSyncService>().SyncAsync(cancellationToken);
         }
         finally
         {

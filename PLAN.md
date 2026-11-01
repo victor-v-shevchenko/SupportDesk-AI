@@ -304,10 +304,18 @@ These come from the current API and must be checked against the SDK version in u
 
 ## 8. Retrieval and citations
 
-- **Chunking:** split each article on `##` headings; a section longer than 1,200 characters is split on paragraph boundaries, with 150 characters of overlap. The chunk's heading is kept with it
-- **Content hash:** SHA-256 of `heading + "\n" + text`
-- **Re-embedding:** at startup, and after seeding, chunks whose hash or embedding model differs from the stored row are re-embedded. Unchanged chunks are skipped
-- **Search:** cosine distance, top `k = 5`, minimum similarity 0.3 (tuned in step 4 against the test questions)
+- **Chunking** (`ArticleChunker`): split each article on `##` headings (`###` and deeper stay inside their section); the text before the first heading is a chunk without a heading, and empty sections are dropped. A section longer than 1,200 characters is split on paragraph boundaries (a paragraph that is itself too long is cut between words); each piece after the first starts with the last 150 characters of the one before, from a word boundary. The chunk's heading is kept with it. Ordinals count up from 0 across the article. The seed has 57 chunks; the "What can be returned" section of `returns-policy` is the one long enough to be split
+- **Embedded text and content hash:** the embedded text is `heading + "\n" + text`, or the text alone for a chunk without a heading. The content hash is the lowercase hex SHA-256 of that text, so it changes exactly when what's embedded changes
+- **Storage:** `ArticleChunks` in Data (not Core, because the column is pgvector's `Vector`), with `vector(1024)`, an HNSW index with `vector_cosine_ops`, and a cascade from `Articles`. Core reads and writes chunks through `IArticleChunkStore`
+- **Sync** (`EmbeddingSyncService`): at startup in Development, after seeding and under the same advisory lock. Each article's chunks are matched to its stored rows by content hash and embedding model. A match keeps its vector (its ordinal is updated when sections moved); everything else is embedded in batches of `Retrieval:EmbeddingBatchSize`; stored rows left without a match are deleted, which covers deleted sections, renamed headings and changed text. Changing `AI:Embeddings:Model` matches nothing, so everything is re-embedded and the old rows are deleted. All changes are saved in one transaction after every batch is embedded. A provider that returns vectors of a size other than `AI:Embeddings:Dimensions` stops startup with an error naming both sizes. So does an unreachable provider: with the default Ollama embeddings, Development startup needs Ollama running with `mxbai-embed-large` pulled, or `AI__Embeddings__Provider=Fake`
+- **Search** (`IRetrievalService`, `GET /api/search?q=&k=5`): embeds the query, takes the `k` nearest chunks of the current embedding model by cosine distance (`<=>`, which the HNSW index serves), then drops those with cosine similarity (1 − distance) below `Retrieval:MinSimilarity`. `q` is required and at most 500 characters after trimming; `k` is a whole number from 1 to 10 (default 5). The response is a list of `articleSlug`, `articleTitle`, `heading`, `text`, `similarity`, most similar first
+- **Minimum similarity 0.5**, set in step 4 from the committed `mxbai-embed-large` fixtures. For the 15 retrieval questions the best chunk of the expected article scored 0.560–0.752. Four unrelated questions (weather, a poem, baking, football) scored at most 0.405 against any chunk. `mxbai-embed-large` gives about 0.3–0.4 to unrelated text, so the 0.3 first planned here would have kept everything. 0.5 sits between the two groups. With the fixtures, the expected article is first for 13 of the 15 questions and in the top 3 for all of them, without a query prefix. Another embedding model needs this tuned again
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `Retrieval:MinSimilarity` | `0.5` | Results below this cosine similarity are dropped (0–1) |
+| `Retrieval:EmbeddingBatchSize` | `16` | Chunks per embedding request during the startup sync (1–256) |
+
 - **Citations:** retrieved chunks are numbered `[1]`…`[N]` in the prompt. After the stream, the server parses markers from the full text; numbers outside `1…N` go into `removed` and are logged. Valid numbers map to chunks, then to articles, with duplicates removed
 - **UI:** valid markers become links to the article; invalid ones stay as plain text
 
@@ -357,7 +365,8 @@ These come from the current API and must be checked against the SDK version in u
 
 - CI runs `dotnet test --filter "Category!=Eval"`
 - Eval tests carry `[Trait("Category", "Eval")]` and run with `dotnet test tests/SupportDesk.Eval --filter Category=Eval`
-- **Embedding fixtures:** `tests/fixtures/embeddings/articles.json` and `questions.json` hold the model name, dimension, and per item the content hash and vector. `dotnet run --project tools/EmbedFixtures` regenerates them with the configured embedding provider
+- **Embedding fixtures:** `tests/fixtures/embeddings/articles.json` and `questions.json` hold the model name, dimension, and per item the content hash and vector (articles also have slug and ordinal; questions the question text), one item per line. `dotnet run --project tools/EmbedFixtures` regenerates them with the configured embedding provider (by default Ollama `mxbai-embed-large`, which the committed files are made with) from `seed/articles` and `tests/fixtures/retrieval-questions.json`. A test fails, naming that command, when a chunk's or question's hash no longer matches. Retrieval tests store the fixture vectors through the normal startup sync and embed each question to its fixture vector; a text without a fixture fails the test
+- **Startup embedding in tests:** startup now embeds the articles, so the in-memory API in integration tests uses the fake chat and embedding providers unless a test overrides them
 
 ## 12. Steps
 

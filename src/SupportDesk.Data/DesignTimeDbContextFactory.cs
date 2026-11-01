@@ -9,5 +9,5 @@ namespace SupportDesk.Data;
 internal sealed class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<SupportDeskDbContext>
 {
     public SupportDeskDbContext CreateDbContext(string[] args) =>
-        new(new DbContextOptionsBuilder<SupportDeskDbContext>().UseNpgsql("Host=localhost").Options);
+        new(new DbContextOptionsBuilder<SupportDeskDbContext>().UseNpgsql("Host=localhost", npgsql => npgsql.UseVector()).Options);
 }
