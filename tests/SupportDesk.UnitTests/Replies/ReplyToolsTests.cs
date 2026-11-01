@@ -203,7 +203,11 @@ internal sealed class StubOrders(params OrderStatus[] orders) : IOrderStatusServ
 
     public Task<OrderStatus?> FindAsync(string orderNumber, CancellationToken cancellationToken)
     {
-        Lookups.Add(orderNumber);
+        lock (Lookups)
+        {
+            Lookups.Add(orderNumber);
+        }
+
         return Task.FromResult(orders.FirstOrDefault(o => o.OrderNumber == orderNumber));
     }
 }
@@ -223,18 +227,31 @@ internal sealed class RecordingFollowUps : IFollowUpRepository
 
     public Task<FollowUpProposal> UpsertProposalAsync(NewProposal proposal, CancellationToken cancellationToken)
     {
-        Upserts.Add(proposal);
-        if (!_proposals.TryGetValue((proposal.TicketId, proposal.ReplyRunId), out var stored))
+        // Replies run at the same time in some tests, like requests do
+        lock (_proposals)
         {
-            stored = new FollowUpProposal { Id = Guid.NewGuid(), TicketId = proposal.TicketId, ReplyRunId = proposal.ReplyRunId, Title = "", Notes = "" };
-            _proposals[(proposal.TicketId, proposal.ReplyRunId)] = stored;
-        }
+            Upserts.Add(proposal);
+            if (!_proposals.TryGetValue((proposal.TicketId, proposal.ReplyRunId), out var stored))
+            {
+                stored = new FollowUpProposal { Id = Guid.NewGuid(), TicketId = proposal.TicketId, ReplyRunId = proposal.ReplyRunId, Title = "", Notes = "" };
+                _proposals[(proposal.TicketId, proposal.ReplyRunId)] = stored;
+            }
 
-        stored.Title = proposal.Title;
-        stored.Notes = proposal.Notes;
-        stored.DueDate = proposal.DueInDays is { } days ? new DateOnly(2026, 11, 1).AddDays(days) : null;
-        LastId = stored.Id;
-        return Task.FromResult(stored);
+            stored.Title = proposal.Title;
+            stored.Notes = proposal.Notes;
+            stored.DueDate = proposal.DueInDays is { } days ? new DateOnly(2026, 11, 1).AddDays(days) : null;
+            LastId = stored.Id;
+            return Task.FromResult(stored);
+        }
+    }
+
+    /// <summary>The ID of the proposal saved for this ticket and run, or null when there is none.</summary>
+    public Guid? IdOf(int ticketId, Guid replyRunId)
+    {
+        lock (_proposals)
+        {
+            return _proposals.TryGetValue((ticketId, replyRunId), out var stored) ? stored.Id : null;
+        }
     }
 
     public Task<ConfirmResult> ConfirmAsync(Guid proposalId, CancellationToken cancellationToken)
