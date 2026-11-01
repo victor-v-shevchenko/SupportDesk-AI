@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http.HttpResults;
+using SupportDesk.Core.Replies;
 using SupportDesk.Core.Tickets;
 
 namespace SupportDesk.Api.Endpoints;
@@ -11,6 +12,7 @@ public static class TicketEndpoints
         group.MapGet("/", ListTickets).WithName("ListTickets");
         group.MapGet("/{id:int}", GetTicket).WithName("GetTicket");
         group.MapPost("/", CreateTicket).WithName("CreateTicket");
+        group.MapPost("/{id:int}/reply", SuggestReply).WithName("SuggestReply");
         return app;
     }
 
@@ -43,10 +45,27 @@ public static class TicketEndpoints
         ArgumentNullException.ThrowIfNull(tickets);
 
         var ticket = await tickets.FindAsync(id, cancellationToken);
-        return ticket is null
-            ? TypedResults.Problem(statusCode: StatusCodes.Status404NotFound, title: "Ticket not found", detail: $"There is no ticket with ID {id}.")
-            : TypedResults.Ok(ticket.ToDetail());
+        return ticket is null ? TicketNotFound(id) : TypedResults.Ok(ticket.ToDetail());
     }
+
+    /// <summary>
+    /// Streams a suggested reply as server-sent events (PLAN.md 7). An unknown ticket is a <c>404</c> before the stream
+    /// starts; after that, failures are <c>error</c> events. The request's token cancels the model call when the client leaves.
+    /// </summary>
+    public static async Task<Results<ServerSentEventsResult<object>, ProblemHttpResult>> SuggestReply(
+        int id, ITicketRepository tickets, IReplyService replies, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(tickets);
+        ArgumentNullException.ThrowIfNull(replies);
+
+        var ticket = await tickets.FindAsync(id, cancellationToken);
+        return ticket is null
+            ? TicketNotFound(id)
+            : TypedResults.ServerSentEvents(ReplySse.ToSse(replies.StreamAsync(ticket, cancellationToken), cancellationToken));
+    }
+
+    private static ProblemHttpResult TicketNotFound(int id) =>
+        TypedResults.Problem(statusCode: StatusCodes.Status404NotFound, title: "Ticket not found", detail: $"There is no ticket with ID {id}.");
 
     public static async Task<Results<Created<TicketDetailResponse>, ValidationProblem>> CreateTicket(
         CreateTicketRequest request, ITicketRepository tickets, CancellationToken cancellationToken)

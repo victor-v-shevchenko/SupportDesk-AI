@@ -9,6 +9,7 @@ builder.Services.AddSupportDeskApi();
 builder.Services.AddSupportDeskData();
 builder.Services.AddSupportDeskAi();
 builder.Services.AddSupportDeskRetrieval();
+builder.Services.AddSupportDeskReplies();
 
 var app = builder.Build();
 
