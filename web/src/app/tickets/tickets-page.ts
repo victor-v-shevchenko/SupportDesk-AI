@@ -2,11 +2,12 @@ import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TicketsService } from '../api/tickets.service';
+import { ClassificationBadges } from './classification-badges';
 import { TicketStatusBadge } from './ticket-status';
 
 @Component({
   selector: 'app-tickets-page',
-  imports: [RouterLink, DatePipe, TicketStatusBadge],
+  imports: [RouterLink, DatePipe, TicketStatusBadge, ClassificationBadges],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <h1>Tickets</h1>
@@ -20,7 +21,7 @@ import { TicketStatusBadge } from './ticket-status';
     } @else if (tickets.hasValue() && tickets.value().length > 0) {
       <table>
         <thead>
-          <tr><th scope="col">Number</th><th scope="col">Subject</th><th scope="col">Status</th><th scope="col">Created</th></tr>
+          <tr><th scope="col">Number</th><th scope="col">Subject</th><th scope="col">Status</th><th scope="col">Classification</th><th scope="col">Created</th></tr>
         </thead>
         <tbody>
           @for (ticket of tickets.value(); track ticket.id) {
@@ -28,6 +29,9 @@ import { TicketStatusBadge } from './ticket-status';
               <td class="number">{{ ticket.number }}</td>
               <td><a [routerLink]="['/tickets', ticket.id]">{{ ticket.subject }}</a></td>
               <td><app-ticket-status [status]="ticket.status" /></td>
+              <td class="classification">
+                <app-classification-badges [status]="ticket.classificationStatus" [category]="ticket.category" [priority]="ticket.priority" />
+              </td>
               <td class="created"><time [attr.datetime]="ticket.createdAt">{{ ticket.createdAt | date: 'medium' }}</time></td>
             </tr>
           }

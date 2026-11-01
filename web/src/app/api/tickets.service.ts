@@ -1,9 +1,12 @@
-import { httpResource, HttpResourceRef } from '@angular/common/http';
-import { Injectable } from '@angular/core';
-import { TicketDetail, TicketListItem } from './tickets.models';
+import { HttpClient, httpResource, HttpResourceRef } from '@angular/common/http';
+import { inject, Injectable } from '@angular/core';
+import { Observable, firstValueFrom } from 'rxjs';
+import { TicketClassification, TicketDetail, TicketListItem, TicketSummary } from './tickets.models';
 
 @Injectable({ providedIn: 'root' })
 export class TicketsService {
+  private readonly http = inject(HttpClient);
+
   /** `GET /api/tickets`, newest first. Call it from an injection context, such as a component field. */
   list(): HttpResourceRef<TicketListItem[] | undefined> {
     return httpResource<TicketListItem[]>(() => '/api/tickets');
@@ -15,5 +18,15 @@ export class TicketsService {
       const value = id();
       return value ? `/api/tickets/${encodeURIComponent(value)}` : undefined;
     });
+  }
+
+  /** `POST /api/tickets/{id}/classification`: classifies (or reclassifies) the ticket and returns the saved result. */
+  classify(id: number): Promise<TicketClassification> {
+    return firstValueFrom(this.http.post<TicketClassification>(`/api/tickets/${id}/classification`, null));
+  }
+
+  /** `POST /api/tickets/{id}/summary`: generates and saves a summary, replacing any earlier one. Errors are problem details. */
+  summarize(id: number): Observable<TicketSummary> {
+    return this.http.post<TicketSummary>(`/api/tickets/${id}/summary`, null);
   }
 }

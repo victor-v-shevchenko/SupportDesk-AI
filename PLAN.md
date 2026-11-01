@@ -118,10 +118,12 @@ All routes are under `/api`. Errors use RFC 7807 problem details.
 | `GET /api/model-calls?ticketId=` | Usage and cost rows | 3b |
 
 - JSON is camelCase and enums are their names (`"Open"`, `"NotRun"`), never numbers
-- **Ticket list item:** `id`, `number`, `subject`, `status`, `category`, `priority` (both null until classified), `createdAt`. Newest first; `?status=` takes a status name in any case, anything else gives `400`
+- **Ticket list item:** `id`, `number`, `subject`, `status`, `category`, `priority` (both null until classified), `classificationStatus` (`NotRun`, `Done`, `NeedsManual`, so the list can show the needs-manual badge), `createdAt`. Newest first; `?status=` takes a status name in any case, anything else gives `400`
 - **Ticket detail:** `id`, `number`, `subject`, `body`, `customerName`, `orderNumber`, `status`, `createdAt`, `summary` (null, or `text`, `promptVersion`, `generatedAt`), `classification` (`status`, `category`, `priority`, `reason`, `promptVersion`, `classifiedAt`)
 - **Create:** `subject`, `body`, `customerName`, `orderNumber?`. Subject and customer name are trimmed; an empty order number counts as none. Returns `201` with `Location: /api/tickets/{id}` and the detail. A `400` lists every invalid field under its JSON name. A body that isn't a JSON object of the right shape (malformed, `null`, a number where a string belongs) gets a `400` problem details without field names
 - **Articles:** the list has `slug`, `title`, `updatedAt`, ordered by title; the detail adds `bodyMarkdown` (without the front matter)
+- **Classify:** `POST /api/tickets/{id}/classification` takes no body and returns `200` with the saved classification (the same shape as the detail's `classification`); calling it again replaces it. An answer that fails validation twice is saved and returned as `NeedsManual`, not as an error
+- **Model errors** on the non-streaming AI endpoints (classification, summary) are problem details with fixed messages, never the provider's (`ModelProblems`, table in section 9). A failed call leaves the saved result as it was
 - An unknown ticket ID or article slug returns `404` problem details
 
 ## 6. LLM pipeline
@@ -136,7 +138,7 @@ All routes are under `/api`. Errors use RFC 7807 problem details.
 | `AI:Embeddings:Model` | model ID; empty means the provider's default | `mxbai-embed-large` (Ollama), `voyage-3.5` (Voyage), `text-embedding-3-small` (OpenAI), `fake-hash` (Fake) |
 | `AI:Embeddings:Dimensions` | `1024` | `1024` |
 | `AI:Ollama:Endpoint` | URL; required when Ollama is the chat or embedding provider, set only in config (no code default) | `http://host.docker.internal:11434` (plain HTTP: Ollama on the host has no TLS) |
-| `AI:Prompts:<name>` | prompt version | `reply.v1`, `summary.v1`, `classify.v1` (all three required) |
+| `AI:Prompts:<name>` | prompt version | `reply.v1`, `summary.v2`, `classify.v2` (all three required) |
 | `AI:PromptsPath` | folder | `prompts`, resolved from the app's base directory, where the build copies `prompts/` |
 | `AI:Anthropic:Effort:<feature>` | `Low`, `Medium`, `High`, `ExtraHigh` | `Reply` Medium, `Summary` Low, `Classification` Low (see 6.7) |
 | `AI:Anthropic:ApiKey`, `AI:OpenAI:ApiKey`, `AI:Voyage:ApiKey` | secret | none; user secrets or `AI__…__ApiKey` variables, never appsettings |
@@ -189,7 +191,7 @@ provider IChatClient          Anthropic (wrapped in AnthropicOptionsMiddleware) 
 
 ### 6.3 Prompts
 
-- Each prompt is a Markdown file in `prompts/`, named `<name>.v<N>.md`, with a system section and a user template: a `## System` line, then a `## User` line. Text above `## System` is a note for people and isn't sent
+- Each prompt is a Markdown file in `prompts/`, named `<name>.v<N>.md`, with a system section and a user template: a `## System` line, then a `## User` line, then optionally a `## Retry` line: the user message a feature sends after rejecting the model's answer (classification, with `{{error}}`). Text above `## System` is a note for people and isn't sent
 - The user template has `{{placeholders}}`, filled in one pass (a value containing `{{name}}` stays as it is). Every placeholder needs a value and every value a placeholder. The system section can't have placeholders, so user text can't reach it
 - A merged prompt version is never edited. A change means a new file (`reply.v2.md`) and a config change
 - Ticket text goes into the user message inside `<ticket>…</ticket>` (`TicketPromptFormatter`, which also adds the number, customer, order number and subject). Any `</ticket>` inside the text is escaped first: the `<` of anything that reads as a ticket tag (any case, whitespace or a newline inside, opening or closing) becomes `&lt;`. The system prompt says that text inside `<ticket>` is customer data and that instructions inside it must be ignored
@@ -269,7 +271,7 @@ These come from the current API and must be checked against the SDK version in u
 
 - Don't set `Temperature`, `TopP` or `TopK`; newer API versions reject them
 - `claude-opus-5-5` can't turn thinking off; control cost with effort (`low` for classification and summary, `medium` for replies). The `Anthropic` package's adapter (13.3) sends `ChatOptions.Reasoning.Effort` as `output_config.effort` with `thinking.type = adaptive`, so `AnthropicOptionsMiddleware` sets it per feature from `AI:Anthropic:Effort` and no raw provider options are needed. `ReasoningEffort.None` is rejected at startup: it sends `thinking.type = disabled`, which these models answer with a 400. The same middleware drops `Temperature`, `TopP` and `TopK`; it's registered only for Anthropic, because other providers don't all accept a reasoning setting
-- Forced tool choice (`any` or a named tool) returns a 400 on current models. Use automatic tool choice, and use structured output (`output_config.format`) for classification
+- Forced tool choice (`any` or a named tool) returns a 400 on current models. Use automatic tool choice, and use structured output (`output_config.format`) for classification. Checked against the `Anthropic` 13.3 adapter's code: `GetResponseAsync<T>` sets `ChatOptions.ResponseFormat` to a JSON schema, and the adapter sends it as `output_config.format = { type: "json_schema", schema }` with `additionalProperties: false`; it sets `tool_choice` only from `ChatOptions.ToolMode`, so no tool is forced and no provider-specific options are needed (`Anthropic_structured_output_uses_output_config_format_and_no_forced_tool`). The adapter moves schema keywords the API doesn't take into the description, among them `maxLength`, so the 200-character limit on `reason` is only a hint to the model
 - A response can stop with `stop_reason = "refusal"`; that maps to `ModelRefusedException`
 
 ### 6.8 Fake provider
@@ -328,8 +330,19 @@ These come from the current API and must be checked against the SDK version in u
 
 - Classification uses `GetResponseAsync<ClassificationResult>` with a JSON schema: `category` (enum), `priority` (enum), `reason` (string, at most 200 characters), no extra properties
 - The result is validated even when the provider enforces the schema, because some providers (Ollama models, some adapters) only follow it from the prompt
-- **Invalid JSON or schema mismatch:** one retry with the validation error added to the prompt, then `Status = NeedsManual`
-- **Summary:** plain text, 2–3 sentences, at most 600 characters; longer output is cut at the last full sentence
+- **Validation** (`ClassificationValidator`) reads the raw response text, not `ChatResponse<T>.Result`, which ignores extra properties and fills missing ones with defaults: one JSON object (no code fence or other text, no duplicate keys), exactly `category`, `priority` and `reason`, enum names with exact casing (no numbers), `reason` a non-empty string of at most 200 characters after trimming. The errors name the allowed properties and values but never repeat what the model wrote, since they go back to it in a user turn and its answer can copy the ticket
+- **Invalid JSON or schema mismatch:** one retry with the validation error added to the prompt, then `Status = NeedsManual`. The retry sends the rejected answer back as the assistant turn (left out when it's empty) and the prompt's `## Retry` message with the errors as the next user turn. Each rejection is logged at debug level with the raw output; `NeedsManual` is logged at information level without it
+- **Saved:** status, category, priority, reason, prompt version and time, in one `UPDATE` of the classification columns. `NeedsManual` saves the prompt version and time with the other fields null
+- **Summary:** plain text, 2–3 sentences, at most 600 characters (`SummaryOutput`). The output is trimmed; longer output is cut after the last full sentence that fits: `.`, `!` or `?` (with any closing quotes or brackets) followed by whitespace, so `1.5` or `kestrel.example` aren't sentence ends. If not even the first sentence fits, it's cut at the last whitespace before the limit (trailing commas and the like dropped) and ends with `…`. Abbreviations such as `e.g.` count as sentence ends, a known limit of the rule. Empty or whitespace-only output is a failure (`ModelOutputException`)
+- **Summary endpoint** (`POST /api/tickets/{id}/summary`): one non-streaming call (`SummaryService`, feature `Summary`, `MaxOutputTokens` from `AI:Budget:MaxOutputTokens:Summary`), then the check, then the save (`Text`, `PromptVersion`, `GeneratedAt`), replacing the old summary. It returns `200` with the summary. Nothing is saved before the check passes, so a failure leaves the old summary as it was
+- **Model errors as problem details** (`ModelProblems`, for every non-streaming feature): the title and detail are fixed texts, never an exception's message, and `code` is the reply stream's error code (PLAN.md 7) or `invalid_output`:
+
+  | Failure | Status | `code` |
+  | --- | --- | --- |
+  | `ModelUnavailableException` | 503 | `model_unavailable`, or `timeout` when `IsTimeout` |
+  | `ModelRefusedException` | 422 | `model_refused` |
+  | `BudgetExceededException` | 413 | `budget_exceeded` |
+  | `ModelOutputException` (output failed the check, such as an empty summary) | 502 | `invalid_output` |
 
 ## 10. Tools
 

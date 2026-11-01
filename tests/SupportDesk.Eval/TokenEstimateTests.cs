@@ -50,7 +50,9 @@ public class TokenEstimateTests
             Assert.Skip("Set AI:Anthropic:ApiKey (user secrets or AI__Anthropic__ApiKey) to run this check.");
         }
 
-        var prompt = PromptStore.Load(Path.Combine(BaseDirectory, "prompts"), promptName, promptName + ".v1");
+        // The version the app is configured with, so a new prompt version is the one counted
+        var version = new ConfigurationBuilder().AddJsonFile(Path.Combine(BaseDirectory, "appsettings.json")).Build()[$"AI:Prompts:{promptName}"]!;
+        var prompt = PromptStore.Load(Path.Combine(BaseDirectory, "prompts"), promptName, version);
         var messages = prompt.ToMessages(await ValuesAsync(prompt, ticketNumber, ct));
         var model = configuration["AI:Chat:Model"] is { Length: > 0 } configured ? configured : "claude-opus-5-5";
 

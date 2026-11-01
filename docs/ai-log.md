@@ -69,6 +69,20 @@ Entry format (from CLAUDE.md):
 - Fix: each option binds `[selected]` to the current `k` instead (step 4 PR).
 - Test: `ArticlesPage shows the default of 5 results in the select, matching what a search sends`
 
+## 2026-11-01 — Classification retry message repeated what the model wrote
+- Step: 7
+- Found by: review subagent
+- What was wrong: validation errors quoted unknown property names and wrong enum values (up to 40 characters) from the model's answer, and they go back in the retry user message, so text the model copied from the ticket could reach a user turn outside `<ticket>`.
+- Fix: the errors name the allowed values and properties only, never what the model wrote (step 7 PR).
+- Test: `ClassificationValidatorTests.Errors_never_repeat_what_the_model_wrote_so_ticket_text_cannot_reach_the_retry_message`
+
+## 2026-11-01 — Summary cut fell back mid-word on newlines
+- Step: 6
+- Found by: review subagent
+- What was wrong: when a summary over 600 characters had no sentence end that fit, `SummaryOutput` looked only for a space to cut at, so text broken by newlines was cut mid-word, and a cut could end in `foo,…`.
+- Fix: the fallback cut looks for any whitespace and drops trailing commas, semicolons and colons before the ellipsis (step 6 PR).
+- Test: `SummaryOutputTests.A_cut_without_a_sentence_end_breaks_at_newlines_too_and_drops_trailing_commas`
+
 ## 2026-11-01 — Embedding failures during a reply showed as internal errors
 - Step: 5
 - Found by: review subagent
