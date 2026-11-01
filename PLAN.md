@@ -156,9 +156,19 @@ All routes are under `/api`. Errors use RFC 7807 problem details.
   | `qwen2.5:1.5b` | about 1 GB | default chat model: small, fast, supports tools; weak at following instructions (in the step 5 check it used the sources but wrote no `[n]` markers) |
   | `qwen2.5:7b` | about 4.7 GB | better replies and tool calls, and cites sources; the model the step 10 evaluation runs with. On CPU it needs longer timeouts (6.5) |
   | `mxbai-embed-large` | about 670 MB | embeddings (1024 dimensions, from step 4) |
-  | `llama3.1:8b` | about 4.9 GB | tried in step 8 for tool calling; not better than `qwen2.5:7b` (below) |
+  | `qwen3:8b` | about 5.2 GB | the only local model here that called the reply's tools (step 8 check, below); thinks before answering, so each call is slow on CPU. Needs the same longer timeouts as `qwen2.5:7b` |
+  | `llama3.1:8b` | about 4.9 GB | tried in step 8 for tool calling; didn't call the tools (below) |
 
-  **Tool calling with local models (step 8 check, November 2026, T-1002 with five sources in the prompt):** neither `qwen2.5:7b` nor `llama3.1:8b` called `lookup_order_status`. Both answered from the sources and the ticket, and both wrote that they had checked the order (qwen also made up a last-update date). The tools did reach Ollama (`Ollama_requests_carry_the_reply_tools_with_their_schemas`), and `qwen2.5:7b` called the tool at once when the prompt had no sources. `claude-opus-5-5` called both tools and used the result: three model calls, 6,952 input and 914 output tokens, $0.046. So in development the tool path is shown with the fake provider (`tool-call-order`, `tool-call-proposal`), and tool use with local models is an open problem for steps 9 and 10
+  **Tool calling with local models (step 8 check, November 2026, T-1002 with five sources in the prompt, CPU):**
+
+  | Model | Called `lookup_order_status`? | Notes |
+  | --- | --- | --- |
+  | `qwen2.5:7b` | No (two runs) | Answered from the sources and the ticket, said it had checked the order and made up a last-update date. Called the tool when the prompt had no sources |
+  | `llama3.1:8b` | No | Said it had looked up the order and would propose a task, without calling either tool |
+  | `qwen3:8b` | Yes | Two calls, about 7 minutes in all; the reply used the status and last event. It cited `[1]` on a sentence from the tool result and made up a date to check tracking by; it didn't propose a task |
+  | `claude-opus-5-5` | Yes, both tools | Three calls, 6,952 input and 914 output tokens, $0.046 |
+
+  The tools reach Ollama (`Ollama_requests_carry_the_reply_tools_with_their_schemas`). Given a conversation in which the lookup had already happened, with the result in OllamaSharp's envelope (section 10), `qwen2.5:7b` and `llama3.1:8b` both read it correctly, for a found and an unknown order. So the gap is in deciding to call a tool, not in reading the result. The fake provider (`tool-call-order`, `tool-call-proposal`) shows the tool path in tests and the dev UI; tool use and the reply rules (no greeting, no citations for tool data, no made-up dates) are for steps 9 and 10 to measure
 
   Not used here, but an option on machines with more memory: `gemma4` (tools and thinking; the smallest tags, `e2b` and `e4b`, are 4.6–9.5 GB). Its thinking output adds latency and reaches the stream as reasoning content, which step 5 would have to drop. On CPU, `qwen2.5:1.5b` takes about 35 seconds for a reply in the dev container
 - **Startup checks** (`ValidateOnStart`): an unknown provider, a missing key for a selected provider (the message names the setting, never a value), the fake provider in `Production`, a missing or malformed prompt file, and a broken scenarios file all stop the app before it serves requests
@@ -267,7 +277,7 @@ provider IChatClient          Anthropic (wrapped in AnthropicOptionsMiddleware) 
 - Failures are logged with the feature, ticket ID, exception type and status code only: an SDK's message can echo the request, and so the ticket
 - Cost = input tokens × input price + output tokens × output price, from `AI:Pricing`. An unknown model gets `CostUsd = null` and a warning log, never a made-up price
 - `AI:Pricing` is a list of `{ Model, InputPerMTok, OutputPerMTok }`, not `AI:Pricing:<model>`: configuration keys use `:` as a separator, and Ollama model names (`qwen2.5:1.5b`) contain one
-- Prices in `appsettings.json` (USD per million tokens, from Anthropic's price list as of October 2026; check them again before publishing results): `claude-opus-5-5` 4.00 / 20.00, `claude-sonnet-5-5` 2.00 / 10.00, `claude-haiku-5-5` 0.10 / 0.50; Ollama models (`qwen2.5:1.5b`, `qwen2.5:7b`) and `fake` 0 / 0. OpenAI prices are added if OpenAI is used
+- Prices in `appsettings.json` (USD per million tokens, from Anthropic's price list as of October 2026; check them again before publishing results): `claude-opus-5-5` 4.00 / 20.00, `claude-sonnet-5-5` 2.00 / 10.00, `claude-haiku-5-5` 0.10 / 0.50; Ollama models (`qwen2.5:1.5b`, `qwen2.5:7b`, `qwen3:8b`) and `fake` 0 / 0. OpenAI prices are added if OpenAI is used
 - Prompt text and ticket text are not logged by default
 
 ### 6.7 Anthropic-specific notes
