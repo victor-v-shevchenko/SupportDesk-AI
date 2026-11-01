@@ -57,7 +57,7 @@ Editing proposals. Other tools.
 
 ## Tests
 
-- Unit: argument validation; tool allow-list; proposal upsert; expiry
+- Unit: argument validation; tool allow-list; proposal upsert; expiry; per-run tool call limit (added after step 9)
 - Integration: reply with each fake tool scenario; confirm idempotency and `409`; follow-ups endpoint
 - Angular: order card, proposal card, confirm flow
 

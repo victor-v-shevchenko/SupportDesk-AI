@@ -258,6 +258,39 @@ public sealed partial class PromptInjectionTests
         Assert.Equal(2, rig.Rows.Count);
     }
 
+    [Fact]
+    public async Task Calls_to_unknown_tools_do_not_use_up_the_limit_and_calls_past_it_have_no_event()
+    {
+        const string Lookup = """{ "orderNumber": "KO-205002" }""";
+        var unknown = Enumerable.Range(0, ReplyTools.MaxCallsPerRun).Select(_ => ToolCall("delete_ticket", "{}"));
+        using var rig = Create(
+            Turns(
+                Turn([
+                    .. unknown,
+                    ToolCall(ReplyTools.LookupOrderStatus, Lookup), Propose("Trace it", "", 1), ToolCall(ReplyTools.LookupOrderStatus, Lookup),
+                    Propose("Trace it again", "", 2), ToolCall(ReplyTools.LookupOrderStatus, Lookup),
+                    // Past the limit: one of each tool
+                    ToolCall(ReplyTools.LookupOrderStatus, Lookup), Propose("One too many", "", 3),
+                    Usage()]),
+                Turn(Text(BenignReply), Usage())),
+            orders: new StubOrders(new OrderStatus("KO-205002", "Delayed", "FedEx", DateTimeOffset.UnixEpoch, "x")));
+
+        var events = await rig.RunAsync(Ticket(), cancellationToken: Ct);
+
+        StreamAssert.EndsOnce(events);
+        Assert.IsType<ReplyDone>(events[^1]);
+        // The five calls after the unknown ones all ran, each with its event; the two past the limit have none
+        Assert.Equal(3, events.OfType<ReplyOrderLookup>().Count());
+        Assert.Equal(["Trace it", "Trace it again"], events.OfType<ReplyProposal>().Select(p => p.Proposal.Title));
+        Assert.Equal(3, rig.Orders.Lookups.Count);
+        Assert.Equal(2, rig.FollowUps.Upserts.Count);
+        var results = rig.Spy.Calls[1].Messages.Where(m => m.Role == ChatRole.Tool).SelectMany(m => m.Contents).OfType<FunctionResultContent>().Select(r => Assert.IsType<string>(r.Result)).ToList();
+        Assert.Equal((2 * ReplyTools.MaxCallsPerRun) + 2, results.Count);
+        Assert.All(results.Take(ReplyTools.MaxCallsPerRun), r => Assert.StartsWith("Error: Requested function", r, StringComparison.Ordinal));
+        Assert.All(results.Skip(ReplyTools.MaxCallsPerRun).Take(ReplyTools.MaxCallsPerRun), r => Assert.DoesNotContain("tool call limit", r, StringComparison.Ordinal));
+        Assert.All(results.TakeLast(2), r => Assert.Contains("tool call limit", r, StringComparison.Ordinal));
+    }
+
     [Theory]
     [InlineData("propose_follow_up_task", """{ "title": "Refund", "confirm": true }""")]
     [InlineData("propose_follow_up_task", """{ "title": "Refund", "status": "Confirmed", "id": "00000000-0000-0000-0000-000000000000" }""")]
