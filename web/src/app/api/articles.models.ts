@@ -7,6 +7,11 @@ export interface ArticleListItem {
   updatedAt: string;
 }
 
+/** `GET /api/articles/{slug}`; the body is Markdown without its front matter. */
+export interface ArticleDetail extends ArticleListItem {
+  bodyMarkdown: string;
+}
+
 /** One hit of `GET /api/search`; `similarity` is cosine similarity, 1 being identical. */
 export interface SearchResult {
   articleSlug: string;

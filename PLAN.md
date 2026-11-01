@@ -297,11 +297,14 @@ These come from the current API and must be checked against the SDK version in u
 | `tool_call` | `{ "name": "lookup_order_status", "arguments": {...}, "result": {...} }` or `{ "name": "propose_follow_up_task", "proposal": { "id", "title", "notes", "dueDate" } }` |
 | `citations` | `{ "citations": [ { "marker": 1, "articleSlug", "articleTitle" } ], "removed": [7] }` |
 | `usage` | `{ "inputTokens", "outputTokens", "costUsd", "estimated" }` |
-| `error` | `{ "code": "model_unavailable" \| "budget_exceeded" \| "model_refused" \| "timeout", "message" }` |
+| `error` | `{ "code": "model_unavailable" \| "budget_exceeded" \| "model_refused" \| "timeout" \| "internal_error", "message" }` |
 | `done` | `{ "replyRunId" }` |
 
 - A stream ends with exactly one `done` or one `error`
 - `citations` and `usage` come after the last `token` and before `done`
+- **Error codes:** `timeout` is a `ModelUnavailableException` with `IsTimeout`; `model_unavailable` is any other one. Embedding providers aren't behind the chat pipeline, so `RetrievalService` maps their failures to `ModelUnavailableException` (an unrequested cancellation is a timeout, an HTTP error keeps its status) and a failed retrieval gets `model_unavailable` or `timeout` too; `budget_exceeded` and `model_refused` match their exceptions; `internal_error` is anything else (a bug), logged with its exception. The `message` is fixed text per code, never the exception's message. The caller's own cancellation sends nothing: the stream just ends, the model call's row says `Cancelled`, and the reply logs `was cancelled`
+- `citations` has one entry per distinct valid marker, in marker order, so every marker can be linked; two markers can name the same article. `usage` is the request's total: the provider's streamed usage, or the estimate (`estimated: true`), priced like the usage rows (6.6)
+- **Client:** the SSE parser (`web/src/app/api/sse.ts`) handles frames split across chunks, several frames in one chunk, and `\n`, `\r\n` or `\r` line endings. A stream that ends without `done` or `error` is shown as a dropped connection. Citations link to the article page, `/articles/<slug>`
 - **Client behavior:** one active reply per ticket page. Clicking "Suggest reply" again aborts the current `fetch` first. Leaving the page aborts it too
 
 ## 8. Retrieval and citations
@@ -317,8 +320,10 @@ These come from the current API and must be checked against the SDK version in u
 | --- | --- | --- |
 | `Retrieval:MinSimilarity` | `0.5` | Results below this cosine similarity are dropped (0–1) |
 | `Retrieval:EmbeddingBatchSize` | `16` | Chunks per embedding request during the startup sync (1–256) |
+| `Retrieval:ReplyChunks` | `5` | Chunks a suggested reply retrieves before the token budget trims them (1–10) |
 
-- **Citations:** retrieved chunks are numbered `[1]`…`[N]` in the prompt. After the stream, the server parses markers from the full text; numbers outside `1…N` go into `removed` and are logged. Valid numbers map to chunks, then to articles, with duplicates removed
+- **Reply retrieval:** the query is the ticket's subject, a blank line and the body, cut at a word boundary to 1,000 characters (embedding models read only so much; `mxbai-embed-large` takes 512 tokens). The top `Retrieval:ReplyChunks` chunks (default 5) above the minimum similarity are kept, then trimmed to the token budget (6.4). With none left, `{{sources}}` says no articles matched. Article text is escaped like ticket text, for `ticket` and `sources` tags
+- **Citations:** retrieved chunks are numbered `[1]`…`[N]` in the prompt. After the stream, the server parses markers from the full text (`[2]`, `[ 3 ]`, `[1, 2]`, adjacent like `[1][2]`; ASCII digits, at most 9); numbers outside `1…N` go into `removed` and are logged. Valid numbers map to chunks, then to articles, with duplicates removed
 - **UI:** valid markers become links to the article; invalid ones stay as plain text
 
 ## 9. Structured output

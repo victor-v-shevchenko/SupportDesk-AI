@@ -12,11 +12,22 @@ public static class CheckedEmbeddings
         int dimensions,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(generator);
+        ArgumentNullException.ThrowIfNull(texts);
+
         var embeddings = await generator.GenerateAsync(texts, cancellationToken: cancellationToken);
-        if (embeddings.Count != texts.Count)
+        return Check(embeddings, texts.Count, model, dimensions);
+    }
+
+    /// <summary>The vectors of <paramref name="embeddings"/>, after checking there are <paramref name="count"/> of them, each of <paramref name="dimensions"/>.</summary>
+    public static IReadOnlyList<ReadOnlyMemory<float>> Check(GeneratedEmbeddings<Embedding<float>> embeddings, int count, string model, int dimensions)
+    {
+        ArgumentNullException.ThrowIfNull(embeddings);
+
+        if (embeddings.Count != count)
         {
             throw new InvalidOperationException(
-                $"The embedding model '{model}' returned {embeddings.Count} vectors for {texts.Count} texts.");
+                $"The embedding model '{model}' returned {embeddings.Count} vectors for {count} texts.");
         }
 
         var wrong = embeddings.FirstOrDefault(e => e.Vector.Length != dimensions);

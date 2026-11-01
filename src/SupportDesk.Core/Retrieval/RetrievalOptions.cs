@@ -14,4 +14,8 @@ public sealed class RetrievalOptions
     /// <summary>How many chunks go to the embedding provider in one request during the startup sync.</summary>
     [Range(1, 256)]
     public int EmbeddingBatchSize { get; set; } = 16;
+
+    /// <summary>How many chunks a suggested reply retrieves before the token budget trims them (PLAN.md 6.4).</summary>
+    [Range(1, 10)]
+    public int ReplyChunks { get; set; } = 5;
 }

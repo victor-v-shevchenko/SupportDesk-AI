@@ -82,3 +82,10 @@ Entry format (from CLAUDE.md):
 - What was wrong: when a summary over 600 characters had no sentence end that fit, `SummaryOutput` looked only for a space to cut at, so text broken by newlines was cut mid-word, and a cut could end in `foo,…`.
 - Fix: the fallback cut looks for any whitespace and drops trailing commas, semicolons and colons before the ellipsis (step 6 PR).
 - Test: `SummaryOutputTests.A_cut_without_a_sentence_end_breaks_at_newlines_too_and_drops_trailing_commas`
+
+## 2026-11-01 — Embedding failures during a reply showed as internal errors
+- Step: 5
+- Found by: review subagent
+- What was wrong: the embedding generator isn't behind the chat pipeline's error mapping, so a retrieval failure (Ollama down, an HTTP error, an `HttpClient` timeout) reached the reply as a raw exception and became `internal_error`, logged with the provider's exception, instead of `model_unavailable` or `timeout`.
+- Fix: `RetrievalService` maps embedding failures to `ModelUnavailableException` with fixed text, keeping the status and marking unrequested cancellations as timeouts (step 5 PR).
+- Test: `RetrievalServiceTests.An_embedding_provider_failure_becomes_ModelUnavailableException`

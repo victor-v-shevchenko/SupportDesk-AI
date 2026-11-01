@@ -9,6 +9,7 @@ builder.Services.AddSupportDeskApi();
 builder.Services.AddSupportDeskData();
 builder.Services.AddSupportDeskAi();
 builder.Services.AddSupportDeskRetrieval();
+builder.Services.AddSupportDeskReplies();
 builder.Services.AddSupportDeskClassification();
 builder.Services.AddSupportDeskSummary();
 
