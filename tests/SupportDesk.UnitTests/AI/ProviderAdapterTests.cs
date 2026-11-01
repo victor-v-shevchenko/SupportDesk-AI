@@ -232,6 +232,31 @@ public class ProviderAdapterTests
         Assert.Equal("string", orderNumber.GetProperty("type").GetString());
     }
 
+    /// <summary>
+    /// OllamaSharp puts a tool result in an envelope of its own (call ID and result, as JSON), so the model sees the
+    /// <c>&lt;tool_result&gt;</c> block as an escaped string inside it (PLAN.md 10). This pins what the model reads.
+    /// </summary>
+    [Fact]
+    public async Task Ollama_sends_a_tool_result_inside_its_own_json_envelope()
+    {
+        using var handler = new StubHttpHandler(HttpStatusCode.OK, """
+            {"model":"qwen2.5:7b","created_at":"2026-11-01T00:00:00Z","message":{"role":"assistant","content":"Hello"},"done":true,"done_reason":"stop","prompt_eval_count":3,"eval_count":1}
+            """, "application/x-ndjson");
+        using var client = Pipeline(Ollama(handler), new OllamaErrorClassifier());
+        List<ChatMessage> messages =
+        [
+            new(ChatRole.User, "Where is KO-205002?"),
+            new(ChatRole.Assistant, [new FunctionCallContent("call-1", ReplyTools.LookupOrderStatus, new Dictionary<string, object?> { ["orderNumber"] = "KO-205002" })]),
+            new(ChatRole.Tool, [new FunctionResultContent("call-1", ToolResult.Wrap(new { found = false }))]),
+        ];
+
+        await client.GetStreamingResponseAsync(messages, ReplyOptions, Ct).ToChatResponseAsync(Ct);
+
+        var sent = JsonDocument.Parse(Assert.Single(handler.Requests)).RootElement.GetProperty("messages").EnumerateArray().ToList();
+        var tool = sent.Single(m => m.GetProperty("role").GetString() == "tool");
+        Assert.Equal("""{"CallId":"call-1","Result":"<tool_result>\n{\"found\":false}\n</tool_result>"}""", tool.GetProperty("content").GetString());
+    }
+
     // One attempt: these tests are about how each SDK's errors are mapped; RetryTimeoutMiddlewareTests covers retries
     private static IChatClient Pipeline(IChatClient provider, IModelErrorClassifier classifier) =>
         TestPipeline.Create(provider, classifier: classifier, configure: o => o.Retry.MaxAttempts = 1).Client;

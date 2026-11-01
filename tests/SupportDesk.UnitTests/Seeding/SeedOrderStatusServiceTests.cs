@@ -28,4 +28,23 @@ public class SeedOrderStatusServiceTests
     {
         Assert.Null(await _orders.FindAsync(orderNumber, Ct));
     }
+
+    [Fact]
+    public async Task A_failed_load_is_tried_again_on_the_next_lookup()
+    {
+        var folder = Directory.CreateTempSubdirectory("seed-").FullName;
+        try
+        {
+            var orders = new SeedOrderStatusService(Options.Create(new SeedOptions { Path = folder }));
+            await Assert.ThrowsAsync<FileNotFoundException>(() => orders.FindAsync("KO-205002", Ct));
+
+            File.Copy(Path.Combine(AppContext.BaseDirectory, "seed", SeedFiles.OrdersFile), Path.Combine(folder, SeedFiles.OrdersFile));
+
+            Assert.NotNull(await orders.FindAsync("KO-205002", Ct));
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
 }

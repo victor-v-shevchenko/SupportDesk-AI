@@ -1,5 +1,7 @@
 /** The events of `POST /api/tickets/{id}/reply` (PLAN.md 7). */
 
+import { ProposalStatus } from './follow-ups.models';
+
 export type ReplyErrorCode = 'model_unavailable' | 'budget_exceeded' | 'model_refused' | 'timeout' | 'internal_error';
 
 export interface Citation {
@@ -26,6 +28,8 @@ export interface ProposalPayload {
   title: string;
   notes: string;
   dueDate: string | null;
+  /** `Pending` unless a retry in the same run found it already confirmed or expired. */
+  status: ProposalStatus;
 }
 
 /** A `tool_call` event, sent after the tool ran (PLAN.md 7, 10). */

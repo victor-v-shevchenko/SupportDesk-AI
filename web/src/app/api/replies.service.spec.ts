@@ -64,7 +64,7 @@ describe('RepliesService', () => {
       new Response(
         streamOf([
           'event: tool_call\ndata: {"name":"lookup_order_status","arguments":{"orderNumber":"KO-205002"},"result":{"found":false}}\n\n',
-          'event: tool_call\ndata: {"name":"propose_follow_up_task","proposal":{"id":"p1","title":"Trace","notes":"","dueDate":null}}\n\n',
+          'event: tool_call\ndata: {"name":"propose_follow_up_task","proposal":{"id":"p1","title":"Trace","notes":"","dueDate":null,"status":"Pending"}}\n\n',
           'event: done\ndata: {"replyRunId":"r1"}\n\n',
         ]),
         { headers: { 'Content-Type': 'text/event-stream' } },
@@ -75,7 +75,7 @@ describe('RepliesService', () => {
 
     expect(events).toEqual([
       { type: 'tool_call', name: 'lookup_order_status', arguments: { orderNumber: 'KO-205002' }, result: { found: false } },
-      { type: 'tool_call', name: 'propose_follow_up_task', proposal: { id: 'p1', title: 'Trace', notes: '', dueDate: null } },
+      { type: 'tool_call', name: 'propose_follow_up_task', proposal: { id: 'p1', title: 'Trace', notes: '', dueDate: null, status: 'Pending' } },
       { type: 'done', replyRunId: 'r1' },
     ]);
   });

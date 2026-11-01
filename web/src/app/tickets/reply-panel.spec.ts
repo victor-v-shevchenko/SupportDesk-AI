@@ -142,7 +142,7 @@ describe('ReplyPanel', () => {
     streams[0].push(
       { type: 'tool_call', name: 'lookup_order_status', arguments: { orderNumber: 'KO-208815' }, result: { found: false } },
       { type: 'token', text: "I couldn't find that order. " },
-      { type: 'tool_call', name: 'propose_follow_up_task', proposal: { id: 'p1', title: 'Trace the parcel', notes: '', dueDate: null } },
+      { type: 'tool_call', name: 'propose_follow_up_task', proposal: { id: 'p1', title: 'Trace the parcel', notes: '', dueDate: null, status: 'Pending' } },
     );
     let el = await settle(fixture);
 
@@ -155,7 +155,7 @@ describe('ReplyPanel', () => {
 
     // A repeated proposal in the same run is the same saved proposal: its card is updated, not doubled
     streams[0].push(
-      { type: 'tool_call', name: 'propose_follow_up_task', proposal: { id: 'p1', title: 'Open a carrier trace', notes: 'Three weeks late.', dueDate: '2026-11-03' } },
+      { type: 'tool_call', name: 'propose_follow_up_task', proposal: { id: 'p1', title: 'Open a carrier trace', notes: 'Three weeks late.', dueDate: '2026-11-03', status: 'Pending' } },
       { type: 'done', replyRunId: 'r1' },
     );
     el = await settle(fixture);
@@ -171,7 +171,7 @@ describe('ReplyPanel', () => {
     fixture.componentInstance.followUpsChanged.subscribe(() => changes++);
     click(fixture.nativeElement, '.suggest');
     streams[0].push(
-      { type: 'tool_call', name: 'propose_follow_up_task', proposal: { id: 'p1', title: 'Trace the parcel', notes: '', dueDate: null } },
+      { type: 'tool_call', name: 'propose_follow_up_task', proposal: { id: 'p1', title: 'Trace the parcel', notes: '', dueDate: null, status: 'Pending' } },
       { type: 'done', replyRunId: 'r1' },
     );
     let el = await settle(fixture);
@@ -186,6 +186,16 @@ describe('ReplyPanel', () => {
 
     expect(el.querySelector('app-proposal-card .confirmed')?.textContent).toContain('Task created');
     expect(changes).toBe(2);
+  });
+
+  it('shows a proposal the server reports as already confirmed without a Confirm button', async () => {
+    const fixture = create();
+    click(fixture.nativeElement, '.suggest');
+    streams[0].push({ type: 'tool_call', name: 'propose_follow_up_task', proposal: { id: 'p1', title: 'Trace', notes: '', dueDate: null, status: 'Confirmed' } });
+    const el = await settle(fixture);
+
+    expect(el.querySelector('app-proposal-card .confirmed')).not.toBeNull();
+    expect(el.querySelector('app-proposal-card .confirm')).toBeNull();
   });
 
   it('clears the cards when a new reply starts', async () => {

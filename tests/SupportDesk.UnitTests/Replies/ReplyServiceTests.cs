@@ -6,6 +6,7 @@ using Microsoft.Extensions.Time.Testing;
 using SupportDesk.Core.AI;
 using SupportDesk.Core.AI.Prompts;
 using SupportDesk.Core.AI.Usage;
+using SupportDesk.Core.FollowUps;
 using SupportDesk.Core.Orders;
 using SupportDesk.Core.Replies;
 using SupportDesk.Core.Replies.Tools;
@@ -330,7 +331,8 @@ public sealed class ReplyServiceTests : IDisposable
 
         Assert.DoesNotContain(events, e => e is ReplyToolCall);
         Assert.IsType<ReplyDone>(events[^1]);
-        Assert.Contains("not found", ToolResultSentIn(provider.Messages[1], "call-1"), StringComparison.Ordinal);
+        // The tool loop's own text, not wrapped in <tool_result> (PLAN.md 10); it repeats only the name the model sent
+        Assert.Equal("Error: Requested function \"create_follow_up_task\" not found.", ToolResultSentIn(provider.Messages[1], "call-1"));
         Assert.Empty(followUps.Upserts);
         Assert.Equal(0, followUps.Confirms);
     }
@@ -372,7 +374,7 @@ public sealed class ReplyServiceTests : IDisposable
         var first = ((ReplyProposal)events[1]).Proposal;
         var second = ((ReplyProposal)events[2]).Proposal;
         Assert.Equal("Trace the parcel", first.Title);
-        Assert.Equal(new ProposalPayload(first.Id, "Open a carrier trace", "Three weeks late.", new DateOnly(2026, 11, 4)), second);
+        Assert.Equal(new ProposalPayload(first.Id, "Open a carrier trace", "Three weeks late.", new DateOnly(2026, 11, 4), ProposalStatus.Pending), second);
 
         // Both calls went to the same (ticket, run), so the second updated the first instead of adding one
         var runId = ((ReplyDone)events[^1]).ReplyRunId;
@@ -403,15 +405,17 @@ public sealed class ReplyServiceTests : IDisposable
     {
         var provider = new ScriptedChatClient(
             TimeProvider.System,
-            Steps(ToolCall("call-1", ReplyTools.LookupOrderStatus, Json("""{ "orderNumber": "KO-205002" }""")), Usage(900, 200)),
+            Steps(ToolCall("call-1", ReplyTools.LookupOrderStatus, Json("""{ "orderNumber": "KO-205002" }""")), Usage(500, 100)),
+            Steps(ToolCall("call-2", ReplyTools.LookupOrderStatus, Json("""{ "orderNumber": "KO-205002" }""")), Usage(500, 100)),
             Steps(Text("never")));
         var service = Service(provider, new StubRetrieval(), o => o.Budget.MaxTokensPerRequest = 1000);
 
         var events = await ReadAllAsync(service.StreamAsync(Ticket(), Ct));
 
-        Assert.Equal([typeof(ReplyOrderLookup), typeof(ReplyError)], events.Select(e => e.GetType()));
-        Assert.Equal(ReplyErrorCodes.BudgetExceeded, ((ReplyError)events[1]).Code);
-        Assert.Equal(1, provider.Calls);
+        // Each call alone is under the cap; together they're over it, so the third call is refused
+        Assert.Equal([typeof(ReplyOrderLookup), typeof(ReplyOrderLookup), typeof(ReplyError)], events.Select(e => e.GetType()));
+        Assert.Equal(ReplyErrorCodes.BudgetExceeded, ((ReplyError)events[2]).Code);
+        Assert.Equal(2, provider.Calls);
     }
 
     private static Dictionary<string, object?> Json(string json) => new(ReplyToolsTests.Arguments(json));

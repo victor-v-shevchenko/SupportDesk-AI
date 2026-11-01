@@ -5,7 +5,7 @@ import { FollowUpTask, ProposalStatus } from '../api/follow-ups.models';
 import { ProposalPayload } from '../api/replies.models';
 import { ProposalCard } from './proposal-card';
 
-const proposal: ProposalPayload = { id: 'p1', title: 'Open a carrier trace', notes: 'No delivery after three weeks.', dueDate: '2026-11-03' };
+const proposal: ProposalPayload = { id: 'p1', title: 'Open a carrier trace', notes: 'No delivery after three weeks.', dueDate: '2026-11-03', status: 'Pending' };
 const task: FollowUpTask = { id: 4, proposalId: 'p1', title: proposal.title, notes: proposal.notes, dueDate: proposal.dueDate, createdAt: '2026-11-01T12:00:00Z' };
 
 describe('ProposalCard', () => {

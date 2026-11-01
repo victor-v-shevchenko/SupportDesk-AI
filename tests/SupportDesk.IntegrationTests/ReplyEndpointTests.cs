@@ -153,6 +153,7 @@ public class ReplyEndpointTests(PostgresFixture postgres)
         Assert.Equal("propose_follow_up_task", proposal.GetProperty("name").GetString());
         var payload = proposal.GetProperty("proposal");
         Assert.Equal("Open a carrier trace for KO-208815", payload.GetProperty("title").GetString());
+        Assert.Equal("Pending", payload.GetProperty("status").GetString());
         var replyRunId = events[^1].Data.GetProperty("replyRunId").GetGuid();
 
         await using var db = api.CreateDbContext();

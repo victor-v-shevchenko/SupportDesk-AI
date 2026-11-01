@@ -13,6 +13,20 @@ Entry format (from CLAUDE.md):
 - Test: <test name that now covers it>
 ```
 
+## 2026-11-01 — A stray cancellation could stop the API through the proposal expiry check
+- Step: 8
+- Found by: review subagent
+- What was wrong: `ProposalExpiryService` let every `OperationCanceledException` out of a run, so a cancellation that wasn't shutdown (a driver or connection-pool timeout) faulted the background service, and the host's default behavior stops the app.
+- Fix: a run's failure is caught unless the service's own token is cancelled, so it's logged and the next run tries again (step 8 PR).
+- Test: `ProposalExpiryServiceTests.A_cancellation_that_is_not_shutdown_is_a_failed_run_not_a_crash`
+
+## 2026-11-01 — A failed orders.json load broke every order lookup until restart
+- Step: 8
+- Found by: review subagent
+- What was wrong: `SeedOrderStatusService` cached its load in a `Lazy<Task>`, which keeps a faulted task, so one failed read on the first lookup made every later lookup fail until the app restarted.
+- Fix: a faulted load is replaced on the next lookup (step 8 PR).
+- Test: `SeedOrderStatusServiceTests.A_failed_load_is_tried_again_on_the_next_lookup`
+
 ## 2026-10-31 — Waiting for the startup lock timed out after 30 seconds
 - Step: 2
 - Found by: review subagent

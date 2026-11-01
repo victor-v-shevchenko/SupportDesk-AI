@@ -154,7 +154,7 @@ internal sealed class ProposeFollowUpTaskFunction(IFollowUpRepository followUps,
         return title is null || arguments.Errors.Count > 0 ? null : async cancellationToken =>
         {
             var proposal = await followUps.UpsertProposalAsync(new NewProposal(ticketId, replyRunId, title, notes, dueInDays), cancellationToken);
-            owner.Record(new ReplyProposal(new ProposalPayload(proposal.Id, proposal.Title, proposal.Notes, proposal.DueDate)));
+            owner.Record(new ReplyProposal(new ProposalPayload(proposal.Id, proposal.Title, proposal.Notes, proposal.DueDate, proposal.Status)));
             return new ProposalResult(StatusText(proposal.Status), proposal.Id);
         };
     }

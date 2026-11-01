@@ -64,7 +64,7 @@ test('shows the error message when the reply fails', async ({ page }) => {
 });
 
 test('shows the order and proposal cards and confirms the proposal into a task', async ({ page }) => {
-  const proposal = { id: '0196f1a2-0000-7000-8000-000000000001', title: 'Open a carrier trace for KO-205002', notes: 'Still delayed after a week.', dueDate: '2026-11-03' };
+  const proposal = { id: '0196f1a2-0000-7000-8000-000000000001', title: 'Open a carrier trace for KO-205002', notes: 'Still delayed after a week.', dueDate: '2026-11-03', status: 'Pending' };
   const task = { id: 1, proposalId: proposal.id, title: proposal.title, notes: proposal.notes, dueDate: proposal.dueDate, createdAt: '2026-11-01T12:00:00Z' };
   let confirmed = false;
   await page.route('/api/health', (route) => route.fulfill({ json: { status: 'ok', database: 'ok' } }));

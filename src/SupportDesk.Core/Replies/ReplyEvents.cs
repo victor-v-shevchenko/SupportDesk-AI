@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using SupportDesk.Core.FollowUps;
 
 namespace SupportDesk.Core.Replies;
 
@@ -34,7 +35,8 @@ public sealed record OrderNotFound
 /// <summary><c>propose_follow_up_task</c>: the saved proposal, which the user can confirm.</summary>
 public sealed record ReplyProposal(ProposalPayload Proposal) : ReplyToolCall(Tools.ReplyTools.ProposeFollowUpTask);
 
-public sealed record ProposalPayload(Guid Id, string Title, string Notes, DateOnly? DueDate);
+/// <summary><see cref="Status"/> is <c>Pending</c> unless a retry in the same run found the proposal already confirmed or expired.</summary>
+public sealed record ProposalPayload(Guid Id, string Title, string Notes, DateOnly? DueDate, ProposalStatus Status);
 
 /// <summary>The checked citation markers: one entry per distinct valid marker and the out-of-range numbers, both sorted by number.</summary>
 public sealed record ReplyCitations(IReadOnlyList<Citation> Citations, IReadOnlyList<int> Removed) : ReplyEvent;

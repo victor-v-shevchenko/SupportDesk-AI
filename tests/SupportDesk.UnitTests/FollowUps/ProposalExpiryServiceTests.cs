@@ -56,6 +56,23 @@ public class ProposalExpiryServiceTests
         Assert.Contains(logs.Messages, m => m.Contains("Marked 1 follow-up proposals as expired", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task A_cancellation_that_is_not_shutdown_is_a_failed_run_not_a_crash()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var repository = new CountingRepository { FirstFailure = new TaskCanceledException("connection pool timeout") };
+        using var services = Services(repository);
+        using var service = new ProposalExpiryService(services.GetRequiredService<IServiceScopeFactory>(), time, NullLogger<ProposalExpiryService>.Instance);
+
+        await service.StartAsync(Ct);
+        await WaitForAsync(() => repository.Runs == 1);
+        time.Advance(FollowUpRules.ExpiryCheckInterval);
+        await WaitForAsync(() => repository.Runs == 2);
+        await service.StopAsync(Ct);
+
+        Assert.Null(service.ExecuteTask?.Exception);
+    }
+
     private static ServiceProvider Services(IFollowUpRepository repository) =>
         new ServiceCollection().AddScoped(_ => repository).BuildServiceProvider();
 
@@ -77,10 +94,17 @@ public class ProposalExpiryServiceTests
 
         public bool FailFirst { get; init; }
 
+        public Exception? FirstFailure { get; init; }
+
         public Task<int> ExpireAsync(CancellationToken cancellationToken)
         {
             var run = Interlocked.Increment(ref _runs);
-            return FailFirst && run == 1 ? throw new InvalidOperationException("database down") : Task.FromResult(1);
+            if (run == 1 && (FirstFailure ?? (FailFirst ? new InvalidOperationException("database down") : null)) is { } failure)
+            {
+                throw failure;
+            }
+
+            return Task.FromResult(1);
         }
 
         public Task<FollowUpProposal> UpsertProposalAsync(NewProposal proposal, CancellationToken cancellationToken) => throw new NotSupportedException();

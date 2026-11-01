@@ -70,7 +70,7 @@
           },
           {
             "steps": [
-              { "type": "text", "text": "An agent will look into it with the carrier and get back to you [1]." },
+              { "type": "text", "text": "If the number is right, an agent can check with the carrier whether the parcel was lost [1]." },
               { "type": "usage", "inputTokens": 1500, "outputTokens": 20 }
             ]
           }

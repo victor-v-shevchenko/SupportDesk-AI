@@ -44,7 +44,7 @@ export const replyErrorMessages: Record<string, string> = {
             @if (call.name === 'lookup_order_status') {
               <app-order-status-card [orderNumber]="call.arguments.orderNumber" [result]="call.result" />
             } @else {
-              <app-proposal-card [proposal]="call.proposal" (confirmed)="followUpsChanged.emit()" />
+              <app-proposal-card [proposal]="call.proposal" [status]="call.proposal.status" (confirmed)="followUpsChanged.emit()" />
             }
           }
         </div>

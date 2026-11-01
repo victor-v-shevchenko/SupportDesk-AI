@@ -37,7 +37,8 @@ public sealed partial class ProposalExpiryService(IServiceScopeFactory scopes, T
                 LogExpired(expired);
             }
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        // Only shutdown ends the service; any other failure, a cancellation the driver raised included, waits for the next run
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
             LogFailed(exception);
         }
