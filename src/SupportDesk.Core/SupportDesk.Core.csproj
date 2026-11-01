@@ -1,3 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.AI" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+  </ItemGroup>
+
+  <!-- prompts/ and the fake provider's scenarios go next to the app (and the test assemblies), where AiOptions looks for them by default -->
+  <ItemGroup>
+    <Content Include="..\..\prompts\**\*" LinkBase="prompts" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\..\tests\fixtures\fake-scenarios.json" Link="fixtures\fake-scenarios.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

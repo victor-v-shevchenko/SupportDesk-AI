@@ -28,7 +28,10 @@ Run inside the dev container.
 | --- | --- |
 | Start everything (dev container) | `docker compose up -d db` then `dotnet run --project src/SupportDesk.Api` and `npm --prefix web start` |
 | Start everything (Docker only) | `docker compose up --build` |
-| Start with the fake model (from step 3a; until then the variables are ignored) | `AI__Chat__Provider=Fake AI__Embeddings__Provider=Fake dotnet run --project src/SupportDesk.Api` |
+| Start with the fake model | `AI__Chat__Provider=Fake AI__Embeddings__Provider=Fake dotnet run --project src/SupportDesk.Api` |
+| Ollama in Docker instead of on the host (optional) | `docker compose --profile ollama up -d ollama` then `docker compose exec ollama ollama pull qwen2.5:1.5b` (or `qwen2.5:7b`, about 4.7 GB) |
+| Start against Ollama in Docker | `AI__Ollama__Endpoint=http://ollama:11434 dotnet run --project src/SupportDesk.Api` |
+| Set a provider key for `dotnet run` (Anthropic, OpenAI, Voyage) | `dotnet user-secrets set AI:Anthropic:ApiKey <key> --project src/SupportDesk.Api` |
 | Build | `dotnet build` |
 | Restore local tools (`dotnet ef`, Sonar scanner) | `dotnet tool restore` |
 | Tests (CI set) | `dotnet test --filter "Category!=Eval"` |
@@ -134,5 +137,5 @@ Keep this table correct: when a step changes a command, update it in the same pu
 
 - The API, the Angular dev server and Playwright run inside the container and reach each other on `localhost`
 - Testcontainers works through the `docker-outside-of-docker` feature
-- Ollama runs on the host at `http://host.docker.internal:11434`
+- Ollama runs on the host at `http://host.docker.internal:11434`, or in the optional `ollama` compose service at `http://ollama:11434`
 - Chromium needs `--no-sandbox` in the container; the Playwright MCP server runs headless

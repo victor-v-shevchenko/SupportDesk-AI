@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <!-- The VSTest variant of xunit.v3, so dotnet test takes the trait filter and coverlet.collector works -->
     <PackageReference Include="xunit.v3.mtp-off" />
