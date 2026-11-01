@@ -29,6 +29,9 @@ public sealed class ReplyTools
     public const string LookupOrderStatus = "lookup_order_status";
     public const string ProposeFollowUpTask = "propose_follow_up_task";
 
+    /// <summary>Tool calls one run may run, across both tools and every round (PLAN.md 10); later calls get an error result.</summary>
+    public const int MaxCallsPerRun = 5;
+
     private readonly ConcurrentDictionary<string, ReplyToolCall> _events = new(StringComparer.Ordinal);
 
     internal ReplyTools(IOrderStatusService orders, IFollowUpRepository followUps, int ticketId, Guid replyRunId)

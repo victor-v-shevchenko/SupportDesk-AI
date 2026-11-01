@@ -36,6 +36,7 @@ While writing a reply, the model can look up an order's status and propose a fol
 - The `tool-call-proposal` scenario (T-1008) now looks up its order first: `KO-208815` isn't in `orders.json`, so the same scenario covers the unknown-order criterion
 - Ticket and article text also have `tool_result` tags escaped (PLAN.md 6.3), since the prompt tells the model to trust tool results as data
 - Function approval exists in Microsoft.Extensions.AI 10.11 but isn't used; the reasons are in PLAN.md 10
+- Added after step 9 (`fix/tool-call-cap`): a reply run runs at most 5 tool calls in all (`ReplyTools.MaxCallsPerRun`). Step 9 showed the round limit alone lets one model answer fan out into any number of lookups, upserts and `tool_call` events. Every call past the cap gets an error result, and nothing runs (PLAN.md 10)
 
 ## Out of scope
 
@@ -51,6 +52,7 @@ Editing proposals. Other tools.
 - [ ] Confirming twice creates one task; confirming an expired proposal returns `409`
 - [ ] A retried or repeated proposal call in the same run leaves one proposal
 - [ ] The tool loop stops at 3 iterations and the request cap still applies
+- [ ] A reply run runs at most 5 tool calls; later calls get an error result, run nothing and send no `tool_call` event (added after step 9)
 - [ ] `tool_call` events arrive in order, and the panel shows the cards
 
 ## Tests
