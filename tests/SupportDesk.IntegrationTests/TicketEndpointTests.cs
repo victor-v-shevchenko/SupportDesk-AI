@@ -24,11 +24,12 @@ public class TicketEndpointTests(PostgresFixture postgres)
         var items = json.RootElement.EnumerateArray().ToList();
         Assert.Equal(25, items.Count);
         Assert.Equal(
-            ["category", "createdAt", "id", "number", "priority", "status", "subject"],
+            ["category", "classificationStatus", "createdAt", "id", "number", "priority", "status", "subject"],
             items[0].EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal));
         Assert.Equal("T-1025", items[0].GetProperty("number").GetString());
         Assert.Equal("Open", items[0].GetProperty("status").GetString());
         Assert.Equal(JsonValueKind.Null, items[0].GetProperty("category").ValueKind);
+        Assert.Equal("NotRun", items[0].GetProperty("classificationStatus").GetString());
         var created = items.Select(i => i.GetProperty("createdAt").GetDateTimeOffset()).ToList();
         Assert.Equal(created.OrderDescending(), created);
     }

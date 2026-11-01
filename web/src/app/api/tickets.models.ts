@@ -13,6 +13,7 @@ export interface TicketListItem {
   status: TicketStatus;
   category: Category | null;
   priority: Priority | null;
+  classificationStatus: ClassificationStatus;
   createdAt: string;
 }
 
@@ -22,6 +23,7 @@ export interface TicketSummary {
   generatedAt: string;
 }
 
+/** The saved classification: in the ticket detail, and the response of `POST /api/tickets/{id}/classification`. */
 export interface TicketClassification {
   status: ClassificationStatus;
   category: Category | null;

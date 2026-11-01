@@ -1,6 +1,7 @@
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Net;
+using System.Text.Json;
 using Anthropic;
 using Anthropic.Core;
 using Microsoft.Extensions.AI;
@@ -8,6 +9,8 @@ using OllamaSharp;
 using OpenAI;
 using SupportDesk.Api.AI;
 using SupportDesk.Core.AI;
+using SupportDesk.Core.Classification;
+using SupportDesk.Core.Tickets;
 
 namespace SupportDesk.UnitTests.AI;
 
@@ -119,6 +122,39 @@ public class ProviderAdapterTests
         Assert.DoesNotContain("top_p", body, StringComparison.Ordinal);
         Assert.DoesNotContain("top_k", body, StringComparison.Ordinal);
         Assert.DoesNotContain("supportdesk", body, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// PLAN.md 6.7: forced tool choice returns a 400 on current models, so structured output must go through
+    /// <c>output_config.format</c>. The adapter (Anthropic 13.3) moves keywords the API doesn't take, such as <c>maxLength</c>,
+    /// into the description, which is one more reason the service validates the answer itself.
+    /// </summary>
+    [Fact]
+    public async Task Anthropic_structured_output_uses_output_config_format_and_no_forced_tool()
+    {
+        using var handler = new StubHttpHandler(HttpStatusCode.OK, """
+            {"id":"msg_1","type":"message","role":"assistant","model":"claude-opus-5-5","content":[{"type":"text","text":"{\"category\":\"Other\",\"priority\":\"Low\",\"reason\":\"A question.\"}"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":12,"output_tokens":20}}
+            """);
+        using var client = Pipeline(Anthropic(handler), new AnthropicErrorClassifier());
+        var options = new AiCallContext(AiFeature.Classification, "classify.v2", 3, "T-1003").ApplyTo(new ChatOptions());
+
+        var response = await client.GetResponseAsync<ClassificationResult>("Classify this ticket.", ClassificationJson.Options, options, cancellationToken: Ct);
+
+        Assert.True(ClassificationValidator.Validate(response.Text).IsValid);
+        using var body = JsonDocument.Parse(Assert.Single(handler.Requests));
+        var request = body.RootElement;
+        Assert.False(request.TryGetProperty("tool_choice", out _));
+        Assert.False(request.TryGetProperty("tools", out _));
+        var format = request.GetProperty("output_config").GetProperty("format");
+        Assert.Equal("json_schema", format.GetProperty("type").GetString());
+        var schema = format.GetProperty("schema");
+        Assert.False(schema.GetProperty("additionalProperties").GetBoolean());
+        Assert.Equal(["category", "priority", "reason"], schema.GetProperty("required").EnumerateArray().Select(e => e.GetString()).Order(StringComparer.Ordinal));
+        var properties = schema.GetProperty("properties");
+        Assert.Equal(Enum.GetNames<Category>(), properties.GetProperty("category").GetProperty("enum").EnumerateArray().Select(e => e.GetString()));
+        var reason = properties.GetProperty("reason");
+        Assert.False(reason.TryGetProperty("maxLength", out _));
+        Assert.Contains("maxLength: 200", reason.GetProperty("description").GetString(), StringComparison.Ordinal);
     }
 
     [Theory]

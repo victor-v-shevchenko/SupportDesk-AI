@@ -1,7 +1,7 @@
 import { HttpClient, httpResource, HttpResourceRef } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { Observable } from 'rxjs';
-import { TicketDetail, TicketListItem, TicketSummary } from './tickets.models';
+import { Observable, firstValueFrom } from 'rxjs';
+import { TicketClassification, TicketDetail, TicketListItem, TicketSummary } from './tickets.models';
 
 @Injectable({ providedIn: 'root' })
 export class TicketsService {
@@ -18,6 +18,11 @@ export class TicketsService {
       const value = id();
       return value ? `/api/tickets/${encodeURIComponent(value)}` : undefined;
     });
+  }
+
+  /** `POST /api/tickets/{id}/classification`: classifies (or reclassifies) the ticket and returns the saved result. */
+  classify(id: number): Promise<TicketClassification> {
+    return firstValueFrom(this.http.post<TicketClassification>(`/api/tickets/${id}/classification`, null));
   }
 
   /** `POST /api/tickets/{id}/summary`: generates and saves a summary, replacing any earlier one. Errors are problem details. */

@@ -2,7 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { TicketDetail } from '../api/tickets.models';
+import { TicketClassification, TicketDetail } from '../api/tickets.models';
 import { TicketDetailPage } from './ticket-detail-page';
 
 const ticket: TicketDetail = {
@@ -16,6 +16,15 @@ const ticket: TicketDetail = {
   createdAt: '2026-10-02T10:31:00Z',
   summary: null,
   classification: { status: 'NotRun', category: null, priority: null, reason: null, promptVersion: null, classifiedAt: null },
+};
+
+const done: TicketClassification = {
+  status: 'Done',
+  category: 'Shipping',
+  priority: 'High',
+  reason: 'The order is late and the customer is waiting on it.',
+  promptVersion: 'classify.v2',
+  classifiedAt: '2026-11-01T12:00:00Z',
 };
 
 describe('TicketDetailPage', () => {
@@ -79,6 +88,73 @@ describe('TicketDetailPage', () => {
 
     expect(el.querySelector('.summary')?.textContent).toContain('Customer is waiting on a delayed tent.');
     expect(el.querySelector('.summary .empty')).toBeNull();
+  });
+
+  it('shows badges, the reason, the prompt version and a Reclassify button for a saved classification', async () => {
+    const fixture = create();
+    http.expectOne('/api/tickets/2').flush({ ...ticket, classification: done });
+    const el = await settle(fixture);
+
+    const section = el.querySelector('.classification')!;
+    expect(section.querySelector('.category')?.textContent).toBe('Shipping');
+    expect(section.querySelector('.priority')?.textContent).toBe('High');
+    expect(section.querySelector('.badges')?.getAttribute('title')).toBe(done.reason);
+    expect(section.querySelector('.reason')?.textContent).toBe(done.reason);
+    expect(section.querySelector('.provenance')?.textContent).toContain('classify.v2');
+    expect(section.querySelector('button.classify')?.textContent?.trim()).toBe('Reclassify');
+  });
+
+  it('shows the needs-manual badge when the model output could not be used', async () => {
+    const fixture = create();
+    http.expectOne('/api/tickets/2').flush({ ...ticket, classification: { ...done, status: 'NeedsManual', category: null, priority: null, reason: null } });
+    const el = await settle(fixture);
+
+    const section = el.querySelector('.classification')!;
+    expect(section.querySelector('.manual')?.textContent).toBe('Needs manual classification');
+    expect(section.querySelector('.category')).toBeNull();
+    expect(section.querySelector('button.classify')?.textContent?.trim()).toBe('Reclassify');
+  });
+
+  it('classifies with one request while the button is disabled, then shows the result', async () => {
+    const fixture = create();
+    http.expectOne('/api/tickets/2').flush(ticket);
+    const el = await settle(fixture);
+    const button = el.querySelector<HTMLButtonElement>('button.classify')!;
+    expect(button.textContent?.trim()).toBe('Classify');
+
+    button.click();
+    button.click();
+    TestBed.tick();
+
+    expect(button.disabled).toBe(true);
+    expect(el.querySelector('.classification [role=status]')?.textContent).toContain('Classifying');
+    const request = http.expectOne('/api/tickets/2/classification');
+    expect(request.request.method).toBe('POST');
+    request.flush(done);
+    await new Promise((resolve) => setTimeout(resolve));
+    await fixture.whenStable();
+
+    const after = el.querySelector<HTMLButtonElement>('button.classify')!;
+    expect(after.disabled).toBe(false);
+    expect(el.querySelector('.classification .category')?.textContent).toBe('Shipping');
+    expect(after.textContent?.trim()).toBe('Reclassify');
+  });
+
+  it('shows the API message on a model error and keeps the saved classification', async () => {
+    const fixture = create();
+    http.expectOne('/api/tickets/2').flush({ ...ticket, classification: done });
+    const el = await settle(fixture);
+
+    el.querySelector<HTMLButtonElement>('button.classify')!.click();
+    http
+      .expectOne('/api/tickets/2/classification')
+      .flush({ status: 503, title: 'The model is unavailable', detail: 'Try again in a moment.' }, { status: 503, statusText: 'Service Unavailable' });
+    await new Promise((resolve) => setTimeout(resolve));
+    await fixture.whenStable();
+
+    expect(el.querySelector('.classification [role=alert]')?.textContent).toContain("Couldn't classify this ticket: Try again in a moment.");
+    expect(el.querySelector('.classification .category')?.textContent).toBe('Shipping');
+    expect(el.querySelector<HTMLButtonElement>('button.classify')!.disabled).toBe(false);
   });
 
   it('shows a newly generated summary without reloading the ticket', async () => {

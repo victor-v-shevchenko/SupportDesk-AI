@@ -6,8 +6,8 @@ import { TicketListItem } from '../api/tickets.models';
 import { TicketsPage } from './tickets-page';
 
 const tickets: TicketListItem[] = [
-  { id: 2, number: 'T-1002', subject: 'Tent order stuck as delayed', status: 'Open', category: null, priority: null, createdAt: '2026-10-02T10:31:00Z' },
-  { id: 1, number: 'T-1001', subject: 'How long does shipping take?', status: 'Closed', category: null, priority: null, createdAt: '2026-10-01T08:14:00Z' },
+  { id: 2, number: 'T-1002', subject: 'Tent order stuck as delayed', status: 'Open', category: 'Shipping', priority: 'High', classificationStatus: 'Done', createdAt: '2026-10-02T10:31:00Z' },
+  { id: 1, number: 'T-1001', subject: 'How long does shipping take?', status: 'Closed', category: null, priority: null, classificationStatus: 'NeedsManual', createdAt: '2026-10-01T08:14:00Z' },
 ];
 
 describe('TicketsPage', () => {
@@ -50,6 +50,19 @@ describe('TicketsPage', () => {
     expect(link?.getAttribute('href')).toBe('/tickets/2');
     expect(rows[1].querySelector('app-ticket-status')?.textContent).toBe('Closed');
     expect(rows[0].querySelector('time')?.getAttribute('datetime')).toBe('2026-10-02T10:31:00Z');
+  });
+
+  it('shows category and priority badges, or the needs-manual badge, in each row', async () => {
+    const fixture = create();
+    http.expectOne('/api/tickets').flush([...tickets, { ...tickets[1], id: 9, number: 'T-1009', classificationStatus: 'NotRun' }]);
+    const el = await settle(fixture);
+
+    const rows = [...el.querySelectorAll('tbody tr')];
+    expect(rows[0].querySelector('.classification .category')?.textContent).toBe('Shipping');
+    expect(rows[0].querySelector('.classification .priority')?.textContent).toBe('High');
+    expect(rows[1].querySelector('.classification .manual')?.textContent).toBe('Needs manual classification');
+    expect(rows[1].querySelector('.classification .category')).toBeNull();
+    expect(rows[2].querySelector('.classification .not-run')?.textContent).toBe('Not classified');
   });
 
   it('shows the empty state when there are no tickets', async () => {

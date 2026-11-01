@@ -165,5 +165,8 @@ public class SummaryServiceTests
         public Task<IReadOnlyList<Ticket>> ListAsync(TicketStatus? status, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<Ticket> CreateAsync(NewTicket ticket, CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<TicketClassification?> SaveClassificationAsync(int id, TicketClassification classification, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 }
