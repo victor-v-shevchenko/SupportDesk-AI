@@ -81,7 +81,8 @@ public sealed class EmbeddingModelSettings
 
 public sealed class OllamaSettings
 {
-    public Uri Endpoint { get; set; } = new("http://host.docker.internal:11434");
+    /// <summary>Set in appsettings.json (Ollama on the host, plain HTTP); required when Ollama is the chat or embedding provider.</summary>
+    public Uri? Endpoint { get; set; }
 }
 
 public sealed class AiTimeoutSettings

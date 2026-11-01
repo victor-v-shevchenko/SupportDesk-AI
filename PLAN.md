@@ -135,7 +135,7 @@ All routes are under `/api`. Errors use RFC 7807 problem details.
 | `AI:Embeddings:Provider` | `Fake`, `Ollama`, `Voyage`, `OpenAI` | `Ollama` |
 | `AI:Embeddings:Model` | model ID; empty means the provider's default | `mxbai-embed-large` (Ollama), `voyage-3.5` (Voyage), `text-embedding-3-small` (OpenAI), `fake-hash` (Fake) |
 | `AI:Embeddings:Dimensions` | `1024` | `1024` |
-| `AI:Ollama:Endpoint` | URL | `http://host.docker.internal:11434` |
+| `AI:Ollama:Endpoint` | URL; required when Ollama is the chat or embedding provider, set only in config (no code default) | `http://host.docker.internal:11434` (plain HTTP: Ollama on the host has no TLS) |
 | `AI:Prompts:<name>` | prompt version | `reply.v1`, `summary.v1`, `classify.v1` (all three required) |
 | `AI:PromptsPath` | folder | `prompts`, resolved from the app's base directory, where the build copies `prompts/` |
 | `AI:Anthropic:Effort:<feature>` | `Low`, `Medium`, `High`, `ExtraHigh` | `Reply` Medium, `Summary` Low, `Classification` Low (see 6.7) |

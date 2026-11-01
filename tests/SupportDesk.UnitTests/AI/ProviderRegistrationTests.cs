@@ -151,6 +151,21 @@ public class ProviderRegistrationTests
     }
 
     [Fact]
+    public void Ollama_needs_an_endpoint_only_when_it_is_a_provider()
+    {
+        var error = AiTestServices.StartupError(new Dictionary<string, string?> { ["AI:Ollama:Endpoint"] = "" });
+        using var withoutOllama = AiTestServices.Build(new Dictionary<string, string?>
+        {
+            ["AI:Ollama:Endpoint"] = "",
+            ["AI:Chat:Provider"] = "Fake",
+            ["AI:Embeddings:Provider"] = "Fake",
+        });
+
+        Assert.Contains("AI:Ollama:Endpoint must be an absolute http or https URL", error.Message, StringComparison.Ordinal);
+        withoutOllama.ValidateOnStart();
+    }
+
+    [Fact]
     public void OpenAI_needs_a_model()
     {
         var error = AiTestServices.StartupError(new Dictionary<string, string?> { ["AI:Chat:Provider"] = "OpenAI", ["AI:OpenAI:ApiKey"] = SecretKey });

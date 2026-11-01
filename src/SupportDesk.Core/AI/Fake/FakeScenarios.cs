@@ -95,69 +95,82 @@ public sealed class FakeScenarioSet
         return turns[Math.Min(turnIndex, turns.Count - 1)];
     }
 
-    private static IReadOnlyList<FakeTurn>? TurnsFor(FakeScenario scenario, AiFeature? feature) =>
-        feature is { } f && scenario.Turns.TryGetValue(f.ToString(), out var turns) ? turns
-        : scenario.Turns.TryGetValue(AnyFeature, out var any) ? any
-        : null;
+    private static IReadOnlyList<FakeTurn>? TurnsFor(FakeScenario scenario, AiFeature? feature)
+    {
+        if (feature is { } f && scenario.Turns.TryGetValue(f.ToString(), out var turns))
+        {
+            return turns;
+        }
+
+        return scenario.Turns.TryGetValue(AnyFeature, out var any) ? any : null;
+    }
 
     private static void Check(IReadOnlyList<FakeScenario> scenarios, string source)
     {
         var errors = new List<string>();
-        foreach (var duplicate in scenarios.GroupBy(s => s.Name, StringComparer.Ordinal).Where(g => g.Count() > 1))
-        {
-            errors.Add($"scenario '{duplicate.Key}' appears more than once");
-        }
-
-        foreach (var duplicate in scenarios.Where(s => s.TicketNumber is not null).GroupBy(s => s.TicketNumber, StringComparer.Ordinal).Where(g => g.Count() > 1))
-        {
-            errors.Add($"ticket {duplicate.Key} has more than one scenario");
-        }
-
-        var defaultScenario = scenarios.FirstOrDefault(s => s.Name == DefaultScenario);
-        if (defaultScenario is null)
-        {
-            errors.Add($"there is no '{DefaultScenario}' scenario");
-        }
-        else if (defaultScenario.TicketNumber is not null)
-        {
-            errors.Add($"the '{DefaultScenario}' scenario can't have a ticket number");
-        }
-        else if (defaultScenario.Turns.ContainsKey(AnyFeature) is false
-            && Enum.GetNames<AiFeature>().FirstOrDefault(f => !defaultScenario.Turns.ContainsKey(f)) is { } missing)
-        {
-            errors.Add($"the '{DefaultScenario}' scenario has no turns for {missing}");
-        }
-
-        foreach (var scenario in scenarios)
-        {
-            if (scenario.Name != DefaultScenario && scenario.TicketNumber is null)
-            {
-                errors.Add($"scenario '{scenario.Name}' has no ticket number");
-            }
-
-            foreach (var (feature, turns) in scenario.Turns)
-            {
-                var where = $"scenario '{scenario.Name}', {feature}";
-                if (feature != AnyFeature && !Enum.TryParse<AiFeature>(feature, ignoreCase: false, out _))
-                {
-                    errors.Add($"{where}: unknown feature; use {string.Join(", ", Enum.GetNames<AiFeature>())} or {AnyFeature}");
-                }
-
-                if (turns.Count == 0)
-                {
-                    errors.Add($"{where}: no turns");
-                }
-
-                for (var i = 0; i < turns.Count; i++)
-                {
-                    errors.AddRange(turns[i].Steps.Select(StepError).OfType<string>().Select(e => $"{where}, turn {i}: {e}"));
-                }
-            }
-        }
+        errors.AddRange(DuplicateErrors(scenarios));
+        errors.AddRange(DefaultScenarioErrors(scenarios.FirstOrDefault(s => s.Name == DefaultScenario)));
+        errors.AddRange(scenarios.SelectMany(ScenarioErrors));
 
         if (errors.Count > 0)
         {
             throw new InvalidDataException($"{source}: {string.Join("; ", errors)}.");
+        }
+    }
+
+    private static IEnumerable<string> DuplicateErrors(IReadOnlyList<FakeScenario> scenarios)
+    {
+        var names = scenarios.GroupBy(s => s.Name, StringComparer.Ordinal).Where(g => g.Count() > 1)
+            .Select(g => $"scenario '{g.Key}' appears more than once");
+        var tickets = scenarios.Where(s => s.TicketNumber is not null).GroupBy(s => s.TicketNumber, StringComparer.Ordinal).Where(g => g.Count() > 1)
+            .Select(g => $"ticket {g.Key} has more than one scenario");
+        return names.Concat(tickets);
+    }
+
+    private static IEnumerable<string> DefaultScenarioErrors(FakeScenario? defaultScenario)
+    {
+        if (defaultScenario is null)
+        {
+            yield return $"there is no '{DefaultScenario}' scenario";
+        }
+        else if (defaultScenario.TicketNumber is not null)
+        {
+            yield return $"the '{DefaultScenario}' scenario can't have a ticket number";
+        }
+        else if (!defaultScenario.Turns.ContainsKey(AnyFeature)
+            && Enum.GetNames<AiFeature>().FirstOrDefault(f => !defaultScenario.Turns.ContainsKey(f)) is { } missing)
+        {
+            yield return $"the '{DefaultScenario}' scenario has no turns for {missing}";
+        }
+    }
+
+    private static IEnumerable<string> ScenarioErrors(FakeScenario scenario)
+    {
+        if (scenario.Name != DefaultScenario && scenario.TicketNumber is null)
+        {
+            yield return $"scenario '{scenario.Name}' has no ticket number";
+        }
+
+        foreach (var (feature, turns) in scenario.Turns)
+        {
+            var where = $"scenario '{scenario.Name}', {feature}";
+            if (feature != AnyFeature && !Enum.TryParse<AiFeature>(feature, ignoreCase: false, out _))
+            {
+                yield return $"{where}: unknown feature; use {string.Join(", ", Enum.GetNames<AiFeature>())} or {AnyFeature}";
+            }
+
+            if (turns.Count == 0)
+            {
+                yield return $"{where}: no turns";
+            }
+
+            for (var i = 0; i < turns.Count; i++)
+            {
+                foreach (var error in turns[i].Steps.Select(StepError).OfType<string>())
+                {
+                    yield return $"{where}, turn {i}: {error}";
+                }
+            }
         }
     }
 

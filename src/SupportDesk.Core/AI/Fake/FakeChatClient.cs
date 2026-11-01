@@ -23,11 +23,18 @@ public sealed class FakeChatClient(FakeScenarioSet scenarios, TimeProvider timeP
     public async Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
         await GetStreamingResponseAsync(messages, options, cancellationToken).ToChatResponseAsync(cancellationToken);
 
-    public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
-        IEnumerable<ChatMessage> messages, ChatOptions? options = null, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+        IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
     {
+        // Checked here rather than in the iterator, so a null throws when called, not on the first MoveNextAsync
         ArgumentNullException.ThrowIfNull(messages);
 
+        return PlayAsync(messages, options, cancellationToken);
+    }
+
+    private async IAsyncEnumerable<ChatResponseUpdate> PlayAsync(
+        IEnumerable<ChatMessage> messages, ChatOptions? options, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
         var context = AiCallContext.From(options);
         // Each tool round trip (or retry) adds the model's earlier answer to the history, which moves on to the next turn
         var turnIndex = messages.Count(m => m.Role == ChatRole.Assistant);
@@ -89,10 +96,17 @@ public sealed class FakeChatClient(FakeScenarioSet scenarios, TimeProvider timeP
     {
         ArgumentNullException.ThrowIfNull(serviceType);
 
-        return serviceKey is not null ? null
-            : serviceType == typeof(ChatClientMetadata) ? _metadata
-            : serviceType.IsInstanceOfType(this) ? this
-            : null;
+        if (serviceKey is not null)
+        {
+            return null;
+        }
+
+        if (serviceType == typeof(ChatClientMetadata))
+        {
+            return _metadata;
+        }
+
+        return serviceType.IsInstanceOfType(this) ? this : null;
     }
 
     public void Dispose()

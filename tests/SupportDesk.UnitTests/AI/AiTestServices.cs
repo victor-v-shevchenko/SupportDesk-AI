@@ -11,12 +11,13 @@ namespace SupportDesk.UnitTests.AI;
 /// <summary>The API's AI registrations on their own, with in-memory settings and no web host.</summary>
 internal static class AiTestServices
 {
-    /// <summary>What appsettings.json sets for prompts; everything else uses the code defaults unless a test overrides it.</summary>
+    /// <summary>What appsettings.json sets for prompts and the Ollama endpoint; everything else uses the code defaults unless a test overrides it.</summary>
     private static readonly Dictionary<string, string?> BaseSettings = new()
     {
         ["AI:Prompts:reply"] = "reply.v1",
         ["AI:Prompts:summary"] = "summary.v1",
         ["AI:Prompts:classify"] = "classify.v1",
+        ["AI:Ollama:Endpoint"] = "http://ollama.test:11434",
     };
 
     public static ServiceProvider Build(IReadOnlyDictionary<string, string?> settings, string environment = "Development", ILoggerProvider? logger = null)

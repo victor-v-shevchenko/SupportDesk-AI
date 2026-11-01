@@ -31,10 +31,17 @@ public sealed class FakeEmbeddingGenerator(int dimensions) : IEmbeddingGenerator
     {
         ArgumentNullException.ThrowIfNull(serviceType);
 
-        return serviceKey is not null ? null
-            : serviceType == typeof(EmbeddingGeneratorMetadata) ? _metadata
-            : serviceType.IsInstanceOfType(this) ? this
-            : null;
+        if (serviceKey is not null)
+        {
+            return null;
+        }
+
+        if (serviceType == typeof(EmbeddingGeneratorMetadata))
+        {
+            return _metadata;
+        }
+
+        return serviceType.IsInstanceOfType(this) ? this : null;
     }
 
     public void Dispose()

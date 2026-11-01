@@ -39,9 +39,10 @@ public sealed class AiOptionsValidator : IValidateOptions<AiOptions>
             errors.Add("AI:Embeddings:Dimensions must be 1024, the size of the embedding column.");
         }
 
-        if (!options.Ollama.Endpoint.IsAbsoluteUri || options.Ollama.Endpoint.Scheme is not ("http" or "https"))
+        var usesOllama = options.Chat.Provider == ChatProvider.Ollama || options.Embeddings.Provider == EmbeddingProvider.Ollama;
+        if (usesOllama && options.Ollama.Endpoint is not { IsAbsoluteUri: true, Scheme: "http" or "https" })
         {
-            errors.Add("AI:Ollama:Endpoint must be an absolute http or https URL.");
+            errors.Add("AI:Ollama:Endpoint must be an absolute http or https URL when Ollama is a provider.");
         }
 
         if (options.Timeouts.ConnectSeconds is < 1 or > 120)

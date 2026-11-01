@@ -34,8 +34,7 @@ public sealed record AiCallContext(AiFeature Feature, string PromptVersion, int?
         var properties = options?.AdditionalProperties;
         if (properties is null
             || !properties.TryGetValue(FeatureKey, out AiFeature feature)
-            || !properties.TryGetValue(PromptVersionKey, out string? promptVersion)
-            || promptVersion is null)
+            || !properties.TryGetValue(PromptVersionKey, out string? promptVersion))
         {
             return null;
         }
