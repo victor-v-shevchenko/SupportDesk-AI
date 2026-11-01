@@ -45,9 +45,30 @@ public sealed class AiOptionsValidator : IValidateOptions<AiOptions>
             errors.Add("AI:Ollama:Endpoint must be an absolute http or https URL when Ollama is a provider.");
         }
 
-        if (options.Timeouts.ConnectSeconds is < 1 or > 120)
+        Range(errors, "AI:Timeouts:ConnectSeconds", options.Timeouts.ConnectSeconds, 1, 120);
+        Range(errors, "AI:Timeouts:NonStreamingSeconds", options.Timeouts.NonStreamingSeconds, 1, 600);
+        Range(errors, "AI:Timeouts:FirstItemSeconds", options.Timeouts.FirstItemSeconds, 1, 600);
+        Range(errors, "AI:Timeouts:GapSeconds", options.Timeouts.GapSeconds, 1, 600);
+        Range(errors, "AI:Timeouts:StreamTotalSeconds", options.Timeouts.StreamTotalSeconds, 1, 3600);
+        Range(errors, "AI:Retry:MaxAttempts", options.Retry.MaxAttempts, 1, 10);
+        Range(errors, "AI:Retry:BaseDelayMs", options.Retry.BaseDelayMs, 0, 60_000);
+        Range(errors, "AI:Retry:MaxDelayMs", options.Retry.MaxDelayMs, 0, 300_000);
+        Range(errors, "AI:Budget:MaxInputTokensPerCall", options.Budget.MaxInputTokensPerCall, 1, 1_000_000);
+        Range(errors, "AI:Budget:MaxTokensPerRequest", options.Budget.MaxTokensPerRequest, 1, 10_000_000);
+        Range(errors, "AI:Usage:QueueCapacity", options.Usage.QueueCapacity, 1, 1_000_000);
+        foreach (var (feature, maxOutput) in options.Budget.MaxOutputTokens)
         {
-            errors.Add("AI:Timeouts:ConnectSeconds must be between 1 and 120.");
+            Range(errors, $"AI:Budget:MaxOutputTokens:{feature}", maxOutput, 1, 100_000);
+        }
+
+        foreach (var duplicate in options.Pricing.GroupBy(p => p.Model, StringComparer.Ordinal).Where(g => g.Count() > 1))
+        {
+            errors.Add($"AI:Pricing lists {duplicate.Key} more than once.");
+        }
+
+        if (options.Pricing.Any(p => string.IsNullOrWhiteSpace(p.Model) || p.InputPerMTok < 0 || p.OutputPerMTok < 0))
+        {
+            errors.Add("Every AI:Pricing entry needs a Model and prices that aren't negative.");
         }
 
         foreach (var (feature, effort) in options.Anthropic.Effort)
@@ -77,6 +98,14 @@ public sealed class AiOptionsValidator : IValidateOptions<AiOptions>
         }
 
         return errors.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errors);
+    }
+
+    private static void Range(List<string> errors, string setting, int value, int min, int max)
+    {
+        if (value < min || value > max)
+        {
+            errors.Add($"{setting} must be between {min} and {max}.");
+        }
     }
 
     private static void TryLoad(List<string> errors, Action load)

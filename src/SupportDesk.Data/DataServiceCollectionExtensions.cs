@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using SupportDesk.Core.AI.Usage;
 using SupportDesk.Core.Articles;
 using SupportDesk.Core.Health;
 using SupportDesk.Core.Tickets;
@@ -40,6 +41,7 @@ public static class DataServiceCollectionExtensions
         services.AddScoped<IDatabaseProbe, EfDatabaseProbe>();
         services.AddScoped<ITicketRepository, TicketRepository>();
         services.AddScoped<IArticleRepository, ArticleRepository>();
+        services.AddScoped<IModelCallRepository, ModelCallRepository>();
         services.AddScoped<SupportDeskSeeder>();
         return services;
     }

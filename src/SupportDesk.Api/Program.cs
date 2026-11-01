@@ -22,5 +22,6 @@ if (app.Environment.IsDevelopment())
 app.MapHealthEndpoints();
 app.MapTicketEndpoints();
 app.MapArticleEndpoints();
+app.MapModelCallEndpoints();
 
 await app.RunAsync();

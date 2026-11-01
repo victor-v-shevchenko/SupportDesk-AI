@@ -1,7 +1,7 @@
 namespace SupportDesk.Core.AI;
 
 /// <summary>What <see cref="ErrorMappingMiddleware"/> needs to know about a provider exception.</summary>
-public sealed record ModelError(int? StatusCode, bool IsTransient)
+public sealed record ModelError(int? StatusCode, bool IsTransient, TimeSpan? RetryAfter = null)
 {
     /// <summary>A connection error: the request may not have reached the provider. Transient.</summary>
     public static ModelError Connection { get; } = new(null, IsTransient: true);

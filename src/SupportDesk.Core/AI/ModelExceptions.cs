@@ -37,6 +37,12 @@ public sealed class ModelUnavailableException : Exception
 
     /// <summary>Whether trying again could work (429, 5xx, overloaded, timeouts, connection errors); the retry middleware reads it.</summary>
     public bool IsTransient { get; }
+
+    /// <summary>How long the provider asked us to wait (<c>Retry-After</c>), when it said and the SDK lets us see it.</summary>
+    public TimeSpan? RetryAfter { get; init; }
+
+    /// <summary>Set when the pipeline gave up waiting, rather than the provider failing.</summary>
+    public bool IsTimeout { get; init; }
 }
 
 /// <summary>The provider declined the request, for example an Anthropic response with <c>stop_reason = "refusal"</c> (PLAN.md 6.7). Never retried.</summary>
@@ -59,4 +65,30 @@ public sealed class ModelRefusedException : Exception
 
     /// <summary>The refused call's usage, when the provider reported it, so it can still be logged and paid for.</summary>
     public UsageDetails? Usage { get; init; }
+}
+
+/// <summary>
+/// A call was refused before it reached the provider (PLAN.md 6.4): its input estimate is over
+/// <c>AI:Budget:MaxInputTokensPerCall</c>, or the request has used more than <c>AI:Budget:MaxTokensPerRequest</c>. Never retried.
+/// </summary>
+public sealed class BudgetExceededException : Exception
+{
+    public BudgetExceededException()
+        : this("The model call is over the token budget.")
+    {
+    }
+
+    public BudgetExceededException(string message)
+        : this(message, null)
+    {
+    }
+
+    public BudgetExceededException(string message, Exception? innerException)
+        : base(message, innerException)
+    {
+    }
+
+    public long Tokens { get; init; }
+
+    public long Limit { get; init; }
 }

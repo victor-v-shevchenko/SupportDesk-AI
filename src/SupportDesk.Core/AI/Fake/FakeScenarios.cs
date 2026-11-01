@@ -30,8 +30,11 @@ public sealed record FakeToolCallStep(string Name, JsonElement Arguments) : Fake
 
 public sealed record FakeUsageStep(long InputTokens, long OutputTokens) : FakeStep;
 
-/// <summary>Fails the call with this HTTP status. Placed first it's an error before the first item; after a text step, after it.</summary>
-public sealed record FakeErrorStep(int StatusCode, string? Message = null) : FakeStep;
+/// <summary>
+/// Fails the call with this HTTP status, and a <c>Retry-After</c> when <see cref="RetryAfterSeconds"/> is set. Placed first
+/// it's an error before the first item; after a text step, after it.
+/// </summary>
+public sealed record FakeErrorStep(int StatusCode, string? Message = null, double? RetryAfterSeconds = null) : FakeStep;
 
 /// <summary>Sends nothing for <see cref="Seconds"/> (on the provider's clock), then goes on with the next step.</summary>
 public sealed record FakeStallStep(double Seconds) : FakeStep;
@@ -183,6 +186,7 @@ public sealed class FakeScenarioSet
         FakeToolCallStep { Arguments.ValueKind: not JsonValueKind.Object } => "tool_call arguments must be a JSON object",
         FakeUsageStep { InputTokens: < 0 } or FakeUsageStep { OutputTokens: < 0 } => "usage can't be negative",
         FakeErrorStep { StatusCode: < 400 or > 599 } => "error statusCode must be 400–599",
+        FakeErrorStep { RetryAfterSeconds: < 0 } => "error retryAfterSeconds can't be negative",
         FakeStallStep { Seconds: <= 0 } => "stall seconds must be positive",
         FakeFinishStep f when !FinishReasons.Contains(f.Reason) => $"finish reason must be one of {string.Join(", ", FinishReasons)}",
         _ => null,

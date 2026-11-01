@@ -18,15 +18,25 @@ public sealed class AnthropicErrorClassifier : IModelErrorClassifier
     };
 }
 
-/// <summary>OpenAI SDK exceptions. <see cref="ClientResultException.Status"/> is 0 when no response came back.</summary>
+/// <summary>
+/// OpenAI SDK exceptions. <see cref="ClientResultException.Status"/> is 0 when no response came back. The raw response
+/// carries <c>Retry-After</c>, in seconds; the Anthropic SDK's exceptions don't expose headers, so only OpenAI has it.
+/// </summary>
 public sealed class OpenAIErrorClassifier : IModelErrorClassifier
 {
     public ModelError? Classify(Exception exception) => exception switch
     {
         ClientResultException { Status: 0 } => ModelError.Connection,
-        ClientResultException result => ModelError.FromStatus(result.Status),
+        ClientResultException result => ModelError.FromStatus(result.Status) with { RetryAfter = RetryAfter(result) },
         _ => null,
     };
+
+    private static TimeSpan? RetryAfter(ClientResultException exception) =>
+        exception.GetRawResponse()?.Headers.TryGetValue("retry-after", out var value) == true
+        && double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var seconds)
+        && seconds >= 0
+            ? TimeSpan.FromSeconds(seconds)
+            : null;
 }
 
 /// <summary>OllamaSharp's own exceptions: an error the server sent in the response (unknown model, no tool support). HTTP errors are <see cref="HttpRequestException"/>s, which the pipeline handles itself.</summary>

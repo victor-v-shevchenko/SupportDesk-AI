@@ -10,6 +10,7 @@ using OpenAI;
 using SupportDesk.Core.AI;
 using SupportDesk.Core.AI.Fake;
 using SupportDesk.Core.AI.Prompts;
+using SupportDesk.Core.AI.Usage;
 
 namespace SupportDesk.Api.AI;
 
@@ -37,6 +38,10 @@ public static class AiServiceCollectionExtensions
 
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IPromptStore, PromptStore>();
+        services.AddSingleton<PriceTable>();
+        services.AddSingleton<ModelCallBuffer>();
+        services.AddSingleton<IModelCallSink>(provider => provider.GetRequiredService<ModelCallBuffer>());
+        services.AddHostedService<ModelCallWriter>();
         services.AddSingleton(provider => AiPipeline.Build(CreateChatProvider(provider), CreateErrorClassifier(provider), provider));
         services.AddSingleton(CreateEmbeddingGenerator);
         return services;
@@ -72,7 +77,7 @@ public static class AiServiceCollectionExtensions
             ChatProvider.Anthropic => new AnthropicErrorClassifier(),
             ChatProvider.OpenAI => new OpenAIErrorClassifier(),
             ChatProvider.Ollama => new OllamaErrorClassifier(),
-            // The fake provider throws HttpRequestException, which the pipeline maps itself
+            ChatProvider.Fake => new FakeErrorClassifier(),
             _ => null,
         };
 

@@ -176,7 +176,9 @@ public class ProviderAdapterTests
         Assert.DoesNotContain("supportdesk", Assert.Single(handler.Requests), StringComparison.Ordinal);
     }
 
-    private static IChatClient Pipeline(IChatClient provider, IModelErrorClassifier classifier) => AiPipeline.Build(provider, classifier);
+    // One attempt: these tests are about how each SDK's errors are mapped; RetryTimeoutMiddlewareTests covers retries
+    private static IChatClient Pipeline(IChatClient provider, IModelErrorClassifier classifier) =>
+        TestPipeline.Create(provider, classifier: classifier, configure: o => o.Retry.MaxAttempts = 1).Client;
 
     private static IChatClient Anthropic(StubHttpHandler handler) =>
         new AnthropicClient(new ClientOptions { ApiKey = "test-key", MaxRetries = 0, HttpClient = new HttpClient(handler, disposeHandler: false) })
