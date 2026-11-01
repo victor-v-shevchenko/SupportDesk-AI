@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { ReplyEvent, ReplyRequestError, ReplyStreamEndedError } from './replies.models';
 import { SseParser } from './sse';
 
-const eventTypes = new Set(['token', 'citations', 'usage', 'error', 'done']);
+const eventTypes = new Set(['token', 'tool_call', 'citations', 'usage', 'error', 'done']);
 
 @Injectable({ providedIn: 'root' })
 export class RepliesService {

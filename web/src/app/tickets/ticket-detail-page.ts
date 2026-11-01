@@ -4,13 +4,14 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, signal } f
 import { RouterLink } from '@angular/router';
 import { TicketsService } from '../api/tickets.service';
 import { ClassificationBadges } from './classification-badges';
+import { FollowUpsList } from './follow-ups';
 import { ReplyPanel } from './reply-panel';
 import { TicketStatusBadge } from './ticket-status';
 import { GeneratedSummary, TicketSummaryBox } from './ticket-summary';
 
 @Component({
   selector: 'app-ticket-detail-page',
-  imports: [RouterLink, DatePipe, TicketStatusBadge, TicketSummaryBox, ClassificationBadges, ReplyPanel],
+  imports: [RouterLink, DatePipe, TicketStatusBadge, TicketSummaryBox, ClassificationBadges, ReplyPanel, FollowUpsList],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <a class="back" routerLink="/tickets">← All tickets</a>
@@ -71,7 +72,11 @@ import { GeneratedSummary, TicketSummaryBox } from './ticket-summary';
 
       <section class="slot reply" aria-labelledby="reply-heading">
         <h2 id="reply-heading">Suggested reply</h2>
-        <app-reply-panel [ticketId]="t.id" />
+        <app-reply-panel [ticketId]="t.id" (followUpsChanged)="followUps.reload()" />
+      </section>
+
+      <section class="slot follow-ups" aria-labelledby="follow-ups-heading">
+        <app-follow-ups #followUps [ticketId]="t.id" />
       </section>
     }
   `,

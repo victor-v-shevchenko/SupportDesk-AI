@@ -15,8 +15,27 @@ export interface ReplyUsage {
   estimated: boolean;
 }
 
+/** What `lookup_order_status` returned: the order's status, or `{ found: false }`. */
+export type OrderLookupResult =
+  | { found: true; orderNumber: string; status: string; carrier: string | null; lastUpdate: string; lastEvent: string }
+  | { found: false };
+
+/** The proposal `propose_follow_up_task` saved; the user confirms it to create the task. */
+export interface ProposalPayload {
+  id: string;
+  title: string;
+  notes: string;
+  dueDate: string | null;
+}
+
+/** A `tool_call` event, sent after the tool ran (PLAN.md 7, 10). */
+export type ToolCall =
+  | { name: 'lookup_order_status'; arguments: { orderNumber: string }; result: OrderLookupResult }
+  | { name: 'propose_follow_up_task'; proposal: ProposalPayload };
+
 export type ReplyEvent =
   | { type: 'token'; text: string }
+  | ({ type: 'tool_call' } & ToolCall)
   | { type: 'citations'; citations: Citation[]; removed: number[] }
   | ({ type: 'usage' } & ReplyUsage)
   | { type: 'error'; code: ReplyErrorCode | string; message: string }

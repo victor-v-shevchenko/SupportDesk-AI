@@ -59,6 +59,27 @@ describe('RepliesService', () => {
     ]);
   });
 
+  it('yields tool_call events with their tool name and payload', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        streamOf([
+          'event: tool_call\ndata: {"name":"lookup_order_status","arguments":{"orderNumber":"KO-205002"},"result":{"found":false}}\n\n',
+          'event: tool_call\ndata: {"name":"propose_follow_up_task","proposal":{"id":"p1","title":"Trace","notes":"","dueDate":null}}\n\n',
+          'event: done\ndata: {"replyRunId":"r1"}\n\n',
+        ]),
+        { headers: { 'Content-Type': 'text/event-stream' } },
+      ),
+    );
+
+    const events = await collect(TestBed.inject(RepliesService).stream(2, new AbortController().signal));
+
+    expect(events).toEqual([
+      { type: 'tool_call', name: 'lookup_order_status', arguments: { orderNumber: 'KO-205002' }, result: { found: false } },
+      { type: 'tool_call', name: 'propose_follow_up_task', proposal: { id: 'p1', title: 'Trace', notes: '', dueDate: null } },
+      { type: 'done', replyRunId: 'r1' },
+    ]);
+  });
+
   it('decodes a character split across two chunks', async () => {
     const bytes = new TextEncoder().encode('event: token\ndata: {"text":"Café"}\n\nevent: done\ndata: {"replyRunId":"r"}\n\n');
     const split = bytes.indexOf(0xc3) + 1;

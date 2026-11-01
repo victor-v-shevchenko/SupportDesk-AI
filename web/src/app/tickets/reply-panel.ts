@@ -1,9 +1,11 @@
 import { DecimalPipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, output, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { Citation, ReplyRequestError, ReplyStreamEndedError, ReplyUsage } from '../api/replies.models';
+import { Citation, ReplyRequestError, ReplyStreamEndedError, ReplyUsage, ToolCall } from '../api/replies.models';
 import { RepliesService } from '../api/replies.service';
 import { citedArticles, segmentReply } from './citations';
+import { OrderStatusCard } from './order-status-card';
+import { ProposalCard } from './proposal-card';
 
 type ReplyStatus = 'idle' | 'streaming' | 'done' | 'stopped' | 'error';
 
@@ -19,10 +21,11 @@ export const replyErrorMessages: Record<string, string> = {
 /**
  * "Suggest reply" on the ticket page: streams the reply as it's written, with a stop button, then links its citations
  * and shows the cost. One reply at a time: a second click aborts the first request, and so does leaving the page.
+ * Tools the model called show as cards above the text: an order's status, and a proposed follow-up to confirm.
  */
 @Component({
   selector: 'app-reply-panel',
-  imports: [RouterLink, DecimalPipe],
+  imports: [RouterLink, DecimalPipe, OrderStatusCard, ProposalCard],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="actions">
@@ -35,6 +38,18 @@ export const replyErrorMessages: Record<string, string> = {
     @if (status() === 'idle') {
       <p class="empty">No suggested reply yet.</p>
     } @else {
+      @if (toolCalls().length > 0) {
+        <div class="tool-calls">
+          @for (call of toolCalls(); track toolCallKey($index, call)) {
+            @if (call.name === 'lookup_order_status') {
+              <app-order-status-card [orderNumber]="call.arguments.orderNumber" [result]="call.result" />
+            } @else {
+              <app-proposal-card [proposal]="call.proposal" (confirmed)="followUpsChanged.emit()" />
+            }
+          }
+        </div>
+      }
+
       @if (text()) {
         <!-- Each piece is a span with nothing between them, so the template adds no whitespace to the reply's own -->
         <p class="reply-text" [attr.aria-busy]="status() === 'streaming'">
@@ -96,6 +111,7 @@ export const replyErrorMessages: Record<string, string> = {
   `,
   styles: `
     .actions { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
+    .tool-calls { display: grid; gap: 0.5rem; margin-bottom: 0.75rem; max-width: 70ch; }
     button { padding: 0.4rem 0.75rem; font: inherit; }
     .reply-text { white-space: pre-wrap; line-height: 1.5; max-width: 70ch; }
     .cite a { color: #1d4ed8; }
@@ -110,12 +126,15 @@ export const replyErrorMessages: Record<string, string> = {
 })
 export class ReplyPanel {
   readonly ticketId = input.required<number>();
+  /** A reply proposed a follow-up, or one was confirmed here, so the page's follow-ups list is out of date. */
+  readonly followUpsChanged = output<void>();
 
   private readonly replies = inject(RepliesService);
   private controller: AbortController | undefined;
 
   protected readonly status = signal<ReplyStatus>('idle');
   protected readonly text = signal('');
+  protected readonly toolCalls = signal<ToolCall[]>([]);
   protected readonly citations = signal<Citation[] | undefined>(undefined);
   protected readonly usage = signal<ReplyUsage | undefined>(undefined);
   protected readonly errorMessage = signal('');
@@ -135,6 +154,7 @@ export class ReplyPanel {
     this.controller = controller;
     this.status.set('streaming');
     this.text.set('');
+    this.toolCalls.set([]);
     this.citations.set(undefined);
     this.usage.set(undefined);
     this.errorMessage.set('');
@@ -148,6 +168,9 @@ export class ReplyPanel {
         switch (event.type) {
           case 'token':
             this.text.update((t) => t + event.text);
+            break;
+          case 'tool_call':
+            this.addToolCall(event);
             break;
           case 'citations':
             this.citations.set(event.citations);
@@ -176,6 +199,25 @@ export class ReplyPanel {
     if (this.status() === 'streaming') {
       this.controller?.abort();
       this.status.set('stopped');
+    }
+  }
+
+  /** One card per proposal: a repeated proposal in the same run updates the one the server saved (same ID). */
+  protected toolCallKey(index: number, call: ToolCall): string | number {
+    return call.name === 'propose_follow_up_task' ? call.proposal.id : index;
+  }
+
+  private addToolCall(call: ToolCall): void {
+    if (call.name === 'propose_follow_up_task') {
+      const id = call.proposal.id;
+      this.toolCalls.update((calls) =>
+        calls.some((c) => c.name === 'propose_follow_up_task' && c.proposal.id === id)
+          ? calls.map((c) => (c.name === 'propose_follow_up_task' && c.proposal.id === id ? call : c))
+          : [...calls, call],
+      );
+      this.followUpsChanged.emit();
+    } else {
+      this.toolCalls.update((calls) => [...calls, call]);
     }
   }
 
