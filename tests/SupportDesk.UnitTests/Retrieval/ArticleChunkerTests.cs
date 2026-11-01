@@ -79,6 +79,23 @@ public class ArticleChunkerTests
     }
 
     [Fact]
+    public void A_paragraph_of_the_largest_size_after_an_overflow_follows_the_overlap_in_one_chunk()
+    {
+        // 1,048 = 1,200 - 150 overlap - 2 for the separator: the longest paragraph that is never cut
+        var first = "First " + new string('x', 1000);
+        // The first piece ends in 150 letters without a space, so the overlap is a full 150 characters
+        var largest = "Second " + new string('y', 1041);
+
+        var chunks = ArticleChunker.Chunk("## H\n" + first + "\n\n" + largest);
+
+        Assert.Equal(1048, largest.Length);
+        Assert.Equal(2, chunks.Count);
+        Assert.Equal(first, chunks[0].Text);
+        Assert.Equal(new string('x', ArticleChunker.OverlapLength) + "\n\n" + largest, chunks[1].Text);
+        Assert.Equal(ArticleChunker.MaxLength, chunks[1].Text.Length);
+    }
+
+    [Fact]
     public void The_content_hash_is_sha256_of_the_embedded_text()
     {
         var chunk = ArticleChunker.Chunk(Article)[1];

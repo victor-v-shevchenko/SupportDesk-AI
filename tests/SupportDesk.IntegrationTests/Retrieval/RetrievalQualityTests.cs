@@ -84,16 +84,16 @@ public class RetrievalQualityTests(PostgresFixture postgres)
             Ct,
             new Dictionary<string, string?> { ["AI:Embeddings:Model"] = generator.Model, ["Retrieval:MinSimilarity"] = "0.6" },
             services => services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(generator));
-        var question = (await EmbeddingFixtures.ReadQuestionsAsync(FixturePaths.RetrievalQuestions, Ct))[0].Question;
+        var question = (await EmbeddingFixtures.ReadQuestionsAsync(FixturePaths.RetrievalQuestions, Ct))[0];
 
-        var results = await api.Client.GetFromJsonAsync<List<SearchResultResponse>>($"/api/search?q={Uri.EscapeDataString(question)}&k=10", Ct);
+        var results = await api.Client.GetFromJsonAsync<List<SearchResultResponse>>($"/api/search?q={Uri.EscapeDataString(question.Question)}&k=10", Ct);
 
         Assert.NotNull(results);
         Assert.NotEmpty(results);
         Assert.True(results.Count < 10, "the 0.6 minimum should drop some of the 10 nearest");
         Assert.All(results, r => Assert.True(r.Similarity >= 0.6, $"{r.Similarity}"));
         Assert.Equal(results.OrderByDescending(r => r.Similarity).Select(r => r.Similarity), results.Select(r => r.Similarity));
-        Assert.Equal("account-and-password", results[0].ArticleSlug);
+        Assert.Equal(question.ExpectedSlug, results[0].ArticleSlug);
         Assert.False(string.IsNullOrWhiteSpace(results[0].ArticleTitle));
         Assert.False(string.IsNullOrWhiteSpace(results[0].Text));
     }
