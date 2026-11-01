@@ -131,7 +131,7 @@ All routes are under `/api`. Errors use RFC 7807 problem details.
 | Key | Values | Default (development) |
 | --- | --- | --- |
 | `AI:Chat:Provider` | `Fake`, `Ollama`, `Anthropic`, `OpenAI` | `Ollama` |
-| `AI:Chat:Model` | model ID; empty means the provider's default | `qwen2.5:7b` (Ollama), `claude-opus-5-5` (Anthropic), `fake` (Fake); OpenAI has no default and needs it set |
+| `AI:Chat:Model` | model ID; empty means the provider's default | `qwen2.5:1.5b` (Ollama), `claude-opus-5-5` (Anthropic), `fake` (Fake); OpenAI has no default and needs it set |
 | `AI:Embeddings:Provider` | `Fake`, `Ollama`, `Voyage`, `OpenAI` | `Ollama` |
 | `AI:Embeddings:Model` | model ID; empty means the provider's default | `mxbai-embed-large` (Ollama), `voyage-3.5` (Voyage), `text-embedding-3-small` (OpenAI), `fake-hash` (Fake) |
 | `AI:Embeddings:Dimensions` | `1024` | `1024` |
@@ -146,6 +146,15 @@ All routes are under `/api`. Errors use RFC 7807 problem details.
 | `AI:Pricing:<model>` | `InputPerMTok`, `OutputPerMTok` in USD | see 6.6 |
 
 - Environment variables use double underscores, for example `AI__Chat__Provider=Fake`
+- **Ollama** runs on the host (the default endpoint) or in the optional `ollama` service in `docker-compose.yml`, which only starts with `--profile ollama` and keeps models in the `ollama` volume. Containers in the compose project reach that service at `http://ollama:11434`. Models (pull them first):
+
+  | Model | Size | Use |
+  | --- | --- | --- |
+  | `qwen2.5:1.5b` | about 1 GB | default chat model: small, fast, supports tools; weak at following instructions |
+  | `qwen2.5:7b` | about 4.7 GB | better replies and tool calls; the model the step 10 evaluation runs with |
+  | `mxbai-embed-large` | about 670 MB | embeddings (1024 dimensions, from step 4) |
+
+  Not used here, but an option on machines with more memory: `gemma4` (tools and thinking; the smallest tags, `e2b` and `e4b`, are 4.6–9.5 GB). Its thinking output adds latency and reaches the stream as reasoning content, which step 5 would have to drop. On CPU, `qwen2.5:1.5b` takes about 35 seconds for a reply in the dev container
 - **Startup checks** (`ValidateOnStart`): an unknown provider, a missing key for a selected provider (the message names the setting, never a value), the fake provider in `Production`, a missing or malformed prompt file, and a broken scenarios file all stop the app before it serves requests
 - **API keys** are read from `AI:<Provider>:ApiKey`, not `ANTHROPIC_API_KEY`: the dev container keeps that variable out of its environment so Claude Code doesn't pick it up. `.env` still holds `ANTHROPIC_API_KEY` and so on; docker compose maps them to `AI__Anthropic__ApiKey`. With `dotnet run` in the dev container, use user secrets
 - **Packages:** Anthropic's official `Anthropic` package (it has an `IChatClient` adapter); `Microsoft.Extensions.AI.OpenAI`; `OllamaSharp` for Ollama chat and embeddings; Voyage through a small hand-written `IEmbeddingGenerator` over HTTP, since there is no official .NET package

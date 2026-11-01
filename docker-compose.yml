@@ -27,7 +27,8 @@ services:
       # Keep the connection string in sync with .devcontainer/docker-compose.devcontainer.yml
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__SupportDesk: "Host=db;Port=5432;Database=${POSTGRES_DB:?Copy .env.example to .env and set POSTGRES_DB};Username=${POSTGRES_USER:?Copy .env.example to .env and set POSTGRES_USER};Password=${POSTGRES_PASSWORD:?Copy .env.example to .env and set POSTGRES_PASSWORD}"
-      AI__Ollama__Endpoint: "http://host.docker.internal:11434"
+      # Ollama on the host by default; set OLLAMA_ENDPOINT=http://ollama:11434 in .env for the ollama service
+      AI__Ollama__Endpoint: "${OLLAMA_ENDPOINT:-http://host.docker.internal:11434}"
       # Provider choice and keys come from .env; empty keys are fine for Ollama and Fake
       AI__Chat__Provider: "${AI_CHAT_PROVIDER:-Ollama}"
       AI__Embeddings__Provider: "${AI_EMBEDDINGS_PROVIDER:-Ollama}"
@@ -42,6 +43,17 @@ services:
       db:
         condition: service_healthy
 
+  # Optional: Ollama in a container, for machines without Ollama on the host. Only starts with the profile:
+  #   docker compose --profile ollama up -d ollama
+  # Containers in this project (api, the dev container) reach it at http://ollama:11434
+  ollama:
+    image: ollama/ollama:0.40.4
+    profiles: ["ollama"]
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+
   web:
     build: ./web
     environment:
@@ -54,3 +66,4 @@ services:
 
 volumes:
   pgdata:
+  ollama:

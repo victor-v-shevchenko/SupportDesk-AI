@@ -54,7 +54,7 @@ public sealed class ChatModelSettings
     public string? ResolvedModel => !string.IsNullOrWhiteSpace(Model) ? Model : Provider switch
     {
         ChatProvider.Fake => "fake",
-        ChatProvider.Ollama => "qwen2.5:7b",
+        ChatProvider.Ollama => "qwen2.5:1.5b",
         ChatProvider.Anthropic => "claude-opus-5-5",
         _ => null,
     };
