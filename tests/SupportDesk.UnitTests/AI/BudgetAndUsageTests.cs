@@ -49,11 +49,21 @@ public class BudgetAndUsageTests
 
     [Theory]
     [InlineData(0, 0)]
-    [InlineData(10, 3)]
-    [InlineData(100, 30)]
-    [InlineData(101, 31)]
-    public void The_estimate_is_characters_over_4_times_1_2_rounded_up(long characters, long tokens) =>
+    [InlineData(3, 2)]
+    [InlineData(10, 4)]
+    [InlineData(100, 40)]
+    [InlineData(101, 41)]
+    public void The_estimate_is_characters_over_3_times_1_2_rounded_up(long characters, long tokens) =>
         Assert.Equal(tokens, TokenEstimator.FromCharacters(characters));
+
+    [Fact]
+    public void Each_message_adds_10_tokens_for_its_framing()
+    {
+        ChatMessage[] messages = [new(ChatRole.System, "abc"), new(ChatRole.User, "")];
+
+        // 3 characters is 2 tokens, plus 10 for each of the two messages
+        Assert.Equal(22, TokenEstimator.EstimateInput(messages, options: null));
+    }
 
     [Fact]
     public async Task An_oversized_call_is_refused_before_it_reaches_the_provider()
@@ -61,10 +71,10 @@ public class BudgetAndUsageTests
         var provider = new ScriptedChatClient(_time, Steps(Text("x")));
         using var pipeline = TestPipeline.Create(provider, _time, configure: o => o.Budget.MaxInputTokensPerCall = 100);
 
-        // 400 characters is 120 tokens by the estimate
+        // 400 characters is 160 tokens by the estimate, plus 10 for the message
         var error = await Assert.ThrowsAsync<BudgetExceededException>(() => pipeline.Client.GetResponseAsync(new string('a', 400), Options(), Ct));
 
-        Assert.Equal(120, error.Tokens);
+        Assert.Equal(170, error.Tokens);
         Assert.Equal(100, error.Limit);
         Assert.Equal(0, provider.Calls);
         Assert.Empty(pipeline.Rows.All);
@@ -196,7 +206,8 @@ public class BudgetAndUsageTests
         var row = Assert.Single(pipeline.Rows.All);
         Assert.True(row.IsEstimated);
         Assert.Equal(ModelCallOutcome.Cancelled, row.Outcome);
-        Assert.Equal(TokenEstimator.FromCharacters(2), row.InputTokens);
+        // "hi": 1 token, plus 10 for the message
+        Assert.Equal(11, row.InputTokens);
         Assert.Equal(TokenEstimator.FromCharacters("Hello there".Length), row.OutputTokens);
     }
 

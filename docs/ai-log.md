@@ -47,3 +47,10 @@ Entry format (from CLAUDE.md):
 - What was wrong: `RetryTimeoutMiddleware` stopped the first-item timer only after handing the first item to the caller, so a caller that took longer than `FirstItemSeconds` with it (a blocked response write) got a non-transient "timed out waiting for the next update" although the provider was fine. The scripted test provider ignored cancellation between steps, which hid it.
 - Fix: the timer is stopped, and gap timing starts, before anything goes to the caller; the scripted provider now ends a cancelled call between steps, as an HTTP stream does (step 3b PR).
 - Test: `RetryTimeoutMiddlewareTests.The_callers_time_with_the_first_item_does_not_count_against_the_first_item_timeout`
+
+## 2026-11-01 — The token estimate was lower than the real count
+- Step: 3b
+- Found by: test (the opt-in `SupportDesk.Eval` token-count check, first run against Anthropic)
+- What was wrong: the budget estimate (characters ÷ 4 × 1.2) came out 7–25% below Anthropic's count on 5 of the 6 prompts, because these prompts tokenize at about 2.6–3.1 characters per token and each message has a fixed cost, so the per-call guard could let an over-limit call through.
+- Fix: the estimate is now characters ÷ 3 × 1.2 plus 10 tokens per message, computed in integers; all six cases are 11–25% above the real count (step 3b PR).
+- Test: `TokenEstimateTests.The_estimate_is_not_lower_than_Anthropics_count` (opt-in), with `BudgetAndUsageTests.The_estimate_is_characters_over_3_times_1_2_rounded_up` and `Each_message_adds_10_tokens_for_its_framing` in CI

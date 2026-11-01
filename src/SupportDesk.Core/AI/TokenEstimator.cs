@@ -4,17 +4,22 @@ using Microsoft.Extensions.AI;
 namespace SupportDesk.Core.AI;
 
 /// <summary>
-/// The token estimate from PLAN.md 6.4: characters ÷ 4 × 1.2, rounded up. Errs high on purpose; an opt-in test in
-/// <c>SupportDesk.Eval</c> checks it against Anthropic's token counter.
+/// The token estimate from PLAN.md 6.4: characters ÷ 3 × 1.2, rounded up, plus 10 tokens per message. Errs high on
+/// purpose; an opt-in test in <c>SupportDesk.Eval</c> checks it against Anthropic's token counter, which measured about
+/// 2.6–3.1 characters per token on these prompts and a small fixed cost per message.
 /// </summary>
 public static class TokenEstimator
 {
+    /// <summary>The framing each message adds on top of its text (role, separators).</summary>
+    public const int TokensPerMessage = 10;
+
     /// <summary>Everything a call sends: every message's text, tool calls and results, and the tool definitions.</summary>
     public static long EstimateInput(IEnumerable<ChatMessage> messages, ChatOptions? options)
     {
         ArgumentNullException.ThrowIfNull(messages);
 
-        var characters = messages.Sum(m => Characters(m.Contents));
+        var list = messages as IReadOnlyCollection<ChatMessage> ?? [.. messages];
+        var characters = list.Sum(m => Characters(m.Contents));
         foreach (var tool in options?.Tools ?? [])
         {
             characters += tool.Name.Length + tool.Description.Length;
@@ -24,7 +29,7 @@ public static class TokenEstimator
             }
         }
 
-        return FromCharacters(characters);
+        return FromCharacters(characters) + ((long)TokensPerMessage * list.Count);
     }
 
     /// <summary>What came back, for a call whose provider sent no usage.</summary>
@@ -38,7 +43,8 @@ public static class TokenEstimator
         return contents.Sum(CharactersIn);
     }
 
-    public static long FromCharacters(long characters) => (long)Math.Ceiling(characters / 4.0 * 1.2);
+    /// <summary>÷ 3 × 1.2 is × 2/5; in integers, so 10 characters is exactly 4 tokens and not 4.000…1 rounded up to 5.</summary>
+    public static long FromCharacters(long characters) => ((characters * 2) + 4) / 5;
 
     /// <summary>An estimate must never break the call it estimates, so a value that can't be serialized counts as nothing.</summary>
     private static long SerializedLength(object? value)

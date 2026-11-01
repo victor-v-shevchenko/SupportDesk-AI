@@ -208,7 +208,19 @@ provider IChatClient          Anthropic (wrapped in AnthropicOptionsMiddleware) 
 - **Prompt builder** (in `ReplyService`): adds chunks in score order until the estimate reaches the input limit minus the room the system prompt, ticket and tool definitions need
 - **Per-call guard:** estimates each call's input; if it's over `MaxInputTokensPerCall`, the call is refused with `BudgetExceededException`
 - **Request cap:** after each inner call, adds input and output tokens; the next call is refused once the total passes `MaxTokensPerRequest`
-- **Estimate:** characters ÷ 4 × 1.2, rounded up (`TokenEstimator`), over the text of every message, tool calls and results, thinking text, and each tool's name, description and JSON schema. Anthropic has a token-counting endpoint (`Messages.CountTokens`), but calling it before every request adds latency and a request, so it's only used in a test that checks the estimate stays on the safe side: `TokenEstimateTests` in `SupportDesk.Eval` (opt-in, needs `AI:Anthropic:ApiKey`, skipped without it; counting is free). It counts the three prompts with the shortest seeded ticket and the longest (which is also the one with `</ticket>`), the reply with five whole seeded articles as sources
+- **Estimate:** characters ÷ 3 × 1.2, rounded up, plus 10 tokens per message (`TokenEstimator`), over the text of every message, tool calls and results, thinking text, and each tool's name, description and JSON schema. Anthropic has a token-counting endpoint (`Messages.CountTokens`), but calling it before every request adds latency and a request, so it's only used in a test that checks the estimate stays on the safe side: `TokenEstimateTests` in `SupportDesk.Eval` (opt-in, needs `AI:Anthropic:ApiKey`, skipped without it; counting is free). It counts the three prompts with the shortest seeded ticket and the longest (which is also the one with `</ticket>`), the reply with five whole seeded articles as sources
+- **Why ÷ 3 and not ÷ 4:** the first run of that check (2026-11-01, `claude-opus-5-5`) found the original ÷ 4 × 1.2 estimate 7–25% *below* the real count on 5 of 6 prompts: these prompts (Markdown, tags, short lines) come to about 2.6–3.1 characters per token, and short prompts showed a fixed cost per message. With ÷ 3 × 1.2 + 10 per message, all six are above the real count, by 11–25%:
+
+  | Prompt, ticket | Estimate | Anthropic |
+  | --- | --- | --- |
+  | reply, T-1022 | 3004 | 2407 |
+  | reply, T-1025 | 2894 | 2312 |
+  | summary, T-1022 | 433 | 384 |
+  | summary, T-1025 | 323 | 289 |
+  | classify, T-1022 | 502 | 439 |
+  | classify, T-1025 | 393 | 344 |
+
+  Run the check again when a prompt or the model changes: the margin on short prompts is the smallest
 - **Tokens of a call** for the cap and for usage rows: the provider's usage where it sent it (streamed usage updates are added up, as Microsoft.Extensions.AI does), the estimate where it didn't (input from the messages, output from what came back). A call that failed still counts what it used
 
 ### 6.5 Retries and timeouts

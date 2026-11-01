@@ -65,6 +65,7 @@ public class TokenEstimateTests
             ct);
 
         var estimate = TokenEstimator.EstimateInput(messages, options: null);
+        TestContext.Current.SendDiagnosticMessage($"{promptName} with {ticketNumber}: estimate {estimate}, Anthropic counted {count.InputTokens}");
         Assert.True(estimate >= count.InputTokens, $"{promptName} with {ticketNumber}: estimate {estimate}, Anthropic counted {count.InputTokens}.");
     }
 
