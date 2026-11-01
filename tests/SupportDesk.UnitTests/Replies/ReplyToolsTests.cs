@@ -173,6 +173,49 @@ public class ReplyToolsTests
         Assert.Null(tools.Take("any"));
     }
 
+    [Fact]
+    public async Task Calls_past_the_limit_in_one_run_run_nothing_and_get_an_error_result()
+    {
+        var tools = Tools();
+        var lookup = (AIFunction)tools.Tools[0];
+        var propose = (AIFunction)tools.Tools[1];
+
+        // An invalid call counts too, and the two tools share one limit
+        await lookup.InvokeAsync(Arguments("""{ "orderNumber": "bad" }"""), Ct);
+        for (var i = 1; i < ReplyTools.MaxCallsPerRun; i++)
+        {
+            await (i % 2 == 0
+                ? lookup.InvokeAsync(Arguments("""{ "orderNumber": "KO-205002" }"""), Ct)
+                : propose.InvokeAsync(Arguments("""{ "title": "Trace it" }"""), Ct));
+        }
+
+        var lookups = _orders.Lookups.Count;
+        var upserts = _followUps.Upserts.Count;
+        var overLookup = Unwrap(Assert.IsType<string>(await lookup.InvokeAsync(Arguments("""{ "orderNumber": "KO-205002" }"""), Ct)));
+        var overPropose = Unwrap(Assert.IsType<string>(await propose.InvokeAsync(Arguments("""{ "title": "Trace it" }"""), Ct)));
+
+        Assert.Equal(5, ReplyTools.MaxCallsPerRun);
+        Assert.Equal("The tool call limit for this reply is reached. Write the reply without calling more tools.", overLookup.GetProperty("error").GetString());
+        Assert.Equal(overLookup.GetRawText(), overPropose.GetRawText());
+        Assert.Equal(lookups, _orders.Lookups.Count);
+        Assert.Equal(upserts, _followUps.Upserts.Count);
+    }
+
+    [Fact]
+    public async Task Each_run_has_its_own_tool_call_limit()
+    {
+        var first = (AIFunction)Tools().Tools[0];
+        for (var i = 0; i <= ReplyTools.MaxCallsPerRun; i++)
+        {
+            await first.InvokeAsync(Arguments("""{ "orderNumber": "KO-205002" }"""), Ct);
+        }
+
+        var result = await InvokeAsync(ReplyTools.LookupOrderStatus, """{ "orderNumber": "KO-205002" }""");
+
+        Assert.True(Unwrap(result).GetProperty("found").GetBoolean());
+        Assert.Equal(ReplyTools.MaxCallsPerRun + 1, _orders.Lookups.Count);
+    }
+
     private ReplyTools Tools() => new ReplyToolFactory(_orders, _followUps).Create(Ticket(id: 7), RunId);
 
     private async Task<string> InvokeAsync(string name, string json)

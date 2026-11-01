@@ -29,7 +29,11 @@ public sealed class ReplyTools
     public const string LookupOrderStatus = "lookup_order_status";
     public const string ProposeFollowUpTask = "propose_follow_up_task";
 
+    /// <summary>Tool calls one run may run, across both tools and every round (PLAN.md 10); later calls get an error result.</summary>
+    public const int MaxCallsPerRun = 5;
+
     private readonly ConcurrentDictionary<string, ReplyToolCall> _events = new(StringComparer.Ordinal);
+    private int _calls;
 
     internal ReplyTools(IOrderStatusService orders, IFollowUpRepository followUps, int ticketId, Guid replyRunId)
     {
@@ -41,6 +45,9 @@ public sealed class ReplyTools
 
     /// <summary>The event for the call <paramref name="callId"/>, once; null when it has none.</summary>
     public ReplyToolCall? Take(string callId) => _events.TryRemove(callId, out var call) ? call : null;
+
+    /// <summary>Counts a call; false once the run has used up <see cref="MaxCallsPerRun"/>.</summary>
+    internal bool TryStartCall() => Interlocked.Increment(ref _calls) <= MaxCallsPerRun;
 
     /// <summary>
     /// Keyed by the call the tool loop is running. Without one (the tool was invoked outside the loop) there's no call to
@@ -59,11 +66,16 @@ public sealed class ReplyTools
 /// A tool with a hand-written JSON schema. The arguments are checked before the tool runs; anything wrong goes back to
 /// the model as an error result rather than an exception. Every result is wrapped by <see cref="ToolResult"/>.
 /// </summary>
-internal abstract class ReplyFunction(string name, string description, string schema) : AIFunction
+internal abstract class ReplyFunction(string name, string description, string schema, ReplyTools owner) : AIFunction
 {
+    private const string LimitReached = "The tool call limit for this reply is reached. Write the reply without calling more tools.";
+
     private readonly JsonElement _schema = JsonDocument.Parse(schema).RootElement.Clone();
 
     public override string Name => name;
+
+    /// <summary>The run's tools, which record the call's event.</summary>
+    protected ReplyTools Owner => owner;
 
     public override string Description => description;
 
@@ -72,6 +84,10 @@ internal abstract class ReplyFunction(string name, string description, string sc
     protected override async ValueTask<object?> InvokeCoreAsync(AIFunctionArguments arguments, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(arguments);
+        if (!owner.TryStartCall())
+        {
+            return ToolResult.Error([LimitReached]);
+        }
 
         var reader = new ToolArguments(arguments);
         var run = Prepare(reader);
@@ -102,7 +118,7 @@ internal sealed class LookupOrderStatusFunction(IOrderStatusService orders, Repl
       "required": ["orderNumber"],
       "additionalProperties": false
     }
-    """)
+    """, owner)
 {
     private const string OrderNumberArgument = "orderNumber";
 
@@ -121,7 +137,7 @@ internal sealed class LookupOrderStatusFunction(IOrderStatusService orders, Repl
             object result = order is null
                 ? new OrderNotFound()
                 : new OrderFound(order.OrderNumber, order.Status, order.Carrier, order.LastUpdate, order.LastEvent);
-            owner.Record(new ReplyOrderLookup(new OrderLookupArguments(orderNumber), result));
+            Owner.Record(new ReplyOrderLookup(new OrderLookupArguments(orderNumber), result));
             return result;
         };
     }
@@ -141,7 +157,7 @@ internal sealed class ProposeFollowUpTaskFunction(IFollowUpRepository followUps,
       "required": ["title"],
       "additionalProperties": false
     }
-    """)
+    """, owner)
 {
     public const string AwaitingConfirmation = "awaiting_user_confirmation";
 
@@ -154,7 +170,7 @@ internal sealed class ProposeFollowUpTaskFunction(IFollowUpRepository followUps,
         return title is null || arguments.Errors.Count > 0 ? null : async cancellationToken =>
         {
             var proposal = await followUps.UpsertProposalAsync(new NewProposal(ticketId, replyRunId, title, notes, dueInDays), cancellationToken);
-            owner.Record(new ReplyProposal(new ProposalPayload(proposal.Id, proposal.Title, proposal.Notes, proposal.DueDate, proposal.Status)));
+            Owner.Record(new ReplyProposal(new ProposalPayload(proposal.Id, proposal.Title, proposal.Notes, proposal.DueDate, proposal.Status)));
             return new ProposalResult(StatusText(proposal.Status), proposal.Id);
         };
     }
