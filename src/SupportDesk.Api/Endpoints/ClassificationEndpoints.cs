@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http.HttpResults;
+using SupportDesk.Core.AI;
 using SupportDesk.Core.Classification;
 
 namespace SupportDesk.Api.Endpoints;
@@ -24,9 +25,17 @@ public static class ClassificationEndpoints
                 ? TypedResults.Problem(statusCode: StatusCodes.Status404NotFound, title: "Ticket not found", detail: $"There is no ticket with ID {id}.")
                 : TypedResults.Ok(classification.ToResponse());
         }
-        catch (Exception exception) when (ModelErrorProblems.From(exception) is { } problem)
+        catch (ModelUnavailableException exception)
         {
-            return problem;
+            return ModelProblems.Unavailable(exception);
+        }
+        catch (ModelRefusedException)
+        {
+            return ModelProblems.Refused();
+        }
+        catch (BudgetExceededException)
+        {
+            return ModelProblems.BudgetExceeded();
         }
     }
 }

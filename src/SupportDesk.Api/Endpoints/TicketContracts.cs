@@ -60,8 +60,11 @@ internal static class TicketMapping
             ticket.OrderNumber,
             ticket.Status,
             ticket.CreatedAt,
-            ticket.Summary is { } summary ? new TicketSummaryResponse(summary.Text, summary.PromptVersion, summary.GeneratedAt) : null,
+            ticket.Summary?.ToResponse(),
             ticket.Classification.ToResponse());
+
+    public static TicketSummaryResponse ToResponse(this TicketSummary summary) =>
+        new(summary.Text, summary.PromptVersion, summary.GeneratedAt);
 
     public static TicketClassificationResponse ToResponse(this TicketClassification classification) =>
         new(

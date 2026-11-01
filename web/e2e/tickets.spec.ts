@@ -37,3 +37,32 @@ test('shows an error when the ticket list fails', async ({ page }) => {
 
   await expect(page.getByRole('alert')).toContainText("Couldn't load the tickets");
 });
+
+test('summarizes a ticket and shows a model error', async ({ page }) => {
+  const summary = 'The tent order is delayed and the customer wants a date.';
+  let calls = 0;
+  await page.route('/api/health', (route) => route.fulfill({ json: { status: 'ok', database: 'ok' } }));
+  await page.route('/api/tickets/2', (route) => route.fulfill({ json: detail }));
+  await page.route('/api/tickets/2/summary', async (route) => {
+    calls++;
+    if (calls === 1) {
+      await route.fulfill({ json: { text: summary, promptVersion: 'summary.v2', generatedAt: '2026-11-01T12:00:00Z' } });
+    } else {
+      await route.fulfill({
+        status: 422,
+        contentType: 'application/problem+json',
+        body: JSON.stringify({ status: 422, title: 'The model declined the request', detail: 'The model declined to answer for this ticket.', code: 'model_refused' }),
+      });
+    }
+  });
+
+  await page.goto('/tickets/2');
+  await page.getByRole('button', { name: 'Summarize' }).click();
+  await expect(page.getByText(summary)).toBeVisible();
+  await expect(page.getByText('summary.v2')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Regenerate' }).click();
+  await expect(page.getByRole('alert')).toContainText('The model declined to answer for this ticket.');
+  await expect(page.getByText(summary)).toBeVisible();
+  expect(calls).toBe(2);
+});

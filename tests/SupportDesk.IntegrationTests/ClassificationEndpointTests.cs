@@ -93,8 +93,8 @@ public class ClassificationEndpointTests(PostgresFixture postgres)
     }
 
     [Theory]
-    [InlineData("T-1021", HttpStatusCode.ServiceUnavailable, "The AI model is unavailable")]
-    [InlineData("T-1025", HttpStatusCode.UnprocessableEntity, "The AI model declined")]
+    [InlineData("T-1021", HttpStatusCode.ServiceUnavailable, "The model is unavailable")]
+    [InlineData("T-1025", HttpStatusCode.UnprocessableEntity, "The model declined the request")]
     public async Task Model_errors_return_problem_details_and_leave_the_classification_unchanged(string number, HttpStatusCode status, string title)
     {
         // One attempt with no wait, so the 503 scenario doesn't sit through the backoff

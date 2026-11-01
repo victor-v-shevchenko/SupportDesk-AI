@@ -5,10 +5,11 @@ import { RouterLink } from '@angular/router';
 import { TicketsService } from '../api/tickets.service';
 import { ClassificationBadges } from './classification-badges';
 import { TicketStatusBadge } from './ticket-status';
+import { GeneratedSummary, TicketSummaryBox } from './ticket-summary';
 
 @Component({
   selector: 'app-ticket-detail-page',
-  imports: [RouterLink, DatePipe, TicketStatusBadge, ClassificationBadges],
+  imports: [RouterLink, DatePipe, TicketStatusBadge, TicketSummaryBox, ClassificationBadges],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <a class="back" routerLink="/tickets">← All tickets</a>
@@ -35,12 +36,7 @@ import { TicketStatusBadge } from './ticket-status';
       <p class="body">{{ t.body }}</p>
 
       <section class="slot summary" aria-labelledby="summary-heading">
-        <h2 id="summary-heading">Summary</h2>
-        @if (t.summary; as summary) {
-          <p>{{ summary.text }}</p>
-        } @else {
-          <p class="empty">No summary yet.</p>
-        }
+        <app-ticket-summary [ticketId]="t.id" [summary]="t.summary" (generated)="showSummary($event)" />
       </section>
 
       <section class="slot classification" aria-labelledby="classification-heading">
@@ -128,6 +124,11 @@ export class TicketDetailPage {
     const error = this.ticket.error();
     return error instanceof HttpErrorResponse && error.status === 404;
   });
+
+  /** Shows a summary the server just saved, unless the page has moved on to another ticket since it was asked for. */
+  protected showSummary({ ticketId, summary }: GeneratedSummary): void {
+    this.ticket.update((t) => (t?.id === ticketId ? { ...t, summary } : t));
+  }
 }
 
 /** The problem details' detail from the API, which never carries provider text, or a generic message. */

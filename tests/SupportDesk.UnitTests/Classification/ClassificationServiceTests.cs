@@ -250,6 +250,9 @@ public class ClassificationServiceTests
 
         public Task<Ticket> CreateAsync(NewTicket ticket, CancellationToken cancellationToken) => throw new NotSupportedException();
 
+        public Task<TicketSummary?> SaveSummaryAsync(int id, string text, string promptVersion, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<TicketClassification?> SaveClassificationAsync(int id, TicketClassification classification, CancellationToken cancellationToken)
         {
             if (_tickets.All(t => t.Id != id))

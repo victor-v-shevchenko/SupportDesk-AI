@@ -14,4 +14,7 @@ public interface ITicketRepository
     /// there's no ticket with <paramref name="id"/>.
     /// </summary>
     Task<TicketClassification?> SaveClassificationAsync(int id, TicketClassification classification, CancellationToken cancellationToken);
+
+    /// <summary>Replaces the ticket's summary, stamped with the current time; null when there's no such ticket.</summary>
+    Task<TicketSummary?> SaveSummaryAsync(int id, string text, string promptVersion, CancellationToken cancellationToken);
 }

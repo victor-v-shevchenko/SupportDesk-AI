@@ -75,6 +75,24 @@ internal sealed class TicketRepository(SupportDeskDbContext db, TimeProvider tim
             };
     }
 
+    public async Task<TicketSummary?> SaveSummaryAsync(int id, string text, string promptVersion, CancellationToken cancellationToken)
+    {
+        var entity = await db.Tickets.FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
+        if (entity is null)
+        {
+            return null;
+        }
+
+        entity.Summary = new TicketSummary
+        {
+            Text = text,
+            PromptVersion = promptVersion,
+            GeneratedAt = ToDatabasePrecision(time.GetUtcNow()),
+        };
+        await db.SaveChangesAsync(cancellationToken);
+        return entity.Summary;
+    }
+
     /// <summary>PostgreSQL keeps microseconds; truncating first makes the created ticket equal to the one read back later.</summary>
     internal static DateTimeOffset ToDatabasePrecision(DateTimeOffset value) =>
         value.AddTicks(-(value.Ticks % TimeSpan.TicksPerMicrosecond));

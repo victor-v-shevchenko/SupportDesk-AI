@@ -123,7 +123,7 @@ All routes are under `/api`. Errors use RFC 7807 problem details.
 - **Create:** `subject`, `body`, `customerName`, `orderNumber?`. Subject and customer name are trimmed; an empty order number counts as none. Returns `201` with `Location: /api/tickets/{id}` and the detail. A `400` lists every invalid field under its JSON name. A body that isn't a JSON object of the right shape (malformed, `null`, a number where a string belongs) gets a `400` problem details without field names
 - **Articles:** the list has `slug`, `title`, `updatedAt`, ordered by title; the detail adds `bodyMarkdown` (without the front matter)
 - **Classify:** `POST /api/tickets/{id}/classification` takes no body and returns `200` with the saved classification (the same shape as the detail's `classification`); calling it again replaces it. An answer that fails validation twice is saved and returned as `NeedsManual`, not as an error
-- **Model errors** on the non-streaming AI endpoints (classification, summary) are problem details with fixed messages, never the provider's (`ModelErrorProblems`): `503` for `ModelUnavailableException` (title "The AI model timed out" when `IsTimeout`), `422` for `ModelRefusedException`, `413` for `BudgetExceededException`. A failed call leaves the saved result as it was
+- **Model errors** on the non-streaming AI endpoints (classification, summary) are problem details with fixed messages, never the provider's (`ModelProblems`, table in section 9). A failed call leaves the saved result as it was
 - An unknown ticket ID or article slug returns `404` problem details
 
 ## 6. LLM pipeline
@@ -138,7 +138,7 @@ All routes are under `/api`. Errors use RFC 7807 problem details.
 | `AI:Embeddings:Model` | model ID; empty means the provider's default | `mxbai-embed-large` (Ollama), `voyage-3.5` (Voyage), `text-embedding-3-small` (OpenAI), `fake-hash` (Fake) |
 | `AI:Embeddings:Dimensions` | `1024` | `1024` |
 | `AI:Ollama:Endpoint` | URL; required when Ollama is the chat or embedding provider, set only in config (no code default) | `http://host.docker.internal:11434` (plain HTTP: Ollama on the host has no TLS) |
-| `AI:Prompts:<name>` | prompt version | `reply.v1`, `summary.v1`, `classify.v2` (all three required) |
+| `AI:Prompts:<name>` | prompt version | `reply.v1`, `summary.v2`, `classify.v2` (all three required) |
 | `AI:PromptsPath` | folder | `prompts`, resolved from the app's base directory, where the build copies `prompts/` |
 | `AI:Anthropic:Effort:<feature>` | `Low`, `Medium`, `High`, `ExtraHigh` | `Reply` Medium, `Summary` Low, `Classification` Low (see 6.7) |
 | `AI:Anthropic:ApiKey`, `AI:OpenAI:ApiKey`, `AI:Voyage:ApiKey` | secret | none; user secrets or `AI__…__ApiKey` variables, never appsettings |
@@ -328,7 +328,16 @@ These come from the current API and must be checked against the SDK version in u
 - **Validation** (`ClassificationValidator`) reads the raw response text, not `ChatResponse<T>.Result`, which ignores extra properties and fills missing ones with defaults: one JSON object (no code fence or other text, no duplicate keys), exactly `category`, `priority` and `reason`, enum names with exact casing (no numbers), `reason` a non-empty string of at most 200 characters after trimming. The errors name the allowed properties and values but never repeat what the model wrote, since they go back to it in a user turn and its answer can copy the ticket
 - **Invalid JSON or schema mismatch:** one retry with the validation error added to the prompt, then `Status = NeedsManual`. The retry sends the rejected answer back as the assistant turn (left out when it's empty) and the prompt's `## Retry` message with the errors as the next user turn. Each rejection is logged at debug level with the raw output; `NeedsManual` is logged at information level without it
 - **Saved:** status, category, priority, reason, prompt version and time, in one `UPDATE` of the classification columns. `NeedsManual` saves the prompt version and time with the other fields null
-- **Summary:** plain text, 2–3 sentences, at most 600 characters; longer output is cut at the last full sentence
+- **Summary:** plain text, 2–3 sentences, at most 600 characters (`SummaryOutput`). The output is trimmed; longer output is cut after the last full sentence that fits: `.`, `!` or `?` (with any closing quotes or brackets) followed by whitespace, so `1.5` or `kestrel.example` aren't sentence ends. If not even the first sentence fits, it's cut at the last whitespace before the limit (trailing commas and the like dropped) and ends with `…`. Abbreviations such as `e.g.` count as sentence ends, a known limit of the rule. Empty or whitespace-only output is a failure (`ModelOutputException`)
+- **Summary endpoint** (`POST /api/tickets/{id}/summary`): one non-streaming call (`SummaryService`, feature `Summary`, `MaxOutputTokens` from `AI:Budget:MaxOutputTokens:Summary`), then the check, then the save (`Text`, `PromptVersion`, `GeneratedAt`), replacing the old summary. It returns `200` with the summary. Nothing is saved before the check passes, so a failure leaves the old summary as it was
+- **Model errors as problem details** (`ModelProblems`, for every non-streaming feature): the title and detail are fixed texts, never an exception's message, and `code` is the reply stream's error code (PLAN.md 7) or `invalid_output`:
+
+  | Failure | Status | `code` |
+  | --- | --- | --- |
+  | `ModelUnavailableException` | 503 | `model_unavailable`, or `timeout` when `IsTimeout` |
+  | `ModelRefusedException` | 422 | `model_refused` |
+  | `BudgetExceededException` | 413 | `budget_exceeded` |
+  | `ModelOutputException` (output failed the check, such as an empty summary) | 502 | `invalid_output` |
 
 ## 10. Tools
 

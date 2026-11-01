@@ -148,13 +148,26 @@ describe('TicketDetailPage', () => {
     el.querySelector<HTMLButtonElement>('button.classify')!.click();
     http
       .expectOne('/api/tickets/2/classification')
-      .flush({ status: 503, title: 'The AI model is unavailable', detail: 'Try again in a moment.' }, { status: 503, statusText: 'Service Unavailable' });
+      .flush({ status: 503, title: 'The model is unavailable', detail: 'Try again in a moment.' }, { status: 503, statusText: 'Service Unavailable' });
     await new Promise((resolve) => setTimeout(resolve));
     await fixture.whenStable();
 
     expect(el.querySelector('.classification [role=alert]')?.textContent).toContain("Couldn't classify this ticket: Try again in a moment.");
     expect(el.querySelector('.classification .category')?.textContent).toBe('Shipping');
     expect(el.querySelector<HTMLButtonElement>('button.classify')!.disabled).toBe(false);
+  });
+
+  it('shows a newly generated summary without reloading the ticket', async () => {
+    const fixture = create();
+    http.expectOne('/api/tickets/2').flush(ticket);
+    const el = await settle(fixture);
+
+    el.querySelector<HTMLButtonElement>('.summary button')?.click();
+    http.expectOne('/api/tickets/2/summary').flush({ text: 'The tent order is delayed.', promptVersion: 'summary.v2', generatedAt: '2026-11-01T12:00:00Z' });
+    await fixture.whenStable();
+
+    expect(el.querySelector('.summary .text')?.textContent).toBe('The tent order is delayed.');
+    expect(el.querySelector('.summary button')?.textContent?.trim()).toBe('Regenerate');
   });
 
   it('says the ticket was not found on a 404, without a retry', async () => {
