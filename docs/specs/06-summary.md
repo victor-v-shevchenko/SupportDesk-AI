@@ -22,11 +22,11 @@ Automatic summaries when a ticket is created.
 
 ## Acceptance criteria
 
-- [ ] The summary is saved with the prompt version and time, and returned by `GET /api/tickets/{id}`
-- [ ] Regenerate replaces the saved summary
-- [ ] Output over 600 characters is cut at a sentence boundary; empty output returns an error and leaves the old summary unchanged
-- [ ] Model errors return problem details with a clear message (`503` for unavailable, `422` for refused, `413` for budget exceeded), and the UI shows it
-- [ ] Two quick clicks send one request (the button is disabled while a request runs)
+- [x] The summary is saved with the prompt version and time, and returned by `GET /api/tickets/{id}`
+- [x] Regenerate replaces the saved summary
+- [x] Output over 600 characters is cut at a sentence boundary; empty output returns an error and leaves the old summary unchanged
+- [x] Model errors return problem details with a clear message (`503` for unavailable, `422` for refused, `413` for budget exceeded), and the UI shows it
+- [x] Two quick clicks send one request (the button is disabled while a request runs)
 
 ## Tests
 
