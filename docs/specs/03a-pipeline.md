@@ -39,15 +39,15 @@ Retries, timeouts, budget, usage logging (step 3b). Any feature using the pipeli
 
 ## Acceptance criteria
 
-- [ ] Each provider value in config resolves to the matching client; an unknown value fails at startup
-- [ ] A missing API key for the selected provider fails at startup with the setting's name; it is never logged
-- [ ] `AI__Chat__Provider=Fake` in `Production` fails at startup
-- [ ] Only `SupportDesk.Api` references provider packages (checked by a test that inspects project references)
-- [ ] Provider exceptions come out of the pipeline only as the typed exceptions from PLAN.md 6.5
-- [ ] `IPromptStore` loads the configured version; a missing file fails at startup, not on first use
-- [ ] `</ticket>` inside ticket text can't close the tag
-- [ ] The fake provider plays each named scenario: streamed text with delays, tool calls, errors before and after the first item, stalls before and after the first item, invalid JSON, refusal
-- [ ] `FakeEmbeddingGenerator` returns the same 1024-dimension vector for the same text
+- [x] Each provider value in config resolves to the matching client; an unknown value fails at startup
+- [x] A missing API key for the selected provider fails at startup with the setting's name; it is never logged
+- [x] `AI__Chat__Provider=Fake` in `Production` fails at startup
+- [x] Only `SupportDesk.Api` references provider packages (checked by a test that inspects project references)
+- [x] Provider exceptions come out of the pipeline only as the typed exceptions from PLAN.md 6.5
+- [x] `IPromptStore` loads the configured version; a missing file fails at startup, not on first use
+- [x] `</ticket>` inside ticket text can't close the tag
+- [x] The fake provider plays each named scenario: streamed text with delays, tool calls, errors before and after the first item, stalls before and after the first item, invalid JSON, refusal
+- [x] `FakeEmbeddingGenerator` returns the same 1024-dimension vector for the same text
 
 ## Tests
 
