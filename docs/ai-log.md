@@ -103,3 +103,10 @@ Entry format (from CLAUDE.md):
 - What was wrong: the embedding generator isn't behind the chat pipeline's error mapping, so a retrieval failure (Ollama down, an HTTP error, an `HttpClient` timeout) reached the reply as a raw exception and became `internal_error`, logged with the provider's exception, instead of `model_unavailable` or `timeout`.
 - Fix: `RetrievalService` maps embedding failures to `ModelUnavailableException` with fixed text, keeping the status and marking unrequested cancellations as timeouts (step 5 PR).
 - Test: `RetrievalServiceTests.An_embedding_provider_failure_becomes_ModelUnavailableException`
+
+## 2026-11-01 — Ticket text could fake the sources block
+- Step: 9
+- Found by: test
+- What was wrong: `TicketPromptFormatter` escaped `ticket` and `tool_result` tags but not `sources`, so a customer could write `</sources>` or a whole `<sources>[1] …</sources>` block into a ticket, inside `<ticket>`, and give the model a made-up article to answer from and cite. Article text already had `sources` escaped.
+- Fix: the ticket escape covers `sources` tags too, in any case or spacing (step 9 PR).
+- Test: `PromptInjectionTests.Ticket_text_stays_inside_the_ticket_block_of_the_user_message` and `TicketPromptFormatterTests.Ticket_text_cannot_fake_an_article_block`
