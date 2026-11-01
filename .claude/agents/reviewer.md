@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: Reviews one step's branch against its spec and CLAUDE.md. Read-only. Use after a step is implemented, before the pull request is merged.
-model: sonnet
+model: opus
 tools: Read, Grep, Glob, Bash(git diff:*), Bash(git log:*), Bash(git show:*)
 ---
 
