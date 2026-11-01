@@ -19,6 +19,7 @@ test('opens a ticket from the list', async ({ page }) => {
   await page.route('/api/health', (route) => route.fulfill({ json: { status: 'ok', database: 'ok' } }));
   await page.route('/api/tickets', (route) => route.fulfill({ json: list }));
   await page.route('/api/tickets/2', (route) => route.fulfill({ json: detail }));
+  await page.route('/api/tickets/2/follow-ups', (route) => route.fulfill({ json: { proposals: [], tasks: [] } }));
 
   await page.goto('/tickets');
   await expect(page.getByRole('row')).toHaveCount(3);
@@ -43,6 +44,7 @@ test('summarizes a ticket and shows a model error', async ({ page }) => {
   let calls = 0;
   await page.route('/api/health', (route) => route.fulfill({ json: { status: 'ok', database: 'ok' } }));
   await page.route('/api/tickets/2', (route) => route.fulfill({ json: detail }));
+  await page.route('/api/tickets/2/follow-ups', (route) => route.fulfill({ json: { proposals: [], tasks: [] } }));
   await page.route('/api/tickets/2/summary', async (route) => {
     calls++;
     if (calls === 1) {

@@ -30,5 +30,6 @@ app.MapModelCallEndpoints();
 app.MapSearchEndpoints();
 app.MapClassificationEndpoints();
 app.MapSummaryEndpoints();
+app.MapFollowUpEndpoints();
 
 await app.RunAsync();

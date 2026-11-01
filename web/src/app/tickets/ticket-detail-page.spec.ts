@@ -1,8 +1,11 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
+import { FollowUps } from '../api/follow-ups.models';
 import { TicketClassification, TicketDetail } from '../api/tickets.models';
+import { ReplyPanel } from './reply-panel';
 import { TicketDetailPage } from './ticket-detail-page';
 
 const ticket: TicketDetail = {
@@ -44,7 +47,19 @@ describe('TicketDetailPage', () => {
     return fixture;
   }
 
-  async function settle(fixture: ReturnType<typeof create>) {
+  /**
+   * Renders until stable. The follow-ups list (covered by its own spec) loads once the ticket shows, and the page isn't
+   * stable while that request is open, so it's answered here: with no follow-ups unless the test says otherwise.
+   */
+  async function settle(fixture: ReturnType<typeof create>, followUps: FollowUps = { proposals: [], tasks: [] }) {
+    for (let i = 0; i < 3; i++) {
+      await new Promise((resolve) => setTimeout(resolve));
+      TestBed.tick();
+      for (const request of http.match((r) => r.url.endsWith('/follow-ups'))) {
+        request.flush(followUps);
+      }
+    }
+
     await fixture.whenStable();
     return fixture.nativeElement as HTMLElement;
   }
@@ -170,6 +185,24 @@ describe('TicketDetailPage', () => {
     expect(el.querySelector('.summary button')?.textContent?.trim()).toBe('Regenerate');
   });
 
+  it('shows the follow-ups list and reloads it when the reply panel says it changed', async () => {
+    const fixture = create();
+    http.expectOne('/api/tickets/2').flush(ticket);
+    let el = await settle(fixture, {
+      proposals: [],
+      tasks: [{ id: 1, proposalId: 'p1', title: 'Open a carrier trace', notes: '', dueDate: '2026-11-03', createdAt: '2026-11-01T12:00:00Z' }],
+    });
+    expect(el.querySelector('.follow-ups .tasks')?.textContent).toContain('Open a carrier trace');
+
+    const panel = fixture.debugElement.query(By.directive(ReplyPanel)).componentInstance as ReplyPanel;
+    panel.followUpsChanged.emit();
+    TestBed.tick();
+    http.expectOne('/api/tickets/2/follow-ups').flush({ proposals: [], tasks: [] });
+
+    el = await settle(fixture);
+    expect(el.querySelector('.follow-ups .empty')?.textContent).toContain('No follow-ups yet');
+  });
+
   it('says the ticket was not found on a 404, without a retry', async () => {
     const fixture = create('999');
     http.expectOne('/api/tickets/999').flush({ status: 404, title: 'Ticket not found' }, { status: 404, statusText: 'Not Found' });
@@ -189,7 +222,7 @@ describe('TicketDetailPage', () => {
     el.querySelector<HTMLButtonElement>('[role=alert] button')?.click();
     TestBed.tick();
     http.expectOne('/api/tickets/2').flush(ticket);
-    await fixture.whenStable();
+    await settle(fixture);
 
     expect(el.querySelector('h1')?.textContent).toContain('T-1002');
   });

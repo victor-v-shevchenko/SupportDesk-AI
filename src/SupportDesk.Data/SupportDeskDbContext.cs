@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SupportDesk.Core.AI.Usage;
 using SupportDesk.Core.Articles;
+using SupportDesk.Core.FollowUps;
 using SupportDesk.Core.Tickets;
 
 namespace SupportDesk.Data;
@@ -22,6 +23,10 @@ public class SupportDeskDbContext(DbContextOptions<SupportDeskDbContext> options
     public DbSet<ModelCall> ModelCalls => Set<ModelCall>();
 
     public DbSet<ArticleChunk> ArticleChunks => Set<ArticleChunk>();
+
+    public DbSet<FollowUpProposal> FollowUpProposals => Set<FollowUpProposal>();
+
+    public DbSet<FollowUpTask> FollowUpTasks => Set<FollowUpTask>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -91,6 +96,27 @@ public class SupportDeskDbContext(DbContextOptions<SupportDeskDbContext> options
             chunk.Property(c => c.Embedding).HasColumnType($"vector({EmbeddingDimensions})");
             // Cosine distance (<=>), the operator search orders by; an index built for another operator wouldn't be used
             chunk.HasIndex(c => c.Embedding).HasMethod("hnsw").HasOperators("vector_cosine_ops");
+        });
+
+        modelBuilder.Entity<FollowUpProposal>(proposal =>
+        {
+            proposal.HasOne<Ticket>().WithMany().HasForeignKey(p => p.TicketId).OnDelete(DeleteBehavior.Cascade);
+            // The upsert's conflict target: one proposal per reply run
+            proposal.HasIndex(p => new { p.TicketId, p.ReplyRunId }).IsUnique();
+            proposal.Property(p => p.Title).HasMaxLength(FollowUpProposal.TitleMaxLength);
+            proposal.Property(p => p.Notes).HasMaxLength(FollowUpProposal.NotesMaxLength);
+            proposal.Property(p => p.Status).HasConversion<string>().HasMaxLength(20);
+            // The expiry check looks for pending proposals by expiry time
+            proposal.HasIndex(p => new { p.Status, p.ExpiresAt });
+        });
+
+        modelBuilder.Entity<FollowUpTask>(task =>
+        {
+            task.HasOne<Ticket>().WithMany().HasForeignKey(t => t.TicketId).OnDelete(DeleteBehavior.Cascade);
+            // At most one task per proposal, however many times it's confirmed
+            task.HasOne<FollowUpProposal>().WithOne().HasForeignKey<FollowUpTask>(t => t.ProposalId).OnDelete(DeleteBehavior.Cascade);
+            task.Property(t => t.Title).HasMaxLength(FollowUpProposal.TitleMaxLength);
+            task.Property(t => t.Notes).HasMaxLength(FollowUpProposal.NotesMaxLength);
         });
     }
 }

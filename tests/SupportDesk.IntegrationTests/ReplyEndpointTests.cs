@@ -105,6 +105,72 @@ public class ReplyEndpointTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task The_order_scenario_looks_up_the_order_and_the_reply_uses_its_status()
+    {
+        await using var api = await SeededApi.StartAsync(postgres, Ct, AllChunks);
+        var ticketId = await TicketIdAsync(api, "T-1002");
+
+        using var response = await PostReplyAsync(api, ticketId);
+        var events = await ReadEventsAsync(response);
+
+        var names = events.Select(e => e.Event).ToList();
+        Assert.Equal("tool_call", names[0]);
+        Assert.Equal(["citations", "usage", "done"], names.Skip(1).SkipWhile(n => n == "token"));
+        var call = events[0].Data;
+        Assert.Equal("lookup_order_status", call.GetProperty("name").GetString());
+        Assert.Equal("KO-205002", call.GetProperty("arguments").GetProperty("orderNumber").GetString());
+        var result = call.GetProperty("result");
+        Assert.True(result.GetProperty("found").GetBoolean());
+        Assert.Equal("Delayed", result.GetProperty("status").GetString());
+        Assert.Equal("FedEx", result.GetProperty("carrier").GetString());
+        Assert.Equal(new DateTimeOffset(2026, 10, 11, 7, 30, 0, TimeSpan.Zero), result.GetProperty("lastUpdate").GetDateTimeOffset());
+        Assert.Contains("delayed", ReplyText(events), StringComparison.Ordinal);
+
+        // Two calls in the tool loop, one usage row each, and the usage event adds them up
+        Assert.Equal(2700, events.Single(e => e.Event == "usage").Data.GetProperty("inputTokens").GetInt64());
+        Assert.Equal(2, (await PollAsync(api, ticketId, r => r.Count >= 2)).Count);
+    }
+
+    [Fact]
+    public async Task The_proposal_scenario_reports_the_unknown_order_and_proposes_without_creating_a_task()
+    {
+        await using var api = await SeededApi.StartAsync(postgres, Ct, AllChunks);
+        var ticketId = await TicketIdAsync(api, "T-1008");
+
+        using var response = await PostReplyAsync(api, ticketId);
+        var events = await ReadEventsAsync(response);
+
+        // The lookup, then the text before the proposal, the proposal, the rest of the text, then the end
+        var names = events.Select(e => e.Event).ToList();
+        var proposalAt = names.LastIndexOf("tool_call");
+        Assert.Equal("tool_call", names[0]);
+        Assert.True(proposalAt > 1 && names[1..proposalAt].All(n => n == "token"), string.Join(",", names));
+        Assert.Equal(["citations", "usage", "done"], names.Skip(proposalAt + 1).SkipWhile(n => n == "token"));
+        Assert.Equal("""{"found":false}""", events[0].Data.GetProperty("result").GetRawText());
+        Assert.Contains("couldn't find order KO-208815", ReplyText(events), StringComparison.Ordinal);
+
+        var proposal = events[proposalAt].Data;
+        Assert.Equal("propose_follow_up_task", proposal.GetProperty("name").GetString());
+        var payload = proposal.GetProperty("proposal");
+        Assert.Equal("Open a carrier trace for KO-208815", payload.GetProperty("title").GetString());
+        Assert.Equal("Pending", payload.GetProperty("status").GetString());
+        var replyRunId = events[^1].Data.GetProperty("replyRunId").GetGuid();
+
+        await using var db = api.CreateDbContext();
+        var stored = await db.FollowUpProposals.SingleAsync(p => p.TicketId == ticketId, Ct);
+        Assert.Equal(payload.GetProperty("id").GetGuid(), stored.Id);
+        Assert.Equal(replyRunId, stored.ReplyRunId);
+        Assert.Equal(DateOnly.FromDateTime(stored.CreatedAt.UtcDateTime).AddDays(2), stored.DueDate);
+        Assert.Equal(stored.DueDate!.Value.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), payload.GetProperty("dueDate").GetString());
+        // Proposing never creates a task; the Confirm endpoint does
+        Assert.False(await db.FollowUpTasks.AnyAsync(Ct));
+
+        using var confirmed = await FollowUpTests.PostConfirmAsync(api, stored.Id);
+        Assert.Equal(HttpStatusCode.OK, confirmed.StatusCode);
+        Assert.Equal(1, await db.FollowUpTasks.CountAsync(t => t.ProposalId == stored.Id, Ct));
+    }
+
+    [Fact]
     public async Task A_prompt_over_the_budget_ends_with_budget_exceeded()
     {
         var settings = new Dictionary<string, string?>(AllChunks) { ["AI:Budget:MaxInputTokensPerCall"] = "50" };
@@ -149,6 +215,9 @@ public class ReplyEndpointTests(PostgresFixture postgres)
         await using var db = api.CreateDbContext();
         return await db.Tickets.Where(t => t.Number == number).Select(t => t.Id).SingleAsync(Ct);
     }
+
+    private static string ReplyText(List<(string Event, JsonElement Data)> events) =>
+        string.Concat(events.Where(e => e.Event == "token").Select(e => e.Data.GetProperty("text").GetString()));
 
     private static Task<HttpResponseMessage> PostReplyAsync(SeededApi api, int ticketId, CancellationToken? cancellationToken = null)
     {

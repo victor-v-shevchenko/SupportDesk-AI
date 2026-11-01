@@ -32,7 +32,9 @@ public static partial class TicketPromptFormatter
 
     /// <summary>
     /// Replaces the <c>&lt;</c> of anything that reads as a <c>ticket</c> tag (<c>&lt;/ticket&gt;</c>, <c>&lt;/TICKET &gt;</c>,
-    /// <c>&lt; /ticket</c>, <c>&lt;ticket&gt;</c>) with <c>&amp;lt;</c>. The rest of the text is left as the customer wrote it.
+    /// <c>&lt; /ticket</c>, <c>&lt;ticket&gt;</c>) with <c>&amp;lt;</c>, and the same for <c>tool_result</c>, so the customer
+    /// can't fake a tool result the reply prompt says to trust as the store's data. The rest of the text is left as the
+    /// customer wrote it.
     /// </summary>
     public static string Escape(string text)
     {
@@ -41,6 +43,6 @@ public static partial class TicketPromptFormatter
         return TicketTagRegex().Replace(text, "&lt;");
     }
 
-    [GeneratedRegex(@"<(?=\s*/?\s*ticket)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"<(?=\s*/?\s*(?:ticket|tool_result))", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex TicketTagRegex();
 }

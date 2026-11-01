@@ -1,3 +1,5 @@
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { ReplyEvent, ReplyRequestError, ReplyStreamEndedError } from '../api/replies.models';
@@ -59,8 +61,12 @@ describe('ReplyPanel', () => {
         return stream.run();
       },
     };
-    TestBed.configureTestingModule({ providers: [provideRouter([]), { provide: RepliesService, useValue: fake }] });
+    TestBed.configureTestingModule({
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting(), { provide: RepliesService, useValue: fake }],
+    });
   });
+
+  afterEach(() => TestBed.inject(HttpTestingController).verify());
 
   function create() {
     const fixture = TestBed.createComponent(ReplyPanel);
@@ -126,6 +132,83 @@ describe('ReplyPanel', () => {
     expect(el.querySelector('.usage')?.textContent).toContain('$0.0012');
     expect(el.querySelector('.stop')).toBeNull();
     expect(el.querySelector('.suggest')?.textContent).toContain('Suggest again');
+  });
+
+  it('shows an order card and a proposal card in the order the tools ran, above the reply text', async () => {
+    const fixture = create();
+    let changes = 0;
+    fixture.componentInstance.followUpsChanged.subscribe(() => changes++);
+    click(fixture.nativeElement, '.suggest');
+    streams[0].push(
+      { type: 'tool_call', name: 'lookup_order_status', arguments: { orderNumber: 'KO-208815' }, result: { found: false } },
+      { type: 'token', text: "I couldn't find that order. " },
+      { type: 'tool_call', name: 'propose_follow_up_task', proposal: { id: 'p1', title: 'Trace the parcel', notes: '', dueDate: null, status: 'Pending' } },
+    );
+    let el = await settle(fixture);
+
+    const cards = [...el.querySelectorAll('.tool-calls > *')].map((c) => c.tagName.toLowerCase());
+    expect(cards).toEqual(['app-order-status-card', 'app-proposal-card']);
+    expect(el.querySelector('app-order-status-card')?.textContent).toContain('KO-208815');
+    expect(el.querySelector('app-order-status-card .not-found')).not.toBeNull();
+    expect(el.querySelector('.tool-calls')!.compareDocumentPosition(el.querySelector('.reply-text')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(changes).toBe(1);
+
+    // A repeated proposal in the same run is the same saved proposal: its card is updated, not doubled
+    streams[0].push(
+      { type: 'tool_call', name: 'propose_follow_up_task', proposal: { id: 'p1', title: 'Open a carrier trace', notes: 'Three weeks late.', dueDate: '2026-11-03', status: 'Pending' } },
+      { type: 'done', replyRunId: 'r1' },
+    );
+    el = await settle(fixture);
+    const proposals = el.querySelectorAll('app-proposal-card');
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0].querySelector('.title')?.textContent).toBe('Open a carrier trace');
+    expect(changes).toBe(2);
+  });
+
+  it('confirming a proposal from the panel tells the page its follow-ups changed', async () => {
+    const fixture = create();
+    let changes = 0;
+    fixture.componentInstance.followUpsChanged.subscribe(() => changes++);
+    click(fixture.nativeElement, '.suggest');
+    streams[0].push(
+      { type: 'tool_call', name: 'propose_follow_up_task', proposal: { id: 'p1', title: 'Trace the parcel', notes: '', dueDate: null, status: 'Pending' } },
+      { type: 'done', replyRunId: 'r1' },
+    );
+    let el = await settle(fixture);
+
+    click(el, 'app-proposal-card .confirm');
+    TestBed.inject(HttpTestingController)
+      .expectOne('/api/follow-ups/p1/confirm')
+      .flush({ id: 1, proposalId: 'p1', title: 'Trace the parcel', notes: '', dueDate: null, createdAt: '2026-11-01T12:00:00Z' });
+    el = await settle(fixture);
+    await new Promise((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+
+    expect(el.querySelector('app-proposal-card .confirmed')?.textContent).toContain('Task created');
+    expect(changes).toBe(2);
+  });
+
+  it('shows a proposal the server reports as already confirmed without a Confirm button', async () => {
+    const fixture = create();
+    click(fixture.nativeElement, '.suggest');
+    streams[0].push({ type: 'tool_call', name: 'propose_follow_up_task', proposal: { id: 'p1', title: 'Trace', notes: '', dueDate: null, status: 'Confirmed' } });
+    const el = await settle(fixture);
+
+    expect(el.querySelector('app-proposal-card .confirmed')).not.toBeNull();
+    expect(el.querySelector('app-proposal-card .confirm')).toBeNull();
+  });
+
+  it('clears the cards when a new reply starts', async () => {
+    const fixture = create();
+    click(fixture.nativeElement, '.suggest');
+    streams[0].push({ type: 'tool_call', name: 'lookup_order_status', arguments: { orderNumber: 'KO-205002' }, result: { found: false } });
+    let el = await settle(fixture);
+    expect(el.querySelector('app-order-status-card')).not.toBeNull();
+
+    click(el, '.suggest');
+    el = await settle(fixture);
+
+    expect(el.querySelector('.tool-calls')).toBeNull();
   });
 
   it('marks estimated usage and an unknown cost', async () => {

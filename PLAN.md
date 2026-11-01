@@ -138,7 +138,7 @@ All routes are under `/api`. Errors use RFC 7807 problem details.
 | `AI:Embeddings:Model` | model ID; empty means the provider's default | `mxbai-embed-large` (Ollama), `voyage-3.5` (Voyage), `text-embedding-3-small` (OpenAI), `fake-hash` (Fake) |
 | `AI:Embeddings:Dimensions` | `1024` | `1024` |
 | `AI:Ollama:Endpoint` | URL; required when Ollama is the chat or embedding provider, set only in config (no code default) | `http://host.docker.internal:11434` (plain HTTP: Ollama on the host has no TLS) |
-| `AI:Prompts:<name>` | prompt version | `reply.v1`, `summary.v2`, `classify.v2` (all three required) |
+| `AI:Prompts:<name>` | prompt version | `reply.v2`, `summary.v2`, `classify.v2` (all three required) |
 | `AI:PromptsPath` | folder | `prompts`, resolved from the app's base directory, where the build copies `prompts/` |
 | `AI:Anthropic:Effort:<feature>` | `Low`, `Medium`, `High`, `ExtraHigh` | `Reply` Medium, `Summary` Low, `Classification` Low (see 6.7) |
 | `AI:Anthropic:ApiKey`, `AI:OpenAI:ApiKey`, `AI:Voyage:ApiKey` | secret | none; user secrets or `AI__…__ApiKey` variables, never appsettings |
@@ -156,6 +156,19 @@ All routes are under `/api`. Errors use RFC 7807 problem details.
   | `qwen2.5:1.5b` | about 1 GB | default chat model: small, fast, supports tools; weak at following instructions (in the step 5 check it used the sources but wrote no `[n]` markers) |
   | `qwen2.5:7b` | about 4.7 GB | better replies and tool calls, and cites sources; the model the step 10 evaluation runs with. On CPU it needs longer timeouts (6.5) |
   | `mxbai-embed-large` | about 670 MB | embeddings (1024 dimensions, from step 4) |
+  | `qwen3:8b` | about 5.2 GB | the only local model here that called the reply's tools (step 8 check, below); thinks before answering, so each call is slow on CPU. Needs the same longer timeouts as `qwen2.5:7b` |
+  | `llama3.1:8b` | about 4.9 GB | tried in step 8 for tool calling; didn't call the tools (below) |
+
+  **Tool calling with local models (step 8 check, November 2026, T-1002 with five sources in the prompt, CPU):**
+
+  | Model | Called `lookup_order_status`? | Notes |
+  | --- | --- | --- |
+  | `qwen2.5:7b` | No (two runs) | Answered from the sources and the ticket, said it had checked the order and made up a last-update date. Called the tool when the prompt had no sources |
+  | `llama3.1:8b` | No | Said it had looked up the order and would propose a task, without calling either tool |
+  | `qwen3:8b` | Yes | Two calls, about 7 minutes in all; the reply used the status and last event. It cited `[1]` on a sentence from the tool result and made up a date to check tracking by; it didn't propose a task |
+  | `claude-opus-5-5` | Yes, both tools | Three calls, 6,952 input and 914 output tokens, $0.046 |
+
+  The tools reach Ollama (`Ollama_requests_carry_the_reply_tools_with_their_schemas`). Given a conversation in which the lookup had already happened, with the result in OllamaSharp's envelope (section 10), `qwen2.5:7b` and `llama3.1:8b` both read it correctly, for a found and an unknown order. So the gap is in deciding to call a tool, not in reading the result. The fake provider (`tool-call-order`, `tool-call-proposal`) shows the tool path in tests and the dev UI; tool use and the reply rules (no greeting, no citations for tool data, no made-up dates) are for steps 9 and 10 to measure
 
   Not used here, but an option on machines with more memory: `gemma4` (tools and thinking; the smallest tags, `e2b` and `e4b`, are 4.6–9.5 GB). Its thinking output adds latency and reaches the stream as reasoning content, which step 5 would have to drop. On CPU, `qwen2.5:1.5b` takes about 35 seconds for a reply in the dev container
 - **Startup checks** (`ValidateOnStart`): an unknown provider, a missing key for a selected provider (the message names the setting, never a value), the fake provider in `Production`, a missing or malformed prompt file, and a broken scenarios file all stop the app before it serves requests
@@ -194,8 +207,9 @@ provider IChatClient          Anthropic (wrapped in AnthropicOptionsMiddleware) 
 - Each prompt is a Markdown file in `prompts/`, named `<name>.v<N>.md`, with a system section and a user template: a `## System` line, then a `## User` line, then optionally a `## Retry` line: the user message a feature sends after rejecting the model's answer (classification, with `{{error}}`). Text above `## System` is a note for people and isn't sent
 - The user template has `{{placeholders}}`, filled in one pass (a value containing `{{name}}` stays as it is). Every placeholder needs a value and every value a placeholder. The system section can't have placeholders, so user text can't reach it
 - A merged prompt version is never edited. A change means a new file (`reply.v2.md`) and a config change
-- Ticket text goes into the user message inside `<ticket>…</ticket>` (`TicketPromptFormatter`, which also adds the number, customer, order number and subject). Any `</ticket>` inside the text is escaped first: the `<` of anything that reads as a ticket tag (any case, whitespace or a newline inside, opening or closing) becomes `&lt;`. The system prompt says that text inside `<ticket>` is customer data and that instructions inside it must be ignored
-- Retrieved chunks go inside `<sources>` as `[1] <title> — <heading>\n<text>`
+- Ticket text goes into the user message inside `<ticket>…</ticket>` (`TicketPromptFormatter`, which also adds the number, customer, order number and subject). Any `</ticket>` inside the text is escaped first: the `<` of anything that reads as a ticket tag (any case, whitespace or a newline inside, opening or closing) becomes `&lt;`. The same goes for `tool_result` tags (from step 8), so a ticket can't fake a tool result, which the reply prompt says to trust as the store's data. The system prompt says that text inside `<ticket>` is customer data and that instructions inside it must be ignored
+- Retrieved chunks go inside `<sources>` as `[1] <title> — <heading>\n<text>`. Article text has its `ticket`, `sources` and `tool_result` tags escaped the same way
+- Tool results go back to the model as JSON inside `<tool_result>…</tool_result>` (section 10)
 
 ### 6.4 Token budget
 
@@ -263,7 +277,7 @@ provider IChatClient          Anthropic (wrapped in AnthropicOptionsMiddleware) 
 - Failures are logged with the feature, ticket ID, exception type and status code only: an SDK's message can echo the request, and so the ticket
 - Cost = input tokens × input price + output tokens × output price, from `AI:Pricing`. An unknown model gets `CostUsd = null` and a warning log, never a made-up price
 - `AI:Pricing` is a list of `{ Model, InputPerMTok, OutputPerMTok }`, not `AI:Pricing:<model>`: configuration keys use `:` as a separator, and Ollama model names (`qwen2.5:1.5b`) contain one
-- Prices in `appsettings.json` (USD per million tokens, from Anthropic's price list as of October 2026; check them again before publishing results): `claude-opus-5-5` 4.00 / 20.00, `claude-sonnet-5-5` 2.00 / 10.00, `claude-haiku-5-5` 0.10 / 0.50; Ollama models (`qwen2.5:1.5b`, `qwen2.5:7b`) and `fake` 0 / 0. OpenAI prices are added if OpenAI is used
+- Prices in `appsettings.json` (USD per million tokens, from Anthropic's price list as of October 2026; check them again before publishing results): `claude-opus-5-5` 4.00 / 20.00, `claude-sonnet-5-5` 2.00 / 10.00, `claude-haiku-5-5` 0.10 / 0.50; Ollama models (`qwen2.5:1.5b`, `qwen2.5:7b`, `qwen3:8b`) and `fake` 0 / 0. OpenAI prices are added if OpenAI is used
 - Prompt text and ticket text are not logged by default
 
 ### 6.7 Anthropic-specific notes
@@ -281,7 +295,7 @@ These come from the current API and must be checked against the SDK version in u
 - Scenarios are in `tests/fixtures/fake-scenarios.json`, keyed by ticket number (read from `ChatOptions.AdditionalProperties`), with a default scenario
 - A scenario has turns per feature (`Reply`, `Summary`, `Classification`, or `*` for any). A call plays the turn numbered by how many assistant messages are already in the history, so the call after a tool round trip, or a classification retry that sends the earlier answer back, plays the next turn; the last turn repeats. A feature that sends earlier assistant messages as context skips turns the same way. The fake is stateless: a transport retry before the first item sends the same messages and replays the same turn, so "fail once, then succeed" is tested with a stub client, not a scenario. A feature a scenario doesn't script falls back to the default scenario
 - A turn is a list of steps: `text` (streamed in chunks of `chunkSize` characters, `delayMs` before each), `tool_call` (name and arguments), `usage` (sent on the last update, as the adapters do), `error` (a `FakeProviderException`, an `HttpRequestException` with a status code and an optional `retryAfterSeconds`; before or after the first item depending on where it is in the list), `stall` (no output for N seconds), `finish` (the finish reason; `content_filter` is a refusal). Delays use `TimeProvider`, so tests run them on a fake clock, and every wait honors cancellation
-- Named scenarios, on seeded tickets so the app shows them with the seed data: `tool-call-order` T-1002, `tool-call-proposal` T-1008, `error-before-first-item` T-1021 (503, every feature), `error-after-first-item` T-1022 (529 after some reply text), `stall` T-1023 (30 seconds before the first item, every feature), `stall-after-first-item` T-1019 (some text, then 30 seconds), `invalid-json` T-1024 (classification: not JSON, then JSON that fails the schema), `refusal` T-1025 (every feature). Through the pipeline both stalls end as timeouts: T-1023 waits past `FirstItemSeconds` on every attempt, so it fails after about a minute; T-1019 waits past `GapSeconds` after its first text and isn't retried
+- Named scenarios, on seeded tickets so the app shows them with the seed data: `tool-call-order` T-1002 (looks up `KO-205002`, then replies), `tool-call-proposal` T-1008 (looks up `KO-208815`, which isn't in `orders.json`, then says so and proposes a carrier trace, then finishes the reply), `error-before-first-item` T-1021 (503, every feature), `error-after-first-item` T-1022 (529 after some reply text), `stall` T-1023 (30 seconds before the first item, every feature), `stall-after-first-item` T-1019 (some text, then 30 seconds), `invalid-json` T-1024 (classification: not JSON, then JSON that fails the schema), `refusal` T-1025 (every feature). Through the pipeline both stalls end as timeouts: T-1023 waits past `FirstItemSeconds` on every attempt, so it fails after about a minute; T-1019 waits past `GapSeconds` after its first text and isn't retried
 - The file is checked when it's loaded: a `default` scenario without a ticket number, one scenario per ticket, known features and step types, no unknown fields. `AI:Fake:ScenariosPath` points tests at their own file
 - `FakeEmbeddingGenerator` returns a deterministic unit vector from a hash of the text (SHA-256 of the text and a block counter, read as 16-bit values). It's for running the app; retrieval tests use the committed fixtures instead
 - The fake provider is refused at startup when the environment is `Production`
@@ -295,12 +309,13 @@ These come from the current API and must be checked against the SDK version in u
 | Event | Payload |
 | --- | --- |
 | `token` | `{ "text": "..." }` |
-| `tool_call` | `{ "name": "lookup_order_status", "arguments": {...}, "result": {...} }` or `{ "name": "propose_follow_up_task", "proposal": { "id", "title", "notes", "dueDate" } }` |
+| `tool_call` | `{ "name": "lookup_order_status", "arguments": {...}, "result": {...} }` or `{ "name": "propose_follow_up_task", "proposal": { "id", "title", "notes", "dueDate", "status" } }` |
 | `citations` | `{ "citations": [ { "marker": 1, "articleSlug", "articleTitle" } ], "removed": [7] }` |
 | `usage` | `{ "inputTokens", "outputTokens", "costUsd", "estimated" }` |
 | `error` | `{ "code": "model_unavailable" \| "budget_exceeded" \| "model_refused" \| "timeout" \| "internal_error", "message" }` |
 | `done` | `{ "replyRunId" }` |
 
+- `token` and `tool_call` events come in the order they happened. A `tool_call` is sent after the tool ran, and only for a call that ran: a call with invalid arguments or to an unknown tool gets an error result and no event
 - A stream ends with exactly one `done` or one `error`
 - `citations` and `usage` come after the last `token` and before `done`
 - **Error codes:** `timeout` is a `ModelUnavailableException` with `IsTimeout`; `model_unavailable` is any other one. Embedding providers aren't behind the chat pipeline, so `RetrievalService` maps their failures to `ModelUnavailableException` (an unrequested cancellation is a timeout, an HTTP error keeps its status) and a failed retrieval gets `model_unavailable` or `timeout` too; `budget_exceeded` and `model_refused` match their exceptions; `internal_error` is anything else (a bug), logged with its exception. The `message` is fixed text per code, never the exception's message. The caller's own cancellation sends nothing: the stream just ends, the model call's row says `Cancelled`, and the reply logs `was cancelled`
@@ -349,13 +364,22 @@ These come from the current API and must be checked against the SDK version in u
 
 | Tool | Arguments | Behavior |
 | --- | --- | --- |
-| `lookup_order_status` | `orderNumber` (string, pattern `KO-\d{6}`) | Returns status, carrier, last update, or `{ "found": false }` |
-| `propose_follow_up_task` | `title` (≤ 120 chars), `notes` (≤ 500 chars), `dueInDays` (1–30) | Saves or updates the proposal for (ticket, reply run) and returns `{ "status": "awaiting_user_confirmation", "proposalId" }` |
+| `lookup_order_status` | `orderNumber` (string, pattern `KO-[0-9]{6}`, required) | Returns `found: true` with order number, status, carrier (null before it ships), last update and last event, or `{ "found": false }` |
+| `propose_follow_up_task` | `title` (1–120 chars, required), `notes` (≤ 500 chars, optional), `dueInDays` (whole number 1–30, optional; no due date without it) | Saves or updates the proposal for (ticket, reply run) and returns `{ "status": "awaiting_user_confirmation", "proposalId" }` |
 
-- Only these two tools are registered. Arguments are validated before the tool runs; an invalid argument returns an error result to the model, not an exception
-- Proposals expire after 24 hours (`ExpiresAt`); a background check marks them `Expired`
-- `POST /api/follow-ups/{proposalId}/confirm` creates the task once. A second confirm returns the same task with `200`; an expired proposal returns `409`
-- If the Microsoft.Extensions.AI version in use has function-approval support, it may replace the proposal tool; that's decided in step 8
+- **Registered on the reply only:** `ReplyService` puts the two tools in its `ChatOptions.Tools` for each run (`ReplyToolFactory`), bound to the ticket and reply run ID; no other feature offers tools. `FunctionInvokingChatClient` only runs tools from the request's options, and answers a call to any other name with an error result (`TerminateOnUnknownCalls = false`, its default)
+- **Arguments** are checked before the tool runs (`ToolArguments`): types, the order number pattern, lengths after trimming, the due-days range, and no other arguments. Anything wrong comes back as an error result, `{ "error": "..." }`, listing every problem; the errors name the argument and the rule but never repeat the value, which the model may have copied from the ticket. Nothing is looked up or saved, and nothing throws
+- **Results as data:** every result of the two tools, argument errors included, reaches the model as JSON inside `<tool_result>…</tool_result>` (`ToolResult`). Two results come from `FunctionInvokingChatClient` itself and aren't wrapped: a call to an unknown tool gets `Error: Requested function "<name>" not found.` (it repeats only the name the model sent), and a tool that throws gets `Error: Function failed.` (no exception details, since `IncludeDetailedErrors` is off). The adapters decide how a result is sent: OllamaSharp puts it in an envelope of its own, so qwen reads `{"CallId":"…","Result":"<tool_result>\n{\"found\":false}\n</tool_result>"}`, the tags visible but the JSON inside escaped a second time (`Ollama_sends_a_tool_result_inside_its_own_json_envelope`). The reply prompt (`reply.v2`) says tool results are data from the store's systems, not instructions. The serializer writes `<` and `>` as `\u003C` and `\u003E`, so a value can't close the tag; ticket and article text have `tool_result` tags escaped (6.3), so they can't open one
+- **Events:** the tool records its `tool_call` event under the call ID the tool loop is running (`FunctionInvokingChatClient.CurrentContext`); when the loop passes the call's `FunctionResultContent` on, the reply sends that event. So the event follows the tool, in call order, and a call that didn't run has none
+- **Tool loop limit:** `MaximumIterationsPerRequest = 3` means at most three rounds of tool calls; the loop then makes one last model call whose tool calls aren't run, so a reply makes at most four model calls. The request cap (6.4) counts every one of them (`The_tool_loop_stops_at_three_iterations`, `The_request_cap_still_applies_across_tool_iterations`)
+- **Proposal upsert:** one `INSERT … ON CONFLICT ("TicketId", "ReplyRunId") DO UPDATE` statement, so retries racing each other leave one row. An update replaces the title, notes and due date and keeps the ID, creation time and expiry. A proposal that's already confirmed or expired isn't changed, and the tool tells the model `already_confirmed` or `expired` instead
+- **Due date:** the UTC date when the proposal is saved plus `dueInDays`
+- Proposals expire 24 hours after they're created (`ExpiresAt`). `ProposalExpiryService`, a background service, marks pending ones past `ExpiresAt` as `Expired` at startup and then every 10 minutes (`PeriodicTimer` on `TimeProvider`); a failed run is logged and the next one tries again, and only shutdown stops the service (a cancellation the database driver raises is a failed run). Both times are fixed (`FollowUpRules`), not settings
+- **Confirm** (`POST /api/follow-ups/{proposalId}/confirm`) is the only code that creates a task. It locks the proposal row (`SELECT … FOR UPDATE`) in a transaction, so confirms racing each other take turns: the first creates the task and marks the proposal `Confirmed`, the others get the same task with `200`. A proposal past `ExpiresAt` returns `409` and is marked `Expired`, even if the background check hasn't run yet. An unknown ID returns `404`
+- **List** (`GET /api/tickets/{id}/follow-ups`): `{ proposals, tasks }`, each newest first. A proposal has `id`, `replyRunId`, `title`, `notes`, `dueDate` (`yyyy-MM-dd` or null), `status`, `createdAt`, `expiresAt`; a task has `id`, `proposalId`, `title`, `notes`, `dueDate`, `createdAt`. An unknown ticket returns `404`
+- **Orders:** `IOrderStatusService` in Core; `SeedOrderStatusService` in Data reads `seed/orders.json` once, on the first lookup, and matches the order number exactly. A load that failed is tried again on the next lookup
+- **UI:** the reply panel shows a card per tool call above the reply text: the order's status (or that it wasn't found), and the proposal with title, notes, due date and a Confirm button. A repeated proposal in the same run updates its card. The ticket page lists the tasks and the proposals still pending, which can be confirmed there too; it reloads when a reply proposes something or a proposal is confirmed
+- **Function approval (checked in step 8):** Microsoft.Extensions.AI 10.11 has it (`ApprovalRequiredAIFunction`, `ToolApprovalRequestContent`, `ToolApprovalResponseContent`). Not used: when an approval-required tool is called, the tool loop stops and returns the request; to go on, the caller sends the whole conversation back with the approval, and the loop then runs the tool and calls the model again. That needs the conversation stored between requests, makes confirming cost another model call (and wait for it), and leaves the reply cut off at the tool call until someone decides. Expiry and confirm-twice would still need code of their own. The proposal tool keeps the reply in one stream and makes Confirm a plain database write
 
 ## 11. Testing
 
@@ -413,7 +437,7 @@ These come from the current API and must be checked against the SDK version in u
 | Retries in `IChatClient` middleware, not the HTTP resilience handler | The HTTP handler can't see streamed items or in-stream provider errors |
 | `fetch` instead of `EventSource` | `EventSource` reconnects by itself and would run the model again; it only supports GET |
 | Numbered citation markers | Easier for the model to copy exactly than IDs, and easy to check |
-| A proposal tool instead of a create tool | `FunctionInvokingChatClient` runs tools automatically; a write needs the user |
+| A proposal tool instead of a create tool, and not function approval | `FunctionInvokingChatClient` runs tools automatically; a write needs the user. Approval (MEAI 10.11) would need the conversation stored and another model call to confirm (section 10) |
 | `vector(1024)` | All three embedding providers can produce it |
 | Committed embedding fixtures | Retrieval tests need real vectors without calling an API in CI |
 | `ModelCalls` table instead of logs only | Real cost numbers for the README and the UI |

@@ -23,6 +23,7 @@ function sse(events: [string, unknown][]): string {
 test('suggests a reply with linked citations and its cost', async ({ page }) => {
   await page.route('/api/health', (route) => route.fulfill({ json: { status: 'ok', database: 'ok' } }));
   await page.route('/api/tickets/2', (route) => route.fulfill({ json: detail }));
+  await page.route('/api/tickets/2/follow-ups', (route) => route.fulfill({ json: { proposals: [], tasks: [] } }));
   await page.route('/api/tickets/2/reply', (route) =>
     route.fulfill({
       contentType: 'text/event-stream',
@@ -51,6 +52,7 @@ test('suggests a reply with linked citations and its cost', async ({ page }) => 
 test('shows the error message when the reply fails', async ({ page }) => {
   await page.route('/api/health', (route) => route.fulfill({ json: { status: 'ok', database: 'ok' } }));
   await page.route('/api/tickets/2', (route) => route.fulfill({ json: detail }));
+  await page.route('/api/tickets/2/follow-ups', (route) => route.fulfill({ json: { proposals: [], tasks: [] } }));
   await page.route('/api/tickets/2/reply', (route) =>
     route.fulfill({ contentType: 'text/event-stream', body: sse([['error', { code: 'model_unavailable', message: 'Down.' }]]) }),
   );
@@ -59,4 +61,48 @@ test('shows the error message when the reply fails', async ({ page }) => {
   await page.getByRole('button', { name: 'Suggest reply' }).click();
 
   await expect(page.getByRole('alert')).toContainText('The model is unavailable right now');
+});
+
+test('shows the order and proposal cards and confirms the proposal into a task', async ({ page }) => {
+  const proposal = { id: '0196f1a2-0000-7000-8000-000000000001', title: 'Open a carrier trace for KO-205002', notes: 'Still delayed after a week.', dueDate: '2026-11-03', status: 'Pending' };
+  const task = { id: 1, proposalId: proposal.id, title: proposal.title, notes: proposal.notes, dueDate: proposal.dueDate, createdAt: '2026-11-01T12:00:00Z' };
+  let confirmed = false;
+  await page.route('/api/health', (route) => route.fulfill({ json: { status: 'ok', database: 'ok' } }));
+  await page.route('/api/tickets/2', (route) => route.fulfill({ json: detail }));
+  await page.route('/api/tickets/2/follow-ups', (route) => route.fulfill({ json: confirmed ? { proposals: [], tasks: [task] } : { proposals: [], tasks: [] } }));
+  await page.route(`/api/follow-ups/${proposal.id}/confirm`, (route) => {
+    confirmed = true;
+    return route.fulfill({ json: task });
+  });
+  await page.route('/api/tickets/2/reply', (route) =>
+    route.fulfill({
+      contentType: 'text/event-stream',
+      body: sse([
+        ['tool_call', { name: 'lookup_order_status', arguments: { orderNumber: 'KO-205002' }, result: { found: true, orderNumber: 'KO-205002', status: 'Delayed', carrier: 'FedEx', lastUpdate: '2026-10-11T07:30:00Z', lastEvent: 'Weather delay at the Memphis hub' } }],
+        ['token', { text: 'Your order is delayed by weather. ' }],
+        ['tool_call', { name: 'propose_follow_up_task', proposal }],
+        ['token', { text: 'An agent will follow up with the carrier.' }],
+        ['citations', { citations: [], removed: [] }],
+        ['usage', { inputTokens: 2700, outputTokens: 75, costUsd: 0, estimated: false }],
+        ['done', { replyRunId: '00000000-0000-0000-0000-000000000001' }],
+      ]),
+    }),
+  );
+
+  await page.goto('/tickets/2');
+  await expect(page.getByText('No follow-ups yet.')).toBeVisible();
+  await page.getByRole('button', { name: 'Suggest reply' }).click();
+
+  const order = page.locator('app-order-status-card');
+  await expect(order).toContainText('Order KO-205002');
+  await expect(order).toContainText('Delayed');
+  await expect(order).toContainText('Weather delay at the Memphis hub');
+  const card = page.locator('.reply app-proposal-card');
+  await expect(card).toContainText(proposal.title);
+  await expect(card).toContainText('Due Nov 3, 2026');
+  await expect(page.locator('.reply-text')).toHaveText('Your order is delayed by weather. An agent will follow up with the carrier.');
+
+  await card.getByRole('button', { name: 'Confirm' }).click();
+  await expect(card.getByRole('status')).toHaveText('Task created.');
+  await expect(page.locator('.follow-ups .tasks')).toContainText(proposal.title);
 });

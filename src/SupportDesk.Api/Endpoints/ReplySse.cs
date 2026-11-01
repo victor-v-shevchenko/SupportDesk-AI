@@ -8,6 +8,7 @@ namespace SupportDesk.Api.Endpoints;
 public static class ReplySse
 {
     public const string Token = "token";
+    public const string ToolCall = "tool_call";
     public const string Citations = "citations";
     public const string Usage = "usage";
     public const string Error = "error";
@@ -27,6 +28,7 @@ public static class ReplySse
     public static string EventName(ReplyEvent reply) => reply switch
     {
         ReplyToken => Token,
+        ReplyToolCall => ToolCall,
         ReplyCitations => Citations,
         ReplyUsage => Usage,
         ReplyError => Error,

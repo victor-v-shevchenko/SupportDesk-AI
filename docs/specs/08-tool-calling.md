@@ -30,6 +30,13 @@ While writing a reply, the model can look up an order's status and propose a fol
 - Reply panel: an order status card for lookups; a proposal card with title, notes, due date and a Confirm button; a follow-ups list on the ticket page
 - The prompt tells the model when to use each tool, and to propose a task only when the customer is waiting on something
 
+## Changes made during the step
+
+- `dueInDays` and `notes` are optional (PLAN.md 4 already has `DueDate?`); `title` is required. PLAN.md 10 has the full argument rules
+- The `tool-call-proposal` scenario (T-1008) now looks up its order first: `KO-208815` isn't in `orders.json`, so the same scenario covers the unknown-order criterion
+- Ticket and article text also have `tool_result` tags escaped (PLAN.md 6.3), since the prompt tells the model to trust tool results as data
+- Function approval exists in Microsoft.Extensions.AI 10.11 but isn't used; the reasons are in PLAN.md 10
+
 ## Out of scope
 
 Editing proposals. Other tools.

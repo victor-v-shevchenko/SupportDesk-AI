@@ -6,7 +6,10 @@ using Microsoft.Extensions.Time.Testing;
 using SupportDesk.Core.AI;
 using SupportDesk.Core.AI.Prompts;
 using SupportDesk.Core.AI.Usage;
+using SupportDesk.Core.FollowUps;
+using SupportDesk.Core.Orders;
 using SupportDesk.Core.Replies;
+using SupportDesk.Core.Replies.Tools;
 using SupportDesk.Core.Retrieval;
 using SupportDesk.UnitTests.AI;
 using static SupportDesk.UnitTests.AI.ScriptedChatClient;
@@ -278,6 +281,152 @@ public sealed class ReplyServiceTests : IDisposable
         Assert.Contains(_logs.Messages, m => m.Contains("was cancelled", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task Only_the_two_reply_tools_are_offered()
+    {
+        var provider = new ScriptedChatClient(TimeProvider.System, Steps(Text("Hi.")));
+
+        await ReadAllAsync(Service(provider, new StubRetrieval()).StreamAsync(Ticket(), Ct));
+
+        Assert.Equal([ReplyTools.LookupOrderStatus, ReplyTools.ProposeFollowUpTask], provider.LastOptions!.Tools!.Select(t => t.Name));
+    }
+
+    [Fact]
+    public async Task A_lookup_runs_in_the_tool_loop_and_its_event_comes_after_the_tool_and_before_the_text()
+    {
+        var orders = new StubOrders(new OrderStatus("KO-205002", "Delayed", "FedEx", new DateTimeOffset(2026, 10, 11, 7, 30, 0, TimeSpan.Zero), "Weather delay"));
+        var provider = new ScriptedChatClient(
+            TimeProvider.System,
+            Steps(ToolCall("call-1", ReplyTools.LookupOrderStatus, Json("""{ "orderNumber": "KO-205002" }""")), Usage(100, 10)),
+            Steps(Text("Your order is delayed."), Usage(150, 20)));
+        var service = Service(provider, new StubRetrieval(), tools: new ReplyToolFactory(orders, new RecordingFollowUps()));
+
+        var events = await ReadAllAsync(service.StreamAsync(Ticket(), Ct));
+
+        Assert.Equal([typeof(ReplyOrderLookup), typeof(ReplyToken), typeof(ReplyCitations), typeof(ReplyUsage), typeof(ReplyDone)], events.Select(e => e.GetType()));
+        var lookup = (ReplyOrderLookup)events[0];
+        Assert.Equal(ReplyTools.LookupOrderStatus, lookup.Name);
+        Assert.Equal(new OrderLookupArguments("KO-205002"), lookup.Arguments);
+        Assert.Equal(new OrderFound("KO-205002", "Delayed", "FedEx", new DateTimeOffset(2026, 10, 11, 7, 30, 0, TimeSpan.Zero), "Weather delay"), lookup.Result);
+        // The usage of both calls in the loop
+        Assert.Equal(new ReplyUsage(250, 30, 0.0016m, Estimated: false), events[3]);
+
+        // The model got the result as data in a tool message
+        var result = ToolResultSentIn(provider.Messages[1], "call-1");
+        Assert.True(ReplyToolsTests.Unwrap(result).GetProperty("found").GetBoolean());
+        Assert.Equal(2, _pipeline!.Rows.All.Count);
+    }
+
+    [Fact]
+    public async Task A_call_to_any_other_tool_gets_an_error_result_and_no_event()
+    {
+        var followUps = new RecordingFollowUps();
+        var provider = new ScriptedChatClient(
+            TimeProvider.System,
+            Steps(ToolCall("call-1", "create_follow_up_task", Json("""{ "title": "Refund" }"""))),
+            Steps(Text("Done.")));
+        var service = Service(provider, new StubRetrieval(), tools: new ReplyToolFactory(new StubOrders(), followUps));
+
+        var events = await ReadAllAsync(service.StreamAsync(Ticket(), Ct));
+
+        Assert.DoesNotContain(events, e => e is ReplyToolCall);
+        Assert.IsType<ReplyDone>(events[^1]);
+        // The tool loop's own text, not wrapped in <tool_result> (PLAN.md 10); it repeats only the name the model sent
+        Assert.Equal("Error: Requested function \"create_follow_up_task\" not found.", ToolResultSentIn(provider.Messages[1], "call-1"));
+        Assert.Empty(followUps.Upserts);
+        Assert.Equal(0, followUps.Confirms);
+    }
+
+    [Fact]
+    public async Task An_invalid_argument_gets_an_error_result_and_the_reply_goes_on()
+    {
+        var orders = new StubOrders();
+        var provider = new ScriptedChatClient(
+            TimeProvider.System,
+            Steps(ToolCall("call-1", ReplyTools.LookupOrderStatus, Json("""{ "orderNumber": "205002" }"""))),
+            Steps(Text("Please check your order number.")));
+        var service = Service(provider, new StubRetrieval(), tools: new ReplyToolFactory(orders, new RecordingFollowUps()));
+
+        var events = await ReadAllAsync(service.StreamAsync(Ticket(), Ct));
+
+        Assert.Equal([typeof(ReplyToken), typeof(ReplyCitations), typeof(ReplyUsage), typeof(ReplyDone)], events.Select(e => e.GetType()));
+        var error = ReplyToolsTests.Unwrap(ToolResultSentIn(provider.Messages[1], "call-1")).GetProperty("error").GetString();
+        Assert.Contains("orderNumber must be KO- followed by six digits", error, StringComparison.Ordinal);
+        Assert.Empty(orders.Lookups);
+    }
+
+    [Fact]
+    public async Task Tool_call_events_arrive_in_call_order_and_a_repeated_proposal_in_the_run_leaves_one()
+    {
+        var followUps = new RecordingFollowUps();
+        var provider = new ScriptedChatClient(
+            TimeProvider.System,
+            Steps(Text("Sorry for the wait. "), ToolCall("call-1", ReplyTools.ProposeFollowUpTask, Json("""{ "title": "Trace the parcel", "dueInDays": 2 }"""))),
+            Steps(ToolCall("call-2", ReplyTools.ProposeFollowUpTask, Json("""{ "title": "Open a carrier trace", "notes": "Three weeks late.", "dueInDays": 3 }"""))),
+            Steps(Text("An agent will follow up.")));
+        var service = Service(provider, new StubRetrieval(), tools: new ReplyToolFactory(new StubOrders(), followUps));
+
+        var events = await ReadAllAsync(service.StreamAsync(Ticket(id: 7), Ct));
+
+        Assert.Equal(
+            [typeof(ReplyToken), typeof(ReplyProposal), typeof(ReplyProposal), typeof(ReplyToken), typeof(ReplyCitations), typeof(ReplyUsage), typeof(ReplyDone)],
+            events.Select(e => e.GetType()));
+        var first = ((ReplyProposal)events[1]).Proposal;
+        var second = ((ReplyProposal)events[2]).Proposal;
+        Assert.Equal("Trace the parcel", first.Title);
+        Assert.Equal(new ProposalPayload(first.Id, "Open a carrier trace", "Three weeks late.", new DateOnly(2026, 11, 4), ProposalStatus.Pending), second);
+
+        // Both calls went to the same (ticket, run), so the second updated the first instead of adding one
+        var runId = ((ReplyDone)events[^1]).ReplyRunId;
+        Assert.All(followUps.Upserts, u => Assert.Equal((7, runId), (u.TicketId, u.ReplyRunId)));
+        Assert.Equal(1, followUps.Count);
+        Assert.Equal(0, followUps.Confirms);
+    }
+
+    [Fact]
+    public async Task The_tool_loop_stops_at_three_iterations()
+    {
+        var orders = new StubOrders();
+        var provider = new ScriptedChatClient(
+            TimeProvider.System,
+            Steps(Text("Checking. "), ToolCall("call-again", ReplyTools.LookupOrderStatus, Json("""{ "orderNumber": "KO-205002" }"""))));
+        var service = Service(provider, new StubRetrieval(), tools: new ReplyToolFactory(orders, new RecordingFollowUps()));
+
+        var events = await ReadAllAsync(service.StreamAsync(Ticket(), Ct));
+
+        Assert.Equal(AiPipeline.MaxToolIterations, orders.Lookups.Count);
+        Assert.Equal(AiPipeline.MaxToolIterations + 1, provider.Calls);
+        Assert.Equal(AiPipeline.MaxToolIterations, events.OfType<ReplyOrderLookup>().Count());
+        Assert.IsType<ReplyDone>(events[^1]);
+    }
+
+    [Fact]
+    public async Task The_request_cap_still_applies_across_tool_iterations()
+    {
+        var provider = new ScriptedChatClient(
+            TimeProvider.System,
+            Steps(ToolCall("call-1", ReplyTools.LookupOrderStatus, Json("""{ "orderNumber": "KO-205002" }""")), Usage(500, 100)),
+            Steps(ToolCall("call-2", ReplyTools.LookupOrderStatus, Json("""{ "orderNumber": "KO-205002" }""")), Usage(500, 100)),
+            Steps(Text("never")));
+        var service = Service(provider, new StubRetrieval(), o => o.Budget.MaxTokensPerRequest = 1000);
+
+        var events = await ReadAllAsync(service.StreamAsync(Ticket(), Ct));
+
+        // Each call alone is under the cap; together they're over it, so the third call is refused
+        Assert.Equal([typeof(ReplyOrderLookup), typeof(ReplyOrderLookup), typeof(ReplyError)], events.Select(e => e.GetType()));
+        Assert.Equal(ReplyErrorCodes.BudgetExceeded, ((ReplyError)events[2]).Code);
+        Assert.Equal(2, provider.Calls);
+    }
+
+    private static Dictionary<string, object?> Json(string json) => new(ReplyToolsTests.Arguments(json));
+
+    /// <summary>The result the tool loop sent the model for <paramref name="callId"/>, as text.</summary>
+    private static string ToolResultSentIn(IReadOnlyList<ChatMessage> messages, string callId)
+    {
+        var result = messages.Where(m => m.Role == ChatRole.Tool).SelectMany(m => m.Contents).OfType<FunctionResultContent>().Single(r => r.CallId == callId);
+        return Assert.IsType<string>(result.Result);
+    }
+
     public void Dispose()
     {
         _pipeline?.Dispose();
@@ -286,7 +435,8 @@ public sealed class ReplyServiceTests : IDisposable
     }
 
     /// <summary><paramref name="raw"/> hands the service the provider itself instead of the pipeline around it.</summary>
-    private ReplyService Service(IChatClient provider, IRetrievalService retrieval, Action<AiOptions>? configure = null, TimeProvider? time = null, bool raw = false)
+    private ReplyService Service(
+        IChatClient provider, IRetrievalService retrieval, Action<AiOptions>? configure = null, TimeProvider? time = null, bool raw = false, ReplyToolFactory? tools = null)
     {
         void Configure(AiOptions options)
         {
@@ -299,6 +449,7 @@ public sealed class ReplyServiceTests : IDisposable
         return new ReplyService(
             raw ? provider : _pipeline.Client,
             retrieval,
+            tools ?? new ReplyToolFactory(new StubOrders(), new RecordingFollowUps()),
             new PromptStore(options),
             new PriceTable(options, NullLogger<PriceTable>.Instance),
             options,
