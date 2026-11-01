@@ -23,8 +23,10 @@ public sealed class RetryTimeoutMiddleware(IChatClient innerClient, AiOptions se
 
     public override async Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
     {
-        for (var attempt = 1; ; attempt++)
+        var attempt = 0;
+        while (true)
         {
+            attempt++;
             Exception failure;
             using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(_timeouts.NonStreamingSeconds), timeProvider))
             using (var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token))
@@ -53,103 +55,131 @@ public sealed class RetryTimeoutMiddleware(IChatClient innerClient, AiOptions se
         IEnumerable<ChatMessage> messages, ChatOptions? options = null, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         using var total = new CancellationTokenSource(TimeSpan.FromSeconds(_timeouts.StreamTotalSeconds), timeProvider);
-        for (var attempt = 1; ; attempt++)
+        var attempt = 0;
+        while (true)
         {
-            using var itemTimer = new CancellationTokenSource(Timeout.InfiniteTimeSpan, timeProvider);
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, total.Token, itemTimer.Token);
-            var held = new List<ChatResponseUpdate>();
-            var sentFirstItem = false;
-            var active = false;
-            Exception? failure = null;
-
-            var updates = base.GetStreamingResponseAsync(messages, options, linked.Token).GetAsyncEnumerator(linked.Token);
-            try
+            attempt++;
+            var state = new StreamAttempt();
+            await foreach (var update in StreamAttemptAsync(messages, options, total, state, cancellationToken))
             {
-                // The first-item timer runs from the start of the attempt; empty updates (a "message started" event) don't reset it
-                itemTimer.CancelAfter(TimeSpan.FromSeconds(_timeouts.FirstItemSeconds));
-                while (true)
-                {
-                    if (active)
-                    {
-                        itemTimer.CancelAfter(TimeSpan.FromSeconds(_timeouts.GapSeconds));
-                    }
-
-                    bool hasNext;
-                    try
-                    {
-                        hasNext = await updates.MoveNextAsync();
-                    }
-                    catch (Exception exception)
-                    {
-                        failure = Normalize(
-                            exception,
-                            timedOut: StreamTimeout(total, itemTimer, active),
-                            transientTimeout: !sentFirstItem && !total.IsCancellationRequested,
-                            cancellationToken);
-                        break;
-                    }
-
-                    if (!hasNext)
-                    {
-                        break;
-                    }
-
-                    var update = updates.Current;
-                    if (!active && (IsItem(update) || IsProgress(update)))
-                    {
-                        // From here on, the gap between updates is what's timed
-                        active = true;
-                    }
-
-                    // Stopped before anything goes to the caller: the caller's time with an update counts against
-                    // neither the first-item wait nor the gap
-                    if (active)
-                    {
-                        itemTimer.CancelAfter(Timeout.InfiniteTimeSpan);
-                    }
-
-                    if (sentFirstItem)
-                    {
-                        yield return update;
-                        continue;
-                    }
-
-                    held.Add(update);
-                    if (IsItem(update))
-                    {
-                        sentFirstItem = true;
-                        foreach (var waiting in held)
-                        {
-                            yield return waiting;
-                        }
-
-                        held.Clear();
-                    }
-                }
-            }
-            finally
-            {
-                await updates.DisposeAsync();
+                yield return update;
             }
 
-            if (failure is null)
+            if (state.Failure is null)
             {
-                // A stream that ended without an item (only usage, or a refusal): pass on what it sent
-                foreach (var waiting in held)
-                {
-                    yield return waiting;
-                }
-
                 yield break;
             }
 
-            var delay = sentFirstItem || total.IsCancellationRequested ? null : RetryDelay(failure, attempt);
+            var delay = state.SentFirstItem || total.IsCancellationRequested ? null : RetryDelay(state.Failure, attempt);
             if (delay is null)
             {
-                ExceptionDispatchInfo.Throw(failure);
+                ExceptionDispatchInfo.Throw(state.Failure);
             }
 
             await WaitAsync(delay.Value, total, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// One streaming attempt. It never throws: a failure is left in <paramref name="state"/> for the retry decision.
+    /// Updates before the first item are held back and go out with it, or at the end when the stream has no item.
+    /// </summary>
+    private async IAsyncEnumerable<ChatResponseUpdate> StreamAttemptAsync(
+        IEnumerable<ChatMessage> messages, ChatOptions? options, CancellationTokenSource total, StreamAttempt state, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        using var itemTimer = new CancellationTokenSource(Timeout.InfiniteTimeSpan, timeProvider);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, total.Token, itemTimer.Token);
+        var held = new List<ChatResponseUpdate>();
+
+        var updates = base.GetStreamingResponseAsync(messages, options, linked.Token).GetAsyncEnumerator(linked.Token);
+        try
+        {
+            // The first-item timer runs from the start of the attempt; empty updates (a "message started" event) don't reset it
+            itemTimer.CancelAfter(TimeSpan.FromSeconds(_timeouts.FirstItemSeconds));
+            while (await NextAsync(updates, itemTimer, total, state, cancellationToken))
+            {
+                var update = updates.Current;
+                state.Observe(update, itemTimer);
+                if (state.SentFirstItem)
+                {
+                    yield return update;
+                    continue;
+                }
+
+                held.Add(update);
+                if (IsItem(update))
+                {
+                    state.SentFirstItem = true;
+                    foreach (var waiting in held)
+                    {
+                        yield return waiting;
+                    }
+
+                    held.Clear();
+                }
+            }
+        }
+        finally
+        {
+            await updates.DisposeAsync();
+        }
+
+        if (state.Failure is null)
+        {
+            // A stream that ended without an item (only usage, or a refusal): pass on what it sent
+            foreach (var waiting in held)
+            {
+                yield return waiting;
+            }
+        }
+    }
+
+    /// <summary>The next update, with the gap timer running while it's awaited; false at the end or on a failure (recorded in <paramref name="state"/>).</summary>
+    private async Task<bool> NextAsync(
+        IAsyncEnumerator<ChatResponseUpdate> updates, CancellationTokenSource itemTimer, CancellationTokenSource total, StreamAttempt state, CancellationToken cancellationToken)
+    {
+        if (state.Active)
+        {
+            itemTimer.CancelAfter(TimeSpan.FromSeconds(_timeouts.GapSeconds));
+        }
+
+        try
+        {
+            return await updates.MoveNextAsync();
+        }
+        catch (Exception exception)
+        {
+            state.Failure = Normalize(
+                exception,
+                timedOut: StreamTimeout(total, itemTimer, state.Active),
+                transientTimeout: !state.SentFirstItem && !total.IsCancellationRequested,
+                cancellationToken);
+            return false;
+        }
+    }
+
+    /// <summary>What one streaming attempt has done so far.</summary>
+    private sealed class StreamAttempt
+    {
+        public Exception? Failure { get; set; }
+
+        /// <summary>A text or tool call went to the caller, so this stream can't be retried any more.</summary>
+        public bool SentFirstItem { get; set; }
+
+        /// <summary>Something has arrived (an item, or thinking text), so the gap between updates is what's timed.</summary>
+        public bool Active { get; private set; }
+
+        /// <summary>
+        /// Stops the item timer before the update goes anywhere, so the caller's time with it counts against neither the
+        /// first-item wait nor the gap.
+        /// </summary>
+        public void Observe(ChatResponseUpdate update, CancellationTokenSource itemTimer)
+        {
+            Active |= IsItem(update) || IsProgress(update);
+            if (Active)
+            {
+                itemTimer.CancelAfter(Timeout.InfiniteTimeSpan);
+            }
         }
     }
 

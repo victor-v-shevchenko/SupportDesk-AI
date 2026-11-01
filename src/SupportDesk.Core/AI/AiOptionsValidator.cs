@@ -61,24 +61,44 @@ public sealed class AiOptionsValidator : IValidateOptions<AiOptions>
             Range(errors, $"AI:Budget:MaxOutputTokens:{feature}", maxOutput, 1, 100_000);
         }
 
-        foreach (var duplicate in options.Pricing.GroupBy(p => p.Model, StringComparer.Ordinal).Where(g => g.Count() > 1))
+        CheckPricing(errors, options.Pricing);
+        CheckEffort(errors, options.Anthropic.Effort);
+        CheckPrompts(errors, options);
+
+        if (options.Chat.Provider == ChatProvider.Fake)
+        {
+            TryLoad(errors, () => FakeScenarioSet.Load(options.Fake.ResolvedScenariosPath));
+        }
+
+        return errors.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errors);
+    }
+
+    private static void CheckPricing(List<string> errors, List<ModelPrice> pricing)
+    {
+        foreach (var duplicate in pricing.GroupBy(p => p.Model, StringComparer.Ordinal).Where(g => g.Count() > 1))
         {
             errors.Add($"AI:Pricing lists {duplicate.Key} more than once.");
         }
 
-        if (options.Pricing.Any(p => string.IsNullOrWhiteSpace(p.Model) || p.InputPerMTok < 0 || p.OutputPerMTok < 0))
+        if (pricing.Any(p => string.IsNullOrWhiteSpace(p.Model) || p.InputPerMTok < 0 || p.OutputPerMTok < 0))
         {
             errors.Add("Every AI:Pricing entry needs a Model and prices that aren't negative.");
         }
+    }
 
-        foreach (var (feature, effort) in options.Anthropic.Effort)
+    private static void CheckEffort(List<string> errors, Dictionary<AiFeature, ReasoningEffort> effort)
+    {
+        foreach (var (feature, level) in effort)
         {
-            if (!Enum.IsDefined(effort) || effort == ReasoningEffort.None)
+            if (!Enum.IsDefined(level) || level == ReasoningEffort.None)
             {
                 errors.Add($"AI:Anthropic:Effort:{feature} must be Low, Medium, High or ExtraHigh; None turns thinking off, which current models reject.");
             }
         }
+    }
 
+    private static void CheckPrompts(List<string> errors, AiOptions options)
+    {
         errors.AddRange(RequiredPrompts.Where(p => !options.Prompts.ContainsKey(p)).Select(p => $"AI:Prompts:{p} is required."));
         foreach (var (prompt, version) in options.Prompts)
         {
@@ -91,13 +111,6 @@ public sealed class AiOptionsValidator : IValidateOptions<AiOptions>
 
             TryLoad(errors, () => PromptStore.Load(options.ResolvedPromptsPath, prompt, version));
         }
-
-        if (options.Chat.Provider == ChatProvider.Fake)
-        {
-            TryLoad(errors, () => FakeScenarioSet.Load(options.Fake.ResolvedScenariosPath));
-        }
-
-        return errors.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errors);
     }
 
     private static void Range(List<string> errors, string setting, int value, int min, int max)
