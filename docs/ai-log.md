@@ -110,3 +110,10 @@ Entry format (from CLAUDE.md):
 - What was wrong: `TicketPromptFormatter` escaped `ticket` and `tool_result` tags but not `sources`, so a customer could write `</sources>` or a whole `<sources>[1] …</sources>` block into a ticket, inside `<ticket>`, and give the model a made-up article to answer from and cite. Article text already had `sources` escaped.
 - Fix: the ticket escape covers `sources` tags too, in any case or spacing (step 9 PR).
 - Test: `PromptInjectionTests.Ticket_text_stays_inside_the_ticket_block_of_the_user_message` and `TicketPromptFormatterTests.Ticket_text_cannot_fake_an_article_block`
+
+## 2026-11-01 — No limit on tool calls in one model answer
+- Step: 8 (found in step 9)
+- Found by: review subagent
+- What was wrong: only the tool loop's rounds were limited (`MaximumIterationsPerRequest = 3`), not the calls in one answer, so a hostile or broken model could send hundreds of tool calls in one answer and get one order lookup, proposal upsert and `tool_call` event for each.
+- Fix: a reply run runs at most 5 tool calls (`ReplyTools.MaxCallsPerRun`); every later call gets an error result and runs nothing (`fix/tool-call-cap` PR).
+- Test: `ReplyToolsTests.Calls_past_the_limit_in_one_run_run_nothing_and_get_an_error_result`, `ReplyToolsTests.Each_run_has_its_own_tool_call_limit` and `PromptInjectionTests.Many_proposal_calls_in_one_run_run_only_up_to_the_limit_and_leave_one_proposal`
