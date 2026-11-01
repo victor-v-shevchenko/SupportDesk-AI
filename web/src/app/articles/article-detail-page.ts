@@ -12,7 +12,7 @@ import { ArticlesService } from '../api/articles.service';
   template: `
     <a class="back" routerLink="/articles">← Knowledge base</a>
     @if (article.isLoading() && !article.hasValue()) {
-      <p class="loading">Loading article…</p>
+      <p class="loading" role="status">Loading article…</p>
     } @else if (article.error()) {
       <div class="error" role="alert">
         @if (notFound()) {
@@ -34,12 +34,12 @@ import { ArticlesService } from '../api/articles.service';
     }
   `,
   styles: `
-    .back { display: inline-block; margin-bottom: 1rem; color: #1d4ed8; text-decoration: none; }
+    .back { display: inline-block; margin-bottom: 1rem; color: var(--link); text-decoration: none; }
     h1 { margin: 0 0 0.25rem; font-size: 1.5rem; }
-    .meta { color: #6b7280; font-size: 0.85rem; margin: 0 0 1rem; }
+    .meta { color: var(--muted); font-size: 0.85rem; margin: 0 0 1rem; }
     .body { white-space: pre-wrap; line-height: 1.5; max-width: 70ch; }
-    .loading, .empty { color: #6b7280; }
-    .error { color: #9b1c1c; }
+    .loading, .empty { color: var(--muted); }
+    .error { color: var(--danger); }
   `,
 })
 export class ArticleDetailPage {

@@ -23,13 +23,13 @@ import { OrderLookupResult } from '../api/replies.models';
     }
   `,
   styles: `
-    :host { display: block; padding: 0.75rem 1rem; border: 1px solid #e5e7eb; border-left: 3px solid #2563eb; border-radius: 6px; background: #f8fafc; }
+    :host { display: block; padding: 0.75rem 1rem; border: 1px solid var(--border); border-left: 3px solid var(--info-border); border-radius: 6px; background: var(--surface); }
     h3 { margin: 0 0 0.5rem; font-size: 0.875rem; }
     dl { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; margin: 0; }
-    dt { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; }
+    dt { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
     dd { margin: 0.125rem 0 0; }
     .event { margin: 0.5rem 0 0; }
-    .not-found { margin: 0; color: #9b1c1c; }
+    .not-found { margin: 0; color: var(--danger); }
   `,
 })
 export class OrderStatusCard {

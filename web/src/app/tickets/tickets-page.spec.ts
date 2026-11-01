@@ -3,6 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { TicketListItem } from '../api/tickets.models';
+import { TicketsService } from '../api/tickets.service';
 import { TicketsPage } from './tickets-page';
 
 const tickets: TicketListItem[] = [
@@ -43,10 +44,10 @@ describe('TicketsPage', () => {
     http.expectOne('/api/tickets').flush(tickets);
     const el = await settle(fixture);
 
-    const rows = [...el.querySelectorAll('tbody tr')];
+    const rows = [...el.querySelectorAll('.tickets li')];
     expect(rows.map((r) => r.querySelector('.number')?.textContent)).toEqual(['T-1002', 'T-1001']);
     const link = rows[0].querySelector('a');
-    expect(link?.textContent).toBe('Tent order stuck as delayed');
+    expect(link?.querySelector('.subject')?.textContent).toBe('Tent order stuck as delayed');
     expect(link?.getAttribute('href')).toBe('/tickets/2');
     expect(rows[1].querySelector('app-ticket-status')?.textContent).toBe('Closed');
     expect(rows[0].querySelector('time')?.getAttribute('datetime')).toBe('2026-10-02T10:31:00Z');
@@ -57,12 +58,36 @@ describe('TicketsPage', () => {
     http.expectOne('/api/tickets').flush([...tickets, { ...tickets[1], id: 9, number: 'T-1009', classificationStatus: 'NotRun' }]);
     const el = await settle(fixture);
 
-    const rows = [...el.querySelectorAll('tbody tr')];
-    expect(rows[0].querySelector('.classification .category')?.textContent).toBe('Shipping');
-    expect(rows[0].querySelector('.classification .priority')?.textContent).toBe('High');
-    expect(rows[1].querySelector('.classification .manual')?.textContent).toBe('Needs manual classification');
-    expect(rows[1].querySelector('.classification .category')).toBeNull();
-    expect(rows[2].querySelector('.classification .not-run')?.textContent).toBe('Not classified');
+    const rows = [...el.querySelectorAll('.tickets li')];
+    expect(rows[0].querySelector('.category')?.textContent).toBe('Shipping');
+    expect(rows[0].querySelector('.priority')?.textContent).toBe('High');
+    expect(rows[1].querySelector('.manual')?.textContent).toBe('Needs manual classification');
+    expect(rows[1].querySelector('.category')).toBeNull();
+    expect(rows[2].querySelector('.not-run')?.textContent).toBe('Not classified');
+  });
+
+  it('asks to select a ticket while none is open', async () => {
+    const fixture = create();
+    http.expectOne('/api/tickets').flush(tickets);
+    const el = await settle(fixture);
+
+    expect(el.querySelector('.placeholder')?.textContent).toContain('Select a ticket');
+    expect(el.querySelector('.split')?.classList.contains('detail-open')).toBe(false);
+  });
+
+  it('reads the list again when a ticket was classified, keeping the rows on screen meanwhile', async () => {
+    const fixture = create();
+    http.expectOne('/api/tickets').flush(tickets);
+    const el = await settle(fixture);
+
+    TestBed.inject(TicketsService).listStale.update((n) => n + 1);
+    TestBed.tick();
+    const reload = http.expectOne('/api/tickets');
+    expect(el.querySelectorAll('.tickets li')).toHaveLength(2);
+    reload.flush([{ ...tickets[1], classificationStatus: 'Done', category: 'Returns', priority: 'Low' }, tickets[0]]);
+    await fixture.whenStable();
+
+    expect(el.querySelector('.tickets li .category')?.textContent).toBe('Returns');
   });
 
   it('shows the empty state when there are no tickets', async () => {
@@ -71,7 +96,7 @@ describe('TicketsPage', () => {
     const el = await settle(fixture);
 
     expect(el.querySelector('.empty')?.textContent).toContain('No tickets yet');
-    expect(el.querySelector('table')).toBeNull();
+    expect(el.querySelector('.tickets')).toBeNull();
   });
 
   it('shows an error with a retry that loads again', async () => {
@@ -87,6 +112,6 @@ describe('TicketsPage', () => {
     await fixture.whenStable();
 
     expect(el.querySelector('[role=alert]')).toBeNull();
-    expect(el.querySelectorAll('tbody tr')).toHaveLength(2);
+    expect(el.querySelectorAll('.tickets li')).toHaveLength(2);
   });
 });

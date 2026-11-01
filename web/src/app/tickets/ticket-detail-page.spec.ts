@@ -38,7 +38,17 @@ describe('TicketDetailPage', () => {
     http = TestBed.inject(HttpTestingController);
   });
 
-  afterEach(() => http.verify());
+  afterEach(() => {
+    flushUsage();
+    http.verify();
+  });
+
+  /** The cost readout reads the ticket's model calls; they're not what these tests are about, so there are none. */
+  function flushUsage() {
+    for (const request of http.match((r) => r.url.startsWith('/api/model-calls'))) {
+      request.flush([]);
+    }
+  }
 
   function create(id = '2') {
     const fixture = TestBed.createComponent(TicketDetailPage);
@@ -55,6 +65,7 @@ describe('TicketDetailPage', () => {
     for (let i = 0; i < 3; i++) {
       await new Promise((resolve) => setTimeout(resolve));
       TestBed.tick();
+      flushUsage();
       for (const request of http.match((r) => r.url.endsWith('/follow-ups'))) {
         request.flush(followUps);
       }
@@ -147,6 +158,8 @@ describe('TicketDetailPage', () => {
     expect(request.request.method).toBe('POST');
     request.flush(done);
     await new Promise((resolve) => setTimeout(resolve));
+    TestBed.tick();
+    flushUsage();
     await fixture.whenStable();
 
     const after = el.querySelector<HTMLButtonElement>('button.classify')!;
@@ -172,6 +185,29 @@ describe('TicketDetailPage', () => {
     expect(el.querySelector<HTMLButtonElement>('button.classify')!.disabled).toBe(false);
   });
 
+  it('shows the cost readout from the ticket model calls, and reads them again after a summary', async () => {
+    const fixture = create();
+    http.expectOne('/api/tickets/2').flush(ticket);
+    await new Promise((resolve) => setTimeout(resolve));
+    TestBed.tick();
+    http.expectOne('/api/model-calls?ticketId=2').flush([
+      { id: 1, feature: 'Reply', inputTokens: 1300, outputTokens: 45, costUsd: 0, isEstimated: false },
+      { id: 2, feature: 'Summary', inputTokens: 400, outputTokens: 22, costUsd: 0, isEstimated: false },
+    ]);
+    const el = await settle(fixture);
+
+    expect(el.querySelector('.cost .totals')?.textContent).toContain('1,767 tokens');
+
+    el.querySelector<HTMLButtonElement>('.summary button')?.click();
+    http.expectOne('/api/tickets/2/summary').flush({ text: 'Delayed.', promptVersion: 'summary.v2', generatedAt: '2026-11-01T12:00:00Z' });
+    await new Promise((resolve) => setTimeout(resolve));
+    TestBed.tick();
+    http.expectOne('/api/model-calls?ticketId=2').flush([{ id: 3, feature: 'Summary', inputTokens: 10, outputTokens: 5, costUsd: 0, isEstimated: false }]);
+    await fixture.whenStable();
+
+    expect(el.querySelector('.cost .totals')?.textContent).toContain('15 tokens');
+  });
+
   it('shows a newly generated summary without reloading the ticket', async () => {
     const fixture = create();
     http.expectOne('/api/tickets/2').flush(ticket);
@@ -179,6 +215,9 @@ describe('TicketDetailPage', () => {
 
     el.querySelector<HTMLButtonElement>('.summary button')?.click();
     http.expectOne('/api/tickets/2/summary').flush({ text: 'The tent order is delayed.', promptVersion: 'summary.v2', generatedAt: '2026-11-01T12:00:00Z' });
+    await new Promise((resolve) => setTimeout(resolve));
+    TestBed.tick();
+    flushUsage();
     await fixture.whenStable();
 
     expect(el.querySelector('.summary .text')?.textContent).toBe('The tent order is delayed.');

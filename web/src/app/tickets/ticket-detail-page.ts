@@ -2,21 +2,23 @@ import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { problemMessage } from '../api/api-errors';
 import { TicketsService } from '../api/tickets.service';
 import { ClassificationBadges } from './classification-badges';
 import { FollowUpsList } from './follow-ups';
 import { ReplyPanel } from './reply-panel';
+import { TicketCost } from './ticket-cost';
 import { TicketStatusBadge } from './ticket-status';
 import { GeneratedSummary, TicketSummaryBox } from './ticket-summary';
 
 @Component({
   selector: 'app-ticket-detail-page',
-  imports: [RouterLink, DatePipe, TicketStatusBadge, TicketSummaryBox, ClassificationBadges, ReplyPanel, FollowUpsList],
+  imports: [RouterLink, DatePipe, TicketStatusBadge, TicketSummaryBox, ClassificationBadges, ReplyPanel, FollowUpsList, TicketCost],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <a class="back" routerLink="/tickets">← All tickets</a>
     @if (ticket.isLoading() && !ticket.hasValue()) {
-      <p class="loading">Loading ticket…</p>
+      <p class="loading" role="status">Loading ticket…</p>
     } @else if (ticket.error()) {
       <div class="error" role="alert">
         @if (notFound()) {
@@ -38,7 +40,11 @@ import { GeneratedSummary, TicketSummaryBox } from './ticket-summary';
       <p class="body">{{ t.body }}</p>
 
       <section class="slot summary" aria-labelledby="summary-heading">
-        <app-ticket-summary [ticketId]="t.id" [summary]="t.summary" (generated)="showSummary($event)" />
+        <app-ticket-summary [ticketId]="t.id" [summary]="t.summary" (generated)="showSummary($event); usageChanged()" />
+      </section>
+
+      <section class="slot cost" aria-labelledby="cost-heading">
+        <app-ticket-cost [ticketId]="t.id" [refresh]="usageVersion()" />
       </section>
 
       <section class="slot classification" aria-labelledby="classification-heading">
@@ -72,7 +78,7 @@ import { GeneratedSummary, TicketSummaryBox } from './ticket-summary';
 
       <section class="slot reply" aria-labelledby="reply-heading">
         <h2 id="reply-heading">Suggested reply</h2>
-        <app-reply-panel [ticketId]="t.id" (followUpsChanged)="followUps.reload()" />
+        <app-reply-panel [ticketId]="t.id" (followUpsChanged)="followUps.reload()" (runEnded)="usageChanged()" />
       </section>
 
       <section class="slot follow-ups" aria-labelledby="follow-ups-heading">
@@ -81,19 +87,21 @@ import { GeneratedSummary, TicketSummaryBox } from './ticket-summary';
     }
   `,
   styles: `
-    .back { display: inline-block; margin-bottom: 1rem; color: #1d4ed8; text-decoration: none; }
+    .back { display: inline-block; margin-bottom: 1rem; color: var(--link); }
+    /* Wide screens keep the list beside the ticket, so there is nothing to go back to */
+    @media (min-width: 900px) { .back { display: none; } }
     h1 { margin: 0 0 1rem; font-size: 1.5rem; }
-    h1 .number { color: #6b7280; font-weight: 500; margin-right: 0.25rem; }
+    h1 .number { color: var(--muted); font-weight: 500; margin-right: 0.25rem; }
     .meta { display: flex; flex-wrap: wrap; gap: 0.75rem 2rem; margin: 0 0 1.25rem; }
-    .meta dt { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; }
+    .meta dt { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
     .meta dd { margin: 0.125rem 0 0; }
-    .body { white-space: pre-wrap; line-height: 1.5; max-width: 70ch; padding: 1rem; background: #f8f9fb; border-radius: 6px; }
-    .slot { margin-top: 1.5rem; padding-top: 0.75rem; border-top: 1px solid #e5e7eb; }
+    .body { white-space: pre-wrap; line-height: 1.5; max-width: 70ch; padding: 1rem; background: var(--surface); border-radius: 6px; }
+    .slot { margin-top: 1.5rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
     .slot h2 { font-size: 1rem; margin: 0 0 0.5rem; }
-    .loading, .empty { color: #6b7280; }
-    .error { color: #9b1c1c; }
+    .loading, .empty { color: var(--muted); }
+    .error { color: var(--danger); }
     .reason { margin: 0.25rem 0; max-width: 70ch; }
-    .provenance { margin: 0.25rem 0; font-size: 0.75rem; color: #6b7280; }
+    .provenance { margin: 0.25rem 0; font-size: 0.75rem; color: var(--muted); }
     .actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.5rem; }
   `,
 })
@@ -104,6 +112,13 @@ export class TicketDetailPage {
   private readonly tickets = inject(TicketsService);
 
   protected readonly ticket = this.tickets.get(this.id);
+
+  /** Changes whenever a model call for this ticket ends, so the cost readout reads its rows again. */
+  protected readonly usageVersion = signal(0);
+
+  protected usageChanged(): void {
+    this.usageVersion.update((v) => v + 1);
+  }
 
   protected readonly classifying = signal(false);
   protected readonly classifyError = signal<string | null>(null);
@@ -118,7 +133,8 @@ export class TicketDetailPage {
     this.classifyError.set(null);
     try {
       const classification = await this.tickets.classify(ticketId);
-      this.ticket.update((t) => (t && t.id === ticketId ? { ...t, classification } : t));
+      this.ticket.update((t) => (t?.id === ticketId ?{ ...t, classification } : t));
+      this.usageChanged();
     } catch (error) {
       this.classifyError.set(errorMessage(error));
     } finally {
@@ -137,11 +153,8 @@ export class TicketDetailPage {
   }
 }
 
-/** The problem details' detail from the API, which never carries provider text, or a generic message. */
+/** The problem details' text from the API, which never carries provider text, or a generic message. */
 function errorMessage(error: unknown): string {
-  if (error instanceof HttpErrorResponse && typeof error.error?.detail === 'string') {
-    return `Couldn't classify this ticket: ${error.error.detail}`;
-  }
-
-  return "Couldn't classify this ticket. Try again in a moment.";
+  const message = problemMessage(error);
+  return message ? `Couldn't classify this ticket: ${message}` : "Couldn't classify this ticket. Try again in a moment.";
 }
