@@ -83,43 +83,46 @@ public sealed partial class AdversarialReplyTests(PostgresFixture postgres)
 
     // Provider faults
 
-    public static TheoryData<string, string, string, string> Faults => new()
+    public static TheoryData<string, string, string, string, int> Faults => new()
     {
-        { "429 without Retry-After", Turn(Error(429)), "model_unavailable", "Error" },
-        { "429 with Retry-After", Turn(Error(429, retryAfterSeconds: 0.05)), "model_unavailable", "Error" },
-        { "429 with Retry-After over the cap", Turn(Error(429, retryAfterSeconds: 600)), "model_unavailable", "Error" },
-        { "500", Turn(Error(500)), "model_unavailable", "Error" },
-        { "502", Turn(Error(502)), "model_unavailable", "Error" },
-        { "503", Turn(Error(503)), "model_unavailable", "Error" },
-        { "connection reset", Turn(Reset()), "model_unavailable", "Error" },
-        { "timeout before the first item", Turn(Stall(30), Text("too late")), "timeout", "Error" },
-        { "error inside the stream after text", Turn(Text("Your parcel left "), Error(503)), "model_unavailable", "Error" },
-        { "connection reset after text", Turn(Text("Your parcel left "), Reset()), "model_unavailable", "Error" },
-        { "stall after text", Turn(Text("Your parcel left "), Stall(30), Text("never")), "timeout", "Error" },
-        { "refusal", Turn(Text("I can't "), Usage(300, 5), Finish("content_filter")), "model_refused", "Error" },
+        { "429 without Retry-After", Turn(Error(429)), "model_unavailable", "Error", 0 },
+        { "429 with Retry-After", Turn(Error(429, retryAfterSeconds: 0.05)), "model_unavailable", "Error", 0 },
+        { "429 with Retry-After over the cap", Turn(Error(429, retryAfterSeconds: 600)), "model_unavailable", "Error", 0 },
+        { "500", Turn(Error(500)), "model_unavailable", "Error", 0 },
+        { "502", Turn(Error(502)), "model_unavailable", "Error", 0 },
+        { "503", Turn(Error(503)), "model_unavailable", "Error", 0 },
+        { "connection reset", Turn(Reset()), "model_unavailable", "Error", 0 },
+        { "timeout before the first item", Turn(Stall(30), Text("too late")), "timeout", "Error", 0 },
+        { "error inside the stream after text", Turn(Text("Your parcel left "), Error(503)), "model_unavailable", "Error", 0 },
+        { "connection reset after text", Turn(Text("Your parcel left "), Reset()), "model_unavailable", "Error", 0 },
+        { "stall after text", Turn(Text("Your parcel left "), Stall(30), Text("never")), "timeout", "Error", 0 },
+        { "refusal", Turn(Text("I can't "), Usage(300, 5), Finish("content_filter")), "model_refused", "Error", 0 },
         {
             "error after a tool call",
             Turns(Turn(ToolCall("lookup_order_status", """{ "orderNumber": "KO-205002" }"""), Usage(300, 10)), Turn(Error(503))),
             "model_unavailable",
-            "Success,Error"
+            "Success,Error",
+            0
         },
         {
             "error after a proposal",
             Turns(Turn(Propose("Trace it", "", 1), Usage(300, 10)), Turn(Text("Almost "), Error(502))),
             "model_unavailable",
-            "Success,Error"
+            "Success,Error",
+            1
         },
         {
             "refusal after a tool call",
             Turns(Turn(ToolCall("lookup_order_status", """{ "orderNumber": "KO-205002" }"""), Usage(300, 10)), Turn(Finish("content_filter"))),
             "model_refused",
-            "Success,Error"
+            "Success,Error",
+            0
         },
     };
 
     [Theory]
     [MemberData(nameof(Faults))]
-    public async Task A_fault_ends_the_stream_with_exactly_one_error_and_leaves_one_row_per_call(string name, string turns, string code, string outcomes)
+    public async Task A_fault_ends_the_stream_with_exactly_one_error_and_leaves_one_row_per_call(string name, string turns, string code, string outcomes, int proposals)
     {
         await using var api = await StartAsync(postgres, turns, Ct);
         var ticketId = await api.AddTicketAsync("Where is my parcel?", "It has not arrived.", Ct);
@@ -140,7 +143,7 @@ public sealed partial class AdversarialReplyTests(PostgresFixture postgres)
         // A fault never turns a proposal into a task
         await using var db = api.Api.CreateDbContext();
         Assert.False(await db.FollowUpTasks.AnyAsync(Ct));
-        Assert.True(await db.FollowUpProposals.CountAsync(Ct) <= 1);
+        Assert.Equal(proposals, await db.FollowUpProposals.CountAsync(Ct));
     }
 
     [Fact]
@@ -252,8 +255,9 @@ public sealed partial class AdversarialReplyTests(PostgresFixture postgres)
         var kept = int.Parse(logged.Groups["kept"].Value, System.Globalization.CultureInfo.InvariantCulture);
         Assert.Equal(10, kept + int.Parse(logged.Groups["dropped"].Value, System.Globalization.CultureInfo.InvariantCulture));
         var citations = stream.Single("citations");
-        Assert.Equal(kept >= 1 ? [1] : [], citations.GetProperty("citations").EnumerateArray().Select(c => c.GetProperty("marker").GetInt32()));
-        Assert.Equal(kept >= 1 ? [10] : [1, 10], citations.GetProperty("removed").EnumerateArray().Select(n => n.GetInt32()));
+        Assert.InRange(kept, 1, 9);
+        Assert.Equal([1], citations.GetProperty("citations").EnumerateArray().Select(c => c.GetProperty("marker").GetInt32()));
+        Assert.Equal([10], citations.GetProperty("removed").EnumerateArray().Select(n => n.GetInt32()));
         Assert.Equal(ModelCallOutcome.Success, Assert.Single(await api.RowsAsync(ticketId, 1, Ct)).Outcome);
     }
 }

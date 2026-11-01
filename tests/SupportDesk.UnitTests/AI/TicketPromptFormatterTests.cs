@@ -53,11 +53,11 @@ public partial class TicketPromptFormatterTests
     }
 
     [Fact]
-    public void Escaping_only_touches_ticket_and_tool_result_tags()
+    public void Escaping_only_touches_ticket_tool_result_and_sources_tags()
     {
-        const string text = "Order <KO-204118> & a 2 < 3 comparison, <b>bold</b>, <tool>, tickets</tickets, </tool_results>";
+        const string text = "Order <KO-204118> & a 2 < 3 comparison, <b>bold</b>, <tool>, <source>, tickets</tickets, </tool_results>";
 
-        Assert.Equal("Order <KO-204118> & a 2 < 3 comparison, <b>bold</b>, <tool>, tickets&lt;/tickets, &lt;/tool_results>", TicketPromptFormatter.Escape(text));
+        Assert.Equal("Order <KO-204118> & a 2 < 3 comparison, <b>bold</b>, <tool>, <source>, tickets&lt;/tickets, &lt;/tool_results>", TicketPromptFormatter.Escape(text));
     }
 
     [Fact]

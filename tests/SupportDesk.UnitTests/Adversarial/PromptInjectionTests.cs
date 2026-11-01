@@ -91,6 +91,7 @@ public sealed partial class PromptInjectionTests
         Assert.Matches(@"^\s*Write the suggested reply\.\s*$", user[(close + "</ticket>".Length)..]);
     }
 
+    // The fake model ignores the ticket, so this pins the offered allow-list; the next test has a model that obeys the ticket
     [Fact]
     public async Task Ticket_text_that_asks_for_tools_runs_none_and_offers_only_the_two_tools()
     {

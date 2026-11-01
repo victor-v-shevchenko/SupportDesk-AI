@@ -87,7 +87,7 @@ public sealed partial class ClientAndTransportTests
     }
 
     [Fact]
-    public async Task A_client_that_stops_reading_cancels_the_provider_call_too()
+    public async Task A_dropped_connection_that_cancels_then_disposes_the_stream_cancels_the_provider_call()
     {
         using var rig = Create(Turn(Text("First part. "), Stall(60), Text("never seen")));
         var events = new List<ReplyEvent>();
@@ -119,7 +119,13 @@ public sealed partial class ClientAndTransportTests
         var secondEvents = new List<ReplyEvent>();
 
         var firstRead = rig.ReadAsync(Ticket(id: 7), firstEvents, first.Token);
-        await WaitForAsync(() => firstEvents.OfType<ReplyToken>().Any());
+        await WaitForAsync(() =>
+        {
+            lock (firstEvents)
+            {
+                return firstEvents.OfType<ReplyToken>().Any();
+            }
+        });
         // The client aborts and clicks "Suggest reply" again in the same moment
         await first.CancelAsync();
         var secondRead = rig.ReadAsync(Ticket(id: 7), secondEvents, Ct);
