@@ -31,6 +31,18 @@ public sealed class AiOptions
 
     public AiTimeoutSettings Timeouts { get; set; } = new();
 
+    public AiRetrySettings Retry { get; set; } = new();
+
+    public AiBudgetSettings Budget { get; set; } = new();
+
+    /// <summary>
+    /// USD per million tokens (PLAN.md 6.6). A list rather than <c>AI:Pricing:&lt;model&gt;</c>, because configuration keys
+    /// use <c>:</c> as a separator and Ollama model names (<c>qwen2.5:1.5b</c>) contain one.
+    /// </summary>
+    public List<ModelPrice> Pricing { get; set; } = [];
+
+    public AiUsageSettings Usage { get; set; } = new();
+
     /// <summary>Prompt name to version, for example <c>reply</c> → <c>reply.v1</c> (loads <c>prompts/reply.v1.md</c>).</summary>
     public Dictionary<string, string> Prompts { get; set; } = new(StringComparer.Ordinal);
 
@@ -87,8 +99,63 @@ public sealed class OllamaSettings
 
 public sealed class AiTimeoutSettings
 {
-    /// <summary>The only timeout on <see cref="HttpClient"/>; the rest are in the pipeline (step 3b).</summary>
+    /// <summary>The only timeout on <see cref="HttpClient"/>; the rest are in <see cref="RetryTimeoutMiddleware"/>.</summary>
     public int ConnectSeconds { get; set; } = 10;
+
+    /// <summary>One non-streaming attempt.</summary>
+    public int NonStreamingSeconds { get; set; } = 30;
+
+    /// <summary>From the start of a streaming attempt to its first text or tool call.</summary>
+    public int FirstItemSeconds { get; set; } = 20;
+
+    /// <summary>Between two updates once something has arrived.</summary>
+    public int GapSeconds { get; set; } = 15;
+
+    /// <summary>A whole streaming call, retries included.</summary>
+    public int StreamTotalSeconds { get; set; } = 120;
+}
+
+public sealed class AiRetrySettings
+{
+    /// <summary>Attempts in all, so 3 is one call and two retries.</summary>
+    public int MaxAttempts { get; set; } = 3;
+
+    /// <summary>The first backoff; it doubles per attempt, with jitter.</summary>
+    public int BaseDelayMs { get; set; } = 500;
+
+    /// <summary>The longest wait before a retry. A provider's <c>Retry-After</c> longer than this ends the call instead of waiting.</summary>
+    public int MaxDelayMs { get; set; } = 10_000;
+}
+
+public sealed class AiBudgetSettings
+{
+    public int MaxInputTokensPerCall { get; set; } = 6000;
+
+    /// <summary>Set on a call when the caller didn't set <c>MaxOutputTokens</c>.</summary>
+    public Dictionary<AiFeature, int> MaxOutputTokens { get; set; } = new()
+    {
+        [AiFeature.Reply] = 800,
+        [AiFeature.Summary] = 200,
+        [AiFeature.Classification] = 200,
+    };
+
+    /// <summary>Input and output tokens across all the calls of one request (the tool loop).</summary>
+    public int MaxTokensPerRequest { get; set; } = 20_000;
+}
+
+public sealed class ModelPrice
+{
+    public string Model { get; set; } = "";
+
+    public decimal InputPerMTok { get; set; }
+
+    public decimal OutputPerMTok { get; set; }
+}
+
+public sealed class AiUsageSettings
+{
+    /// <summary>Model call rows waiting for the database; when it's full, new rows are dropped with a warning.</summary>
+    public int QueueCapacity { get; set; } = 1000;
 }
 
 public sealed class AnthropicSettings

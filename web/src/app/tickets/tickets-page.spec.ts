@@ -74,6 +74,6 @@ describe('TicketsPage', () => {
     await fixture.whenStable();
 
     expect(el.querySelector('[role=alert]')).toBeNull();
-    expect(el.querySelectorAll('tbody tr').length).toBe(2);
+    expect(el.querySelectorAll('tbody tr')).toHaveLength(2);
   });
 });

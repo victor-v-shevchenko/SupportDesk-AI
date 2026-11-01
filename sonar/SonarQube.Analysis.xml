@@ -14,6 +14,6 @@
   <!-- Not counted for coverage: tool configuration and the app bootstrap, which no unit test can run -->
   <Property Name="sonar.coverage.exclusions">web/*.config.ts,web/*.config.js,web/*.conf.mjs,web/src/main.ts,src/SupportDesk.Api/Program.cs</Property>
 
-  <!-- Rule exclusions (sonar.issue.ignore.multicriteria): none yet; step 3b adds them -->
+  <!-- Rule exclusions (sonar.issue.ignore.multicriteria): none; the step 3b review found no rule that needed one (PLAN.md 11) -->
 
 </SonarQubeAnalysisProperties>

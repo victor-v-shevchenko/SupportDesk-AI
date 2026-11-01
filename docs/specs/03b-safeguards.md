@@ -11,7 +11,7 @@ Retries, timeouts, the token budget and cost logging are in the pipeline before 
 ## Scope
 
 **`RetryTimeoutMiddleware`**
-- Retries per PLAN.md 6.5: transient errors only, exponential backoff with jitter, `Retry-After` honored, at most `AI:Retry:MaxAttempts`
+- Retries per PLAN.md 6.5: transient errors only, exponential backoff with jitter, `Retry-After` honored, at most `AI:Retry:MaxAttempts`. Added during implementation: `AI:Retry:MaxDelayMs` caps the wait, and a longer `Retry-After` ends the call instead; the Anthropic SDK doesn't expose `Retry-After`, so only OpenAI and the fake provider have it (PLAN.md 6.5)
 - Streaming: retries only until the first item (text or tool call) has been yielded to the caller; after that, an error is rethrown as `ModelUnavailableException`
 - Timeouts: non-streaming, first item, gap between items, total stream. A timeout counts as transient before the first item
 - Cancellation from the caller is never retried and never mapped to a timeout
@@ -21,12 +21,12 @@ Retries, timeouts, the token budget and cost logging are in the pipeline before 
 - Sets `MaxOutputTokens` from the feature's setting when the caller didn't
 
 **`RequestCapMiddleware`**
-- Outermost; adds input and output tokens of each inner call (from usage, or the estimate when usage is missing) and stops the request once `MaxTokensPerRequest` is passed
+- Outermost; adds input and output tokens of each inner call (from usage, or the estimate when usage is missing) and stops the request once `MaxTokensPerRequest` is passed. Changed during implementation: an outermost middleware can't see the calls inside the tool loop, so the counting is done by `RequestCapCounterMiddleware`, right under `FunctionInvokingChatClient`, on a tally the outer one starts (PLAN.md 6.2)
 
 **`UsageLoggingMiddleware` and `ModelCalls`**
 - `ModelCall` entity and migration `AddModelCalls`
 - One row per inner call with the fields in PLAN.md 4; `IsEstimated = true` when the provider sent no usage
-- Cost from `AI:Pricing`; unknown model gives `null` cost and a warning
+- Cost from `AI:Pricing`; unknown model gives `null` cost and a warning. Changed during implementation: `AI:Pricing` is a list of `{ Model, InputPerMTok, OutputPerMTok }`, because Ollama model names contain `:`, the configuration key separator (PLAN.md 6.6)
 - Writes don't block the response stream: rows go through a bounded channel to a background writer; if the channel is full, the row is dropped with a warning
 - `GET /api/model-calls?ticketId=` returns the rows, newest first
 

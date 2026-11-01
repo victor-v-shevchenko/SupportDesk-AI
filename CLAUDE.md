@@ -36,7 +36,7 @@ Run inside the dev container.
 | Restore local tools (`dotnet ef`, Sonar scanner) | `dotnet tool restore` |
 | Tests (CI set) | `dotnet test --filter "Category!=Eval"` |
 | Tests with coverage (as CI) | `dotnet test --filter "Category!=Eval" --collect:"XPlat Code Coverage" --settings tests/coverage.runsettings` |
-| Evaluation (from step 3b; real model, costs money with a hosted provider) | `dotnet test tests/SupportDesk.Eval --filter Category=Eval` |
+| Evaluation (real model, costs money with a hosted provider; the token-count check only needs an Anthropic key and is free) | `dotnet test tests/SupportDesk.Eval --filter Category=Eval` |
 | Angular tests and lint | `npm --prefix web test -- --watch=false` and `npm --prefix web run lint` |
 | Angular tests with coverage (as CI) | `npm --prefix web run test:ci` |
 | End-to-end tests | `npm --prefix web run e2e` |

@@ -83,7 +83,7 @@ public sealed class ErrorMappingMiddleware(IChatClient innerClient, IModelErrorC
                 return null;
             case OperationCanceledException:
                 // Not the caller's token, so the SDK or HttpClient gave up waiting
-                return new ModelUnavailableException("The model provider timed out.", exception, statusCode: null, isTransient: true);
+                return new ModelUnavailableException("The model provider timed out.", exception, statusCode: null, isTransient: true) { IsTimeout = true };
         }
 
         var error = classifier?.Classify(exception) ?? ClassifyCommon(exception);
@@ -95,10 +95,10 @@ public sealed class ErrorMappingMiddleware(IChatClient innerClient, IModelErrorC
         var message = error.StatusCode is { } status
             ? $"The model provider returned {status}."
             : "The model provider couldn't be reached.";
-        return new ModelUnavailableException(message, exception, error.StatusCode, error.IsTransient);
+        return new ModelUnavailableException(message, exception, error.StatusCode, error.IsTransient) { RetryAfter = error.RetryAfter };
     }
 
-    /// <summary><see cref="HttpRequestException"/>, which Ollama and the fake provider throw directly.</summary>
+    /// <summary><see cref="HttpRequestException"/>, which Ollama throws directly.</summary>
     private static ModelError? ClassifyCommon(Exception exception) => exception switch
     {
         HttpRequestException { StatusCode: { } status } => ModelError.FromStatus((int)status),

@@ -259,7 +259,8 @@ public class FakeChatClientTests
               { "name": "mine", "ticketNumber": "T-5000", "turns": { "Summary": [ { "steps": [ { "type": "text", "text": "custom", "chunkSize": 100, "delayMs": 0 }, { "type": "finish", "reason": "length" } ] } ] } }
             ] }
             """);
-        using var client = AiPipeline.Build(new FakeChatClient(scenarios, _time), errorClassifier: null);
+        using var pipeline = TestPipeline.Create(new FakeChatClient(scenarios, _time), _time, new FakeErrorClassifier());
+        var client = pipeline.Client;
 
         var response = await client.GetResponseAsync("hi", Options(AiFeature.Summary, "T-5000"), Ct);
 
@@ -267,7 +268,7 @@ public class FakeChatClientTests
         Assert.Equal(ChatFinishReason.Length, response.FinishReason);
     }
 
-    private IChatClient Pipeline() => AiPipeline.Build(new FakeChatClient(_scenarios, _time), errorClassifier: null);
+    private IChatClient Pipeline() => TestPipeline.Create(new FakeChatClient(_scenarios, _time), _time, new FakeErrorClassifier()).Client;
 
     private static ChatOptions Options(AiFeature feature, string ticketNumber) =>
         new AiCallContext(feature, "test.v1", TicketId: 1, TicketNumber: ticketNumber).ApplyTo(new ChatOptions());

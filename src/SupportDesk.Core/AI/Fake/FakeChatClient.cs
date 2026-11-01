@@ -10,8 +10,8 @@ namespace SupportDesk.Core.AI.Fake;
 /// <summary>
 /// A provider that plays scripted scenarios (PLAN.md 6.8), picked by the ticket number in <see cref="AiCallContext"/>.
 /// It behaves like a real adapter where tests depend on it: text arrives in chunks over time, tool calls come as
-/// <see cref="FunctionCallContent"/>, usage comes on the last update, errors are <see cref="HttpRequestException"/>s with
-/// a status code, a refusal is <see cref="ChatFinishReason.ContentFilter"/>, and every wait honors cancellation.
+/// <see cref="FunctionCallContent"/>, usage comes on the last update, errors are <see cref="FakeProviderException"/>s
+/// (an <see cref="HttpRequestException"/> with a status code and maybe <c>Retry-After</c>), a refusal is <see cref="ChatFinishReason.ContentFilter"/>, and every wait honors cancellation.
 /// </summary>
 public sealed class FakeChatClient(FakeScenarioSet scenarios, TimeProvider timeProvider) : IChatClient
 {
@@ -68,10 +68,10 @@ public sealed class FakeChatClient(FakeScenarioSet scenarios, TimeProvider timeP
                     usage = new UsageDetails { InputTokenCount = u.InputTokens, OutputTokenCount = u.OutputTokens, TotalTokenCount = u.InputTokens + u.OutputTokens };
                     break;
                 case FakeErrorStep error:
-                    throw new HttpRequestException(
+                    throw new FakeProviderException(
                         error.Message ?? string.Create(CultureInfo.InvariantCulture, $"Fake provider error {error.StatusCode}."),
-                        inner: null,
-                        (HttpStatusCode)error.StatusCode);
+                        (HttpStatusCode)error.StatusCode,
+                        error.RetryAfterSeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null);
                 case FakeStallStep stall:
                     await DelayAsync(TimeSpan.FromSeconds(stall.Seconds), cancellationToken);
                     break;

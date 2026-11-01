@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SupportDesk.Core.AI.Usage;
 using SupportDesk.Core.Articles;
 using SupportDesk.Core.Tickets;
 
@@ -14,6 +15,8 @@ public class SupportDeskDbContext(DbContextOptions<SupportDeskDbContext> options
     public DbSet<Ticket> Tickets => Set<Ticket>();
 
     public DbSet<Article> Articles => Set<Article>();
+
+    public DbSet<ModelCall> ModelCalls => Set<ModelCall>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -59,6 +62,19 @@ public class SupportDeskDbContext(DbContextOptions<SupportDeskDbContext> options
             article.Property(a => a.Slug).HasMaxLength(Article.SlugMaxLength);
             article.HasIndex(a => a.Slug).IsUnique();
             article.Property(a => a.Title).HasMaxLength(Article.TitleMaxLength);
+        });
+
+        modelBuilder.Entity<ModelCall>(call =>
+        {
+            call.Property(c => c.Feature).HasConversion<string>().HasMaxLength(20);
+            call.Property(c => c.Provider).HasMaxLength(ModelCall.ProviderMaxLength);
+            call.Property(c => c.Model).HasMaxLength(ModelCall.ModelMaxLength);
+            call.Property(c => c.PromptVersion).HasMaxLength(ModelCall.PromptVersionMaxLength);
+            call.Property(c => c.CostUsd).HasPrecision(12, 6);
+            call.Property(c => c.Outcome).HasConversion<string>().HasMaxLength(20);
+            // No foreign key to Tickets: a usage row must never fail to save because of the ticket
+            call.HasIndex(c => new { c.TicketId, c.Timestamp });
+            call.HasIndex(c => c.Timestamp);
         });
     }
 }

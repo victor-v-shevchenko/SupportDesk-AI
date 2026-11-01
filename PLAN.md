@@ -143,7 +143,8 @@ All routes are under `/api`. Errors use RFC 7807 problem details.
 | `AI:Fake:ScenariosPath` | file | `fixtures/fake-scenarios.json` (the build copies `tests/fixtures/fake-scenarios.json` there) |
 | `AI:Budget:*` | see 6.4 | |
 | `AI:Timeouts:*`, `AI:Retry:*` | see 6.5 | |
-| `AI:Pricing:<model>` | `InputPerMTok`, `OutputPerMTok` in USD | see 6.6 |
+| `AI:Pricing` | list of `Model`, `InputPerMTok`, `OutputPerMTok` in USD | see 6.6 |
+| `AI:Usage:QueueCapacity` | rows waiting to be saved | 1000 (see 6.6) |
 
 - Environment variables use double underscores, for example `AI__Chat__Provider=Fake`
 - **Ollama** runs on the host (the default endpoint) or in the optional `ollama` service in `docker-compose.yml`, which only starts with `--profile ollama` and keeps models in the `ollama` volume. Containers in the compose project reach that service at `http://ollama:11434`. Models (pull them first):
@@ -165,8 +166,9 @@ All routes are under `/api`. Errors use RFC 7807 problem details.
 Built once with `ChatClientBuilder`, outermost first:
 
 ```
-RequestCapMiddleware          sums usage across the tool loop, stops at the request cap
+RequestCapMiddleware          starts the request's token tally
 FunctionInvokingChatClient    the tool loop, MaximumIterationsPerRequest = 3
+RequestCapCounterMiddleware   adds each call's tokens to the tally, refuses the next call once it's over the cap
 BudgetGuardMiddleware         per-call input estimate, sets MaxOutputTokens
 UsageLoggingMiddleware        one ModelCalls row per inner call
 RetryTimeoutMiddleware        retries before the first item, timeouts
@@ -177,6 +179,10 @@ provider IChatClient          Anthropic (wrapped in AnthropicOptionsMiddleware) 
 - `ErrorMappingMiddleware` is innermost, so everything above it, including the retry middleware, only sees typed exceptions. `ModelUnavailableException` carries `StatusCode` and `IsTransient` (the rules in 6.5), which is what `RetryTimeoutMiddleware` decides on. Provider SDK exceptions are recognized by one `IModelErrorClassifier` per provider, registered in the API; `HttpRequestException` (Ollama, the fake provider) is handled in Core; anything else becomes a non-transient `ModelUnavailableException`. A cancellation the caller didn't ask for (an SDK or `HttpClient` timeout) is a transient `ModelUnavailableException`; the caller's own stays an `OperationCanceledException`
 - A refusal is `FinishReason = ContentFilter`, which is how the Anthropic adapter reports `stop_reason = "refusal"`. In a stream, the updates after it (they carry usage) are still passed on, and `ModelRefusedException` is thrown when the stream ends; the non-streaming exception carries the usage
 
+- **The request cap has two parts.** Outside the tool loop a middleware can't see the inner calls, and inside it doesn't know where a request starts. So `RequestCapMiddleware` puts a new `RequestTally` in `ChatOptions.AdditionalProperties` (in a copy of the caller's options), and `RequestCapCounterMiddleware`, right under the tool loop, reads it
+- `UsageLoggingMiddleware` sits above the retries, so a retried call is one row with the whole latency. Its tokens and cost are the successful attempt's: a failed attempt's usage is held back with its other updates and discarded, so retries that a provider bills for are under-counted
+- `BudgetExceededException` and the missing-context check are thrown when the call is made, not on the first read of a stream, so nothing reaches the provider
+- The order is checked by a test that walks the built chain (`The_middleware_order_matches_the_plan`)
 - Provider SDK retries are turned off (Anthropic SDK: max retries 0), so only `RetryTimeoutMiddleware` retries
 - `HttpClient` keeps only a connect timeout
 - Each feature passes its name, prompt version, ticket ID, ticket number and reply run ID through `ChatOptions.AdditionalProperties` (`AiCallContext.ApplyTo`), so logging and the fake provider can read them (`AiCallContext.From`). Tests check that the Anthropic, OpenAI and Ollama adapters don't send these keys to the provider
@@ -202,14 +208,28 @@ provider IChatClient          Anthropic (wrapped in AnthropicOptionsMiddleware) 
 - **Prompt builder** (in `ReplyService`): adds chunks in score order until the estimate reaches the input limit minus the room the system prompt, ticket and tool definitions need
 - **Per-call guard:** estimates each call's input; if it's over `MaxInputTokensPerCall`, the call is refused with `BudgetExceededException`
 - **Request cap:** after each inner call, adds input and output tokens; the next call is refused once the total passes `MaxTokensPerRequest`
-- **Estimate:** characters ÷ 4 × 1.2. Anthropic has a token-counting endpoint (`Messages.CountTokens`), but calling it before every request adds latency and a request, so it's only used in a test that checks the estimate stays on the safe side
+- **Estimate:** characters ÷ 3 × 1.2, rounded up, plus 10 tokens per message (`TokenEstimator`), over the text of every message, tool calls and results, thinking text, and each tool's name, description and JSON schema. Anthropic has a token-counting endpoint (`Messages.CountTokens`), but calling it before every request adds latency and a request, so it's only used in a test that checks the estimate stays on the safe side: `TokenEstimateTests` in `SupportDesk.Eval` (opt-in, needs `AI:Anthropic:ApiKey`, skipped without it; counting is free). It counts the three prompts with the shortest seeded ticket and the longest (which is also the one with `</ticket>`), the reply with five whole seeded articles as sources
+- **Why ÷ 3 and not ÷ 4:** the first run of that check (2026-11-01, `claude-opus-5-5`) found the original ÷ 4 × 1.2 estimate 7–25% *below* the real count on 5 of 6 prompts: these prompts (Markdown, tags, short lines) come to about 2.6–3.1 characters per token, and short prompts showed a fixed cost per message. With ÷ 3 × 1.2 + 10 per message, all six are above the real count, by 11–25%:
+
+  | Prompt, ticket | Estimate | Anthropic |
+  | --- | --- | --- |
+  | reply, T-1022 | 3004 | 2407 |
+  | reply, T-1025 | 2894 | 2312 |
+  | summary, T-1022 | 433 | 384 |
+  | summary, T-1025 | 323 | 289 |
+  | classify, T-1022 | 502 | 439 |
+  | classify, T-1025 | 393 | 344 |
+
+  Run the check again when a prompt or the model changes: the margin on short prompts is the smallest
+- **Tokens of a call** for the cap and for usage rows: the provider's usage where it sent it (streamed usage updates are added up, as Microsoft.Extensions.AI does), the estimate where it didn't (input from the messages, output from what came back). A call that failed still counts what it used
 
 ### 6.5 Retries and timeouts
 
 | Setting | Default |
 | --- | --- |
 | `AI:Retry:MaxAttempts` | 3 (1 call + 2 retries) |
-| `AI:Retry:BaseDelayMs` | 500, exponential with jitter; `Retry-After` is honored when present |
+| `AI:Retry:BaseDelayMs` | 500, doubled per attempt, with jitter in the upper half (250–500 ms, then 500–1000 ms) |
+| `AI:Retry:MaxDelayMs` | 10000; the longest wait before a retry |
 | `AI:Timeouts:NonStreamingSeconds` | 30 |
 | `AI:Timeouts:FirstItemSeconds` | 20 |
 | `AI:Timeouts:GapSeconds` | 15 |
@@ -219,15 +239,28 @@ provider IChatClient          Anthropic (wrapped in AnthropicOptionsMiddleware) 
 - Retried: 429, 5xx, timeouts, connection errors, provider "overloaded" errors
 - Not retried: 400, 401, 403, 404, refusals, cancellations
 - For streams, retries are allowed only until the first item (text or tool call) has gone to the caller. After that, an error ends the stream
+- **Updates before the first item are held back** (Anthropic's empty "message started" update, usage) and passed on with the first item, so a retry never shows the caller anything from the failed attempt. A stream that ends without an item (only usage, or a refusal) passes them on at the end
+- **`Retry-After`** is waited for instead of the backoff when the provider sends it and the SDK exposes it: OpenAI (response headers) and the fake provider (`retryAfterSeconds` on an `error` step). The Anthropic SDK (13.3) doesn't expose headers on its exceptions, so Anthropic gets the backoff. A `Retry-After` over `MaxDelayMs` ends the call at once rather than leaving the user waiting
+- **Timeouts:** `NonStreamingSeconds` per non-streaming attempt; `FirstItemSeconds` from the start of a streaming attempt to its first text or tool call (empty updates don't restart it; thinking text ends the wait, since the model is clearly working); then `GapSeconds` between updates, not counting the caller's own time between reads; `StreamTotalSeconds` for the whole streaming call, retries included. A timeout before the first item is transient and retried; after it, or the total, it isn't. `ModelUnavailableException.IsTimeout` tells timeouts apart
+- Timeouts cancel the inner call's token, so they rely on the provider honoring cancellation, as the SDKs' `HttpClient` calls do. Every timer is a `CancellationTokenSource` on the injected `TimeProvider`, disposed when its attempt ends, so tests run them on a fake clock
+- The caller's cancellation is never retried and never reported as a timeout: it comes out as `OperationCanceledException`, including during the wait before a retry
 - **Embeddings** aren't in the chat pipeline; their errors are mapped to `ModelUnavailableException` in step 4, which is the first caller
 - Every failure the caller sees is one of: `ModelUnavailableException` (retries used up, timeout, provider down), `BudgetExceededException`, `ModelRefusedException` (the provider declined the request), `OperationCanceledException`
 
 ### 6.6 Usage and cost
 
-- `UsageLoggingMiddleware` reads `UsageDetails` from the response, or from the last streamed update, and writes a `ModelCall` row
+- `UsageLoggingMiddleware` reads `UsageDetails` from the response, or adds up the streamed usage updates, and writes a `ModelCall` row
 - If a stream ends without usage (cancelled, failed), it writes an estimate with `IsEstimated = true`
+- **Outcome:** `Success`; `Error` for any failure, refusals included; `Cancelled` for the caller's cancellation and for a stream the caller stopped reading
+- **Model** is the one asked for (`ChatOptions.ModelId`, or the provider client's default), which is also what the price is looked up by. Provider is the client's `ChatClientMetadata.ProviderName`
+- Every call needs an `AiCallContext`; a call without one is refused with `InvalidOperationException`, since its row would have no feature or prompt version
+- **Writing:** rows go to `ModelCallBuffer`, a bounded channel (`AI:Usage:QueueCapacity`, 1000), which never waits: when it's full, the row is dropped with a warning. `ModelCallWriter`, a background service, saves them in batches of up to 100; a batch that fails to save is logged and dropped, so a database problem can't reach a stream. On shutdown it saves what's left for up to 5 seconds. `ModelCalls.TicketId` has no foreign key, so a row never fails because of its ticket
+- Unknown-model warnings are logged once per model. A row that can't be built (it never should be) is dropped with a warning rather than breaking the call; a buffer closed at shutdown says so in its warning; a save cut short by shutdown is logged with the number of rows lost
+- `GET /api/model-calls?ticketId=` returns the rows newest first (ties by ID), at most 200; without `ticketId` it returns the newest 200 of all
+- Failures are logged with the feature, ticket ID, exception type and status code only: an SDK's message can echo the request, and so the ticket
 - Cost = input tokens × input price + output tokens × output price, from `AI:Pricing`. An unknown model gets `CostUsd = null` and a warning log, never a made-up price
-- Prices in `appsettings.json` (USD per million tokens, from Anthropic's price list as of October 2026; check them again before publishing results): `claude-opus-5-5` 4.00 / 20.00, `claude-sonnet-5-5` 2.00 / 10.00, `claude-haiku-5-5` 0.10 / 0.50; Ollama models 0 / 0. OpenAI prices are added if OpenAI is used
+- `AI:Pricing` is a list of `{ Model, InputPerMTok, OutputPerMTok }`, not `AI:Pricing:<model>`: configuration keys use `:` as a separator, and Ollama model names (`qwen2.5:1.5b`) contain one
+- Prices in `appsettings.json` (USD per million tokens, from Anthropic's price list as of October 2026; check them again before publishing results): `claude-opus-5-5` 4.00 / 20.00, `claude-sonnet-5-5` 2.00 / 10.00, `claude-haiku-5-5` 0.10 / 0.50; Ollama models (`qwen2.5:1.5b`, `qwen2.5:7b`) and `fake` 0 / 0. OpenAI prices are added if OpenAI is used
 - Prompt text and ticket text are not logged by default
 
 ### 6.7 Anthropic-specific notes
@@ -244,8 +277,8 @@ These come from the current API and must be checked against the SDK version in u
 - `FakeChatClient` and `FakeEmbeddingGenerator` live in `SupportDesk.Core/AI/Fake`, selected with `AI__Chat__Provider=Fake` and `AI__Embeddings__Provider=Fake`
 - Scenarios are in `tests/fixtures/fake-scenarios.json`, keyed by ticket number (read from `ChatOptions.AdditionalProperties`), with a default scenario
 - A scenario has turns per feature (`Reply`, `Summary`, `Classification`, or `*` for any). A call plays the turn numbered by how many assistant messages are already in the history, so the call after a tool round trip, or a classification retry that sends the earlier answer back, plays the next turn; the last turn repeats. A feature that sends earlier assistant messages as context skips turns the same way. The fake is stateless: a transport retry before the first item sends the same messages and replays the same turn, so "fail once, then succeed" is tested with a stub client, not a scenario. A feature a scenario doesn't script falls back to the default scenario
-- A turn is a list of steps: `text` (streamed in chunks of `chunkSize` characters, `delayMs` before each), `tool_call` (name and arguments), `usage` (sent on the last update, as the adapters do), `error` (an `HttpRequestException` with a status code; before or after the first item depending on where it is in the list), `stall` (no output for N seconds), `finish` (the finish reason; `content_filter` is a refusal). Delays use `TimeProvider`, so tests run them on a fake clock, and every wait honors cancellation
-- Named scenarios, on seeded tickets so the app shows them with the seed data: `tool-call-order` T-1002, `tool-call-proposal` T-1008, `error-before-first-item` T-1021 (503, every feature), `error-after-first-item` T-1022 (529 after some reply text), `stall` T-1023 (30 seconds before the first item, every feature), `stall-after-first-item` T-1019 (some text, then 30 seconds), `invalid-json` T-1024 (classification: not JSON, then JSON that fails the schema), `refusal` T-1025 (every feature)
+- A turn is a list of steps: `text` (streamed in chunks of `chunkSize` characters, `delayMs` before each), `tool_call` (name and arguments), `usage` (sent on the last update, as the adapters do), `error` (a `FakeProviderException`, an `HttpRequestException` with a status code and an optional `retryAfterSeconds`; before or after the first item depending on where it is in the list), `stall` (no output for N seconds), `finish` (the finish reason; `content_filter` is a refusal). Delays use `TimeProvider`, so tests run them on a fake clock, and every wait honors cancellation
+- Named scenarios, on seeded tickets so the app shows them with the seed data: `tool-call-order` T-1002, `tool-call-proposal` T-1008, `error-before-first-item` T-1021 (503, every feature), `error-after-first-item` T-1022 (529 after some reply text), `stall` T-1023 (30 seconds before the first item, every feature), `stall-after-first-item` T-1019 (some text, then 30 seconds), `invalid-json` T-1024 (classification: not JSON, then JSON that fails the schema), `refusal` T-1025 (every feature). Through the pipeline both stalls end as timeouts: T-1023 waits past `FirstItemSeconds` on every attempt, so it fails after about a minute; T-1019 waits past `GapSeconds` after its first text and isn't retried
 - The file is checked when it's loaded: a `default` scenario without a ticket number, one scenario per ticket, known features and step types, no unknown fields. `AI:Fake:ScenariosPath` points tests at their own file
 - `FakeEmbeddingGenerator` returns a deterministic unit vector from a hash of the text (SHA-256 of the text and a block counter, read as 16-bit values). It's for running the app; retrieval tests use the committed fixtures instead
 - The fake provider is refused at startup when the environment is `Production`
@@ -315,6 +348,7 @@ These come from the current API and must be checked against the SDK version in u
 - **TypeScript in the analysis:** SonarScanner for .NET (12.x) indexes the files outside MSBuild projects by default (`sonar.scanner.scanAll`), so `web/` is analyzed without a JavaScript project file in the solution
 - **Warnings as errors in CI:** the scanner turns off `TreatWarningsAsErrors` while it analyzes, so CI runs a plain `dotnet build` first and a second build between `begin` and `end`
 - **Local checks:** SonarQube for IDE in connected mode, with the rules of the project's quality profile; it doesn't run the gate. Under "Sonar way core" the IDE flagged C# rules (S1144) the cloud didn't run, so after a profile change check that both report the same issues
+- **Rule review for step 3b (2026-11-01):** across steps 1–3a, every issue SonarQube Cloud raised (14 fixed, 1 open, no security hotspots) was a real finding and was fixed in code; none was noise or clashed with the .NET analyzers. So no rule is turned off yet; the table below starts empty
 - **Rules turned off:** kept as `sonar.issue.ignore.multicriteria` entries in `sonar/SonarQube.Analysis.xml`, so every change shows in a pull request diff. Each one is listed here with its reason (filled in from step 3b on). False positives are marked in SonarQube Cloud by the user:
 
 | Rule | Reason |

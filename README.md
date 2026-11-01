@@ -1,5 +1,7 @@
 # SupportDesk AI
 
+[![Quality gate status](https://sonarcloud.io/api/project_badges/measure?project=victor-v-shevchenko_SupportDesk-AI&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=victor-v-shevchenko_SupportDesk-AI)
+
 A support-ticket assistant with production-style LLM features: ASP.NET Core (.NET 10) Minimal API, Angular, PostgreSQL + pgvector and Microsoft.Extensions.AI.
 
 > Work in progress. The design is in [PLAN.md](PLAN.md) and the steps are in [docs/specs/](docs/specs/).

@@ -5,6 +5,7 @@
     <Project Path="src/SupportDesk.Data/SupportDesk.Data.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/SupportDesk.Eval/SupportDesk.Eval.csproj" />
     <Project Path="tests/SupportDesk.IntegrationTests/SupportDesk.IntegrationTests.csproj" />
     <Project Path="tests/SupportDesk.UnitTests/SupportDesk.UnitTests.csproj" />
   </Folder>
