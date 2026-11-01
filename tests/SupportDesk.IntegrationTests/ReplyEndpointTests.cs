@@ -105,6 +105,22 @@ public class ReplyEndpointTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task A_prompt_over_the_budget_ends_with_budget_exceeded()
+    {
+        var settings = new Dictionary<string, string?>(AllChunks) { ["AI:Budget:MaxInputTokensPerCall"] = "50" };
+        await using var api = await SeededApi.StartAsync(postgres, Ct, settings);
+        var ticketId = await TicketIdAsync(api, "T-1001");
+
+        using var response = await PostReplyAsync(api, ticketId);
+        var events = await ReadEventsAsync(response);
+
+        var error = Assert.Single(events);
+        Assert.Equal("error", error.Event);
+        Assert.Equal("budget_exceeded", error.Data.GetProperty("code").GetString());
+        Assert.Equal("This ticket is too long for a suggested reply.", error.Data.GetProperty("message").GetString());
+    }
+
+    [Fact]
     public async Task Leaving_the_stream_cancels_the_model_call()
     {
         var logs = new LogCollector();

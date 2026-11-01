@@ -36,6 +36,14 @@ describe('SseParser', () => {
     expect(parser.push('event: b\rdata: 2\r\r')).toEqual([{ event: 'b', data: '2' }]);
   });
 
+  it('keeps a CRLF together when an empty chunk comes between its halves', () => {
+    const parser = new SseParser();
+
+    expect(parser.push('data: 1\r')).toEqual([]);
+    expect(parser.push('')).toEqual([]);
+    expect(parser.push('\ndata: 2\n\n')).toEqual([{ event: 'message', data: '1\n2' }]);
+  });
+
   it('joins data lines, skips comments and frames without data, and defaults the event name', () => {
     const parser = new SseParser();
 

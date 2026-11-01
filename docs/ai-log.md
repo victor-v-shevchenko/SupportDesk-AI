@@ -68,3 +68,10 @@ Entry format (from CLAUDE.md):
 - What was wrong: the articles page bound `[value]` on the `<select>`, which Angular sets before the `@for` adds the options, so the select fell back to its first option (3) while the default `k` sent to `/api/search` was 5.
 - Fix: each option binds `[selected]` to the current `k` instead (step 4 PR).
 - Test: `ArticlesPage shows the default of 5 results in the select, matching what a search sends`
+
+## 2026-11-01 — Embedding failures during a reply showed as internal errors
+- Step: 5
+- Found by: review subagent
+- What was wrong: the embedding generator isn't behind the chat pipeline's error mapping, so a retrieval failure (Ollama down, an HTTP error, an `HttpClient` timeout) reached the reply as a raw exception and became `internal_error`, logged with the provider's exception, instead of `model_unavailable` or `timeout`.
+- Fix: `RetrievalService` maps embedding failures to `ModelUnavailableException` with fixed text, keeping the status and marking unrequested cancellations as timeouts (step 5 PR).
+- Test: `RetrievalServiceTests.An_embedding_provider_failure_becomes_ModelUnavailableException`

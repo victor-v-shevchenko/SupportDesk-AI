@@ -10,7 +10,7 @@ public abstract record ReplyEvent;
 /// <summary>A piece of the reply's text, as the model streamed it.</summary>
 public sealed record ReplyToken(string Text) : ReplyEvent;
 
-/// <summary>The checked citation markers: one entry per distinct valid marker, and the out-of-range numbers.</summary>
+/// <summary>The checked citation markers: one entry per distinct valid marker and the out-of-range numbers, both sorted by number.</summary>
 public sealed record ReplyCitations(IReadOnlyList<Citation> Citations, IReadOnlyList<int> Removed) : ReplyEvent;
 
 /// <summary>A valid marker <c>[n]</c> and the article of source <c>n</c>.</summary>

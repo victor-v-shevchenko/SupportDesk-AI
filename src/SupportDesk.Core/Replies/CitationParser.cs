@@ -22,8 +22,8 @@ public static partial class CitationParser
     }
 
     /// <summary>
-    /// Markers <c>1…N</c> (N is the number of sources) map to source <c>n</c>'s article: one citation per distinct marker, in
-    /// marker order. Numbers outside <c>1…N</c> go into <see cref="ReplyCitations.Removed"/>, once each, in order.
+    /// Markers <c>1…N</c> (N is the number of sources) map to source <c>n</c>'s article: one citation per distinct marker, sorted
+    /// by number. Numbers outside <c>1…N</c> go into <see cref="ReplyCitations.Removed"/>, once each, sorted by number.
     /// </summary>
     public static ReplyCitations Check(string text, IReadOnlyList<RetrievedChunk> sources)
     {

@@ -171,7 +171,7 @@ public sealed class ReplyServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task A_failed_retrieval_is_an_error_event()
+    public async Task A_retrieval_that_finds_the_embedding_model_unavailable_is_an_error_event()
     {
         var service = Service(
             new ScriptedChatClient(TimeProvider.System, Steps(Text("never"))),
@@ -232,6 +232,42 @@ public sealed class ReplyServiceTests : IDisposable
         }
 
         Assert.Equal(ModelCallOutcome.Cancelled, Assert.Single(_pipeline!.Rows.All).Outcome);
+        Assert.Contains(_logs.Messages, m => m.Contains("was cancelled", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Stopping_right_after_done_is_not_a_cancellation()
+    {
+        var service = Service(new ScriptedChatClient(TimeProvider.System, Steps(Text("Hi."))), new StubRetrieval());
+
+        await using (var events = service.StreamAsync(Ticket(), Ct).GetAsyncEnumerator(Ct))
+        {
+            while (await events.MoveNextAsync() && events.Current is not ReplyDone)
+            {
+            }
+        }
+
+        Assert.DoesNotContain(_logs.Messages, m => m.Contains("was cancelled", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_provider_error_after_the_caller_cancelled_is_not_reported()
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        var provider = new ScriptedChatClient(TimeProvider.System, Steps(Text("First "), Fail(500)));
+        var service = Service(provider, new StubRetrieval());
+        var received = new List<ReplyEvent>();
+
+        await Assert.ThrowsAnyAsync<Exception>(async () =>
+        {
+            await foreach (var reply in service.StreamAsync(Ticket(), cts.Token))
+            {
+                received.Add(reply);
+                await cts.CancelAsync();
+            }
+        });
+
+        Assert.DoesNotContain(received, e => e is ReplyError);
         Assert.Contains(_logs.Messages, m => m.Contains("was cancelled", StringComparison.Ordinal));
     }
 

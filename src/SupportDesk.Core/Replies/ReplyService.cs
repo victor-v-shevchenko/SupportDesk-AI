@@ -63,12 +63,14 @@ public sealed partial class ReplyService(
 
                     next = events.Current;
                 }
-                catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+                // Once the caller has cancelled, whatever the provider throws (it may wrap the cancellation) ends the stream as cancelled
+                catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
                 {
                     next = Fail(ticket, replyRunId, exception);
                 }
 
-                if (next is ReplyError)
+                // Both are last, so a caller that stops reading right after one isn't logged as cancelling
+                if (next is ReplyError or ReplyDone)
                 {
                     finished = true;
                 }

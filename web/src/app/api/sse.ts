@@ -19,6 +19,10 @@ export class SseParser {
 
   /** Parses `chunk` and returns the frames it completed. */
   push(chunk: string): SseFrame[] {
+    if (chunk === '') {
+      return [];
+    }
+
     if (this.pendingCr && chunk.startsWith('\n')) {
       chunk = chunk.slice(1);
     }

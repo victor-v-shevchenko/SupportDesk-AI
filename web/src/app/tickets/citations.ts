@@ -43,7 +43,7 @@ export function segmentReply(text: string, citations: readonly Citation[]): Repl
   return segments;
 }
 
-/** The cited articles, once each, in the order of their first marker. */
+/** The cited articles, once each, ordered by their lowest marker number. */
 export function citedArticles(citations: readonly Citation[]): { slug: string; title: string; markers: number[] }[] {
   const articles = new Map<string, { slug: string; title: string; markers: number[] }>();
   for (const c of [...citations].sort((a, b) => a.marker - b.marker)) {
