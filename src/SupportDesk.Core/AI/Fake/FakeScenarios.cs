@@ -20,6 +20,7 @@ public sealed record FakeTurn(IReadOnlyList<FakeStep> Steps);
 [JsonDerivedType(typeof(FakeErrorStep), "error")]
 [JsonDerivedType(typeof(FakeStallStep), "stall")]
 [JsonDerivedType(typeof(FakeFinishStep), "finish")]
+[JsonDerivedType(typeof(FakeResetStep), "reset")]
 public abstract record FakeStep;
 
 /// <summary>Streams <see cref="Text"/> in chunks of <see cref="ChunkSize"/> characters, waiting <see cref="DelayMs"/> before each.</summary>
@@ -41,6 +42,9 @@ public sealed record FakeStallStep(double Seconds) : FakeStep;
 
 /// <summary>The finish reason on the last update: <c>stop</c>, <c>length</c>, <c>tool_calls</c> or <c>content_filter</c> (a refusal).</summary>
 public sealed record FakeFinishStep(string Reason) : FakeStep;
+
+/// <summary>Drops the connection, as a reset socket does: an <see cref="HttpRequestException"/> without a status code. Placed first it's before the first item; after a text step, after it.</summary>
+public sealed record FakeResetStep : FakeStep;
 
 /// <summary>The scenarios from one file, checked when loaded (PLAN.md 6.8).</summary>
 public sealed class FakeScenarioSet

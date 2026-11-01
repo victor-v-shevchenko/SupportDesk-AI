@@ -72,6 +72,8 @@ public sealed class FakeChatClient(FakeScenarioSet scenarios, TimeProvider timeP
                         error.Message ?? string.Create(CultureInfo.InvariantCulture, $"Fake provider error {error.StatusCode}."),
                         (HttpStatusCode)error.StatusCode,
                         error.RetryAfterSeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null);
+                case FakeResetStep:
+                    throw new HttpRequestException(HttpRequestError.ConnectionError, "The connection was reset.", new IOException("Connection reset by peer."));
                 case FakeStallStep stall:
                     await DelayAsync(TimeSpan.FromSeconds(stall.Seconds), cancellationToken);
                     break;
