@@ -52,11 +52,20 @@ public sealed partial class ModelCallWriter(ModelCallBuffer queue, IServiceScope
             await using var scope = scopes.CreateAsyncScope();
             await scope.ServiceProvider.GetRequiredService<IModelCallRepository>().AddRangeAsync(batch, cancellationToken);
         }
-        catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Shutdown cut the save short; say so rather than losing the rows silently
+            LogSaveCancelled(batch.Count);
+            throw;
+        }
+        catch (Exception exception)
         {
             LogSaveFailed(exception, batch.Count);
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Shutdown interrupted saving {Count} model call rows; they are dropped")]
+    private partial void LogSaveCancelled(int count);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Couldn't save {Count} model call rows; they are dropped")]
     private partial void LogSaveFailed(Exception exception, int count);

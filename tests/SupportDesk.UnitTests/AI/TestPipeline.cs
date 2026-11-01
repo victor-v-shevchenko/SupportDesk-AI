@@ -28,7 +28,8 @@ internal sealed class TestPipeline : IDisposable
         TimeProvider? time = null,
         IModelErrorClassifier? classifier = null,
         Action<AiOptions>? configure = null,
-        ILoggerProvider? logger = null)
+        ILoggerProvider? logger = null,
+        IModelCallSink? sink = null)
     {
         var rows = new RecordingSink();
         var services = new ServiceCollection()
@@ -40,7 +41,7 @@ internal sealed class TestPipeline : IDisposable
                 }
             })
             .AddSingleton(time ?? TimeProvider.System)
-            .AddSingleton<IModelCallSink>(rows)
+            .AddSingleton(sink ?? rows)
             .AddSingleton<PriceTable>()
             .AddSingleton(Options.Create(Settings(configure)))
             .BuildServiceProvider();

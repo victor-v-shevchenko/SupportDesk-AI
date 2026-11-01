@@ -1,4 +1,4 @@
-using Microsoft.Extensions.AI;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -8,13 +8,18 @@ namespace SupportDesk.Core.AI.Usage;
 public sealed partial class PriceTable(IOptions<AiOptions> options, ILogger<PriceTable> logger)
 {
     private readonly Dictionary<string, ModelPrice> _prices = options.Value.Pricing.ToDictionary(p => p.Model, StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, bool> _warned = new(StringComparer.Ordinal);
 
-    /// <summary>Null, with a warning, for a model that has no price: an unknown cost is stored as unknown, not guessed.</summary>
+    /// <summary>Null for a model that has no price, with a warning the first time: an unknown cost is stored as unknown, not guessed.</summary>
     public decimal? Cost(string model, long inputTokens, long outputTokens)
     {
         if (!_prices.TryGetValue(model, out var price))
         {
-            LogUnknownModel(model);
+            if (_warned.TryAdd(model, true))
+            {
+                LogUnknownModel(model);
+            }
+
             return null;
         }
 

@@ -198,6 +198,22 @@ public class RetryTimeoutMiddlewareTests
     }
 
     [Fact]
+    public async Task The_callers_time_with_the_first_item_does_not_count_against_the_first_item_timeout()
+    {
+        var provider = new ScriptedChatClient(_time, Steps(Text("Hel"), Text("lo")));
+        using var pipeline = Pipeline(provider);
+        await using var updates = pipeline.Client.GetStreamingResponseAsync("hi", Reply, Ct).GetAsyncEnumerator(Ct);
+
+        Assert.True(await _time.RunAsync(updates.MoveNextAsync().AsTask()));
+        // Longer than FirstItemSeconds (20 s) but within GapSeconds' reach once the timer is reset: the caller is just slow
+        _time.Advance(TimeSpan.FromSeconds(25));
+
+        Assert.True(await _time.RunAsync(updates.MoveNextAsync().AsTask()));
+        Assert.Equal("lo", updates.Current.Text);
+        Assert.Equal(1, provider.Calls);
+    }
+
+    [Fact]
     public async Task A_stream_longer_than_StreamTotalSeconds_ends_as_a_timeout()
     {
         var steps = Enumerable.Range(0, 20).SelectMany(_ => new[] { Text("x"), Wait(_time, TimeSpan.FromSeconds(10)) }).ToArray();

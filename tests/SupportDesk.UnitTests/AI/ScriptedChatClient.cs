@@ -104,6 +104,8 @@ internal sealed class ScriptedChatClient(TimeProvider time, params Func<Cancella
     {
         foreach (var step in steps)
         {
+            // Like reading the next chunk of an HTTP stream: a cancelled call ends there
+            token.ThrowIfCancellationRequested();
             if (await step(token) is { } update)
             {
                 yield return update;

@@ -40,12 +40,30 @@ public static class TokenEstimator
 
     public static long FromCharacters(long characters) => (long)Math.Ceiling(characters / 4.0 * 1.2);
 
+    /// <summary>An estimate must never break the call it estimates, so a value that can't be serialized counts as nothing.</summary>
+    private static long SerializedLength(object? value)
+    {
+        if (value is null)
+        {
+            return 0;
+        }
+
+        try
+        {
+            return JsonSerializer.Serialize(value, AIJsonUtilities.DefaultOptions).Length;
+        }
+        catch (Exception exception) when (exception is NotSupportedException or JsonException or InvalidOperationException)
+        {
+            return 0;
+        }
+    }
+
     private static long CharactersIn(AIContent content) => content switch
     {
         TextContent text => (long)text.Text.Length,
         TextReasoningContent reasoning => reasoning.Text.Length,
-        FunctionCallContent call => call.Name.Length + (call.Arguments is null ? 0 : JsonSerializer.Serialize(call.Arguments, AIJsonUtilities.DefaultOptions).Length),
-        FunctionResultContent result => result.Result is null ? 0 : JsonSerializer.Serialize(result.Result, AIJsonUtilities.DefaultOptions).Length,
+        FunctionCallContent call => call.Name.Length + SerializedLength(call.Arguments),
+        FunctionResultContent result => SerializedLength(result.Result),
         _ => 0L,
     };
 }

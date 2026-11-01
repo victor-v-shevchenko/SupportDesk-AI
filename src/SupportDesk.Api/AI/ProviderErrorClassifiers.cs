@@ -31,6 +31,7 @@ public sealed class OpenAIErrorClassifier : IModelErrorClassifier
         _ => null,
     };
 
+    // Seconds only: an HTTP-date Retry-After gives null, so the call falls back to the backoff, which is safe
     private static TimeSpan? RetryAfter(ClientResultException exception) =>
         exception.GetRawResponse()?.Headers.TryGetValue("retry-after", out var value) == true
         && double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var seconds)

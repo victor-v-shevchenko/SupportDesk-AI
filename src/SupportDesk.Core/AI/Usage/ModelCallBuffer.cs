@@ -18,6 +18,7 @@ public sealed partial class ModelCallBuffer : IModelCallSink
 {
     private readonly Channel<ModelCall> _channel;
     private readonly ILogger<ModelCallBuffer> _logger;
+    private volatile bool _closed;
 
     public ModelCallBuffer(IOptions<AiOptions> options, ILogger<ModelCallBuffer> logger)
     {
@@ -38,15 +39,31 @@ public sealed partial class ModelCallBuffer : IModelCallSink
     {
         ArgumentNullException.ThrowIfNull(row);
 
-        if (!_channel.Writer.TryWrite(row))
+        if (_channel.Writer.TryWrite(row))
+        {
+            return;
+        }
+
+        if (_closed)
+        {
+            LogDroppedAfterClose(row.Feature, row.TicketId);
+        }
+        else
         {
             LogDropped(row.Feature, row.TicketId);
         }
     }
 
     /// <summary>Stops taking rows; the writer drains what's left.</summary>
-    public void Complete() => _channel.Writer.TryComplete();
+    public void Complete()
+    {
+        _closed = true;
+        _channel.Writer.TryComplete();
+    }
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "The model call buffer is full; dropped the {Feature} row for ticket {TicketId}")]
     private partial void LogDropped(AiFeature feature, int? ticketId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The app is shutting down; dropped the {Feature} row for ticket {TicketId}")]
+    private partial void LogDroppedAfterClose(AiFeature feature, int? ticketId);
 }

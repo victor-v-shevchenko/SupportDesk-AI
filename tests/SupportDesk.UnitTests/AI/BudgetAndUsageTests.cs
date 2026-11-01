@@ -241,6 +241,47 @@ public class BudgetAndUsageTests
     }
 
     [Fact]
+    public async Task An_unknown_model_is_warned_about_once()
+    {
+        using var logs = new CapturingLoggerProvider();
+        var provider = new ScriptedChatClient(_time, Steps(Text("x")));
+        using var pipeline = TestPipeline.Create(provider, _time, logger: logs);
+        var options = Options();
+        options.ModelId = "mystery-model";
+
+        await pipeline.Client.GetResponseAsync("hi", options, Ct);
+        await pipeline.Client.GetResponseAsync("hi", options, Ct);
+
+        Assert.Single(logs.Messages, m => m.Contains("No price for model mystery-model", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_row_that_cannot_be_recorded_does_not_break_the_call(bool streaming)
+    {
+        using var logs = new CapturingLoggerProvider();
+        var provider = new ScriptedChatClient(_time, Steps(Text("Hello"), Usage(10, 1)));
+        using var pipeline = TestPipeline.Create(provider, _time, logger: logs, sink: new ThrowingSink());
+
+        var text = "";
+        if (streaming)
+        {
+            await foreach (var update in pipeline.Client.GetStreamingResponseAsync("hi", Options(), Ct))
+            {
+                text += update.Text;
+            }
+        }
+        else
+        {
+            text = (await pipeline.Client.GetResponseAsync("hi", Options(), Ct)).Text;
+        }
+
+        Assert.Equal("Hello", text);
+        Assert.Contains(logs.Messages, m => m.Contains("Couldn't record the Reply model call", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task A_call_without_a_context_is_refused()
     {
         using var pipeline = TestPipeline.Create(new ScriptedChatClient(_time, Steps(Text("x"))), _time);
@@ -289,6 +330,11 @@ public class BudgetAndUsageTests
         await Task.Yield();
         yield return new ChatResponseUpdate(ChatRole.Assistant, [new FunctionCallContent("call-1", "lookup_order_status", new Dictionary<string, object?> { ["orderNumber"] = "KO-205002" })]);
         yield return new ChatResponseUpdate { Contents = [new UsageContent(new UsageDetails { InputTokenCount = tokens, OutputTokenCount = 0 })] };
+    }
+
+    private sealed class ThrowingSink : IModelCallSink
+    {
+        public void Add(ModelCall row) => throw new InvalidOperationException("sink is broken");
     }
 
     private static ModelCall Row() => new() { Provider = "fake", Model = "fake", PromptVersion = "reply.v1", Feature = AiFeature.Reply };

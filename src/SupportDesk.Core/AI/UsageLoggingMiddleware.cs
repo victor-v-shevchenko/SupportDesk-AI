@@ -83,39 +83,50 @@ public sealed partial class UsageLoggingMiddleware(
         return new Call(context, messages as IReadOnlyList<ChatMessage> ?? [.. messages], options, timeProvider.GetUtcNow(), timeProvider.GetTimestamp());
     }
 
+    /// <summary>Runs in the call's <c>finally</c>, so it never throws: a row that can't be built is dropped with a warning.</summary>
     private void Write(Call call)
     {
-        var tokens = CallTokens.Resolve(call.Usage, call.Messages, call.Options, call.OutputCharacters);
-        var metadata = InnerClient.GetService<ChatClientMetadata>();
-        var model = call.Options?.ModelId ?? metadata?.DefaultModelId ?? "unknown";
-
-        var row = new ModelCall
+        try
         {
-            Timestamp = call.StartedAt,
-            Feature = call.Context.Feature,
-            Provider = Truncate(metadata?.ProviderName ?? "unknown", ModelCall.ProviderMaxLength),
-            Model = Truncate(model, ModelCall.ModelMaxLength),
-            PromptVersion = Truncate(call.Context.PromptVersion, ModelCall.PromptVersionMaxLength),
-            InputTokens = tokens.Input,
-            OutputTokens = tokens.Output,
-            CostUsd = prices.Cost(model, tokens.Input, tokens.Output),
-            LatencyMs = (long)timeProvider.GetElapsedTime(call.StartedTimestamp).TotalMilliseconds,
-            IsEstimated = tokens.IsEstimated,
-            Outcome = call.Outcome,
-            TicketId = call.Context.TicketId,
-            ReplyRunId = call.Context.ReplyRunId,
-        };
+            var tokens = CallTokens.Resolve(call.Usage, call.Messages, call.Options, call.OutputCharacters);
+            var metadata = InnerClient.GetService<ChatClientMetadata>();
+            var model = call.Options?.ModelId ?? metadata?.DefaultModelId ?? "unknown";
 
-        if (call.Error is { } error)
-        {
-            // The type and status only: an SDK's message can echo the request, which holds ticket text
-            LogFailed(call.Context.Feature, call.Context.TicketId, error.GetType().Name, (error as ModelUnavailableException)?.StatusCode);
+            var row = new ModelCall
+            {
+                Timestamp = call.StartedAt,
+                Feature = call.Context.Feature,
+                Provider = Truncate(metadata?.ProviderName ?? "unknown", ModelCall.ProviderMaxLength),
+                Model = Truncate(model, ModelCall.ModelMaxLength),
+                PromptVersion = Truncate(call.Context.PromptVersion, ModelCall.PromptVersionMaxLength),
+                InputTokens = tokens.Input,
+                OutputTokens = tokens.Output,
+                CostUsd = prices.Cost(model, tokens.Input, tokens.Output),
+                LatencyMs = (long)timeProvider.GetElapsedTime(call.StartedTimestamp).TotalMilliseconds,
+                IsEstimated = tokens.IsEstimated,
+                Outcome = call.Outcome,
+                TicketId = call.Context.TicketId,
+                ReplyRunId = call.Context.ReplyRunId,
+            };
+
+            if (call.Error is { } error)
+            {
+                // The type and status only: an SDK's message can echo the request, which holds ticket text
+                LogFailed(call.Context.Feature, call.Context.TicketId, error.GetType().Name, (error as ModelUnavailableException)?.StatusCode);
+            }
+
+            sink.Add(row);
         }
-
-        sink.Add(row);
+        catch (Exception exception)
+        {
+            LogRowFailed(call.Context.Feature, call.Context.TicketId, exception.GetType().Name);
+        }
     }
 
     private static string Truncate(string value, int maxLength) => value.Length <= maxLength ? value : value[..maxLength];
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Couldn't record the {Feature} model call for ticket {TicketId}: {ErrorType}; the row is dropped")]
+    private partial void LogRowFailed(AiFeature feature, int? ticketId, string errorType);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "{Feature} model call for ticket {TicketId} failed: {ErrorType} (status {StatusCode})")]
     private partial void LogFailed(AiFeature feature, int? ticketId, string errorType, int? statusCode);

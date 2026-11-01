@@ -40,3 +40,10 @@ Entry format (from CLAUDE.md):
 - What was wrong: `POST /api/tickets` returned `createdAt` with .NET's 100 ns precision, but PostgreSQL keeps microseconds, so a later `GET` of the same ticket returned a slightly different time.
 - Fix: `TicketRepository` truncates `CreatedAt` to microseconds before saving (step 2 PR).
 - Test: `TicketEndpointTests.Create_returns_201_with_location_and_the_ticket_is_listed_first`
+
+## 2026-11-01 — A slow caller could time out a stream after its first item
+- Step: 3b
+- Found by: review subagent
+- What was wrong: `RetryTimeoutMiddleware` stopped the first-item timer only after handing the first item to the caller, so a caller that took longer than `FirstItemSeconds` with it (a blocked response write) got a non-transient "timed out waiting for the next update" although the provider was fine. The scripted test provider ignored cancellation between steps, which hid it.
+- Fix: the timer is stopped, and gap timing starts, before anything goes to the caller; the scripted provider now ends a cancelled call between steps, as an HTTP stream does (step 3b PR).
+- Test: `RetryTimeoutMiddlewareTests.The_callers_time_with_the_first_item_does_not_count_against_the_first_item_timeout`

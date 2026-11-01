@@ -180,7 +180,7 @@ provider IChatClient          Anthropic (wrapped in AnthropicOptionsMiddleware) 
 - A refusal is `FinishReason = ContentFilter`, which is how the Anthropic adapter reports `stop_reason = "refusal"`. In a stream, the updates after it (they carry usage) are still passed on, and `ModelRefusedException` is thrown when the stream ends; the non-streaming exception carries the usage
 
 - **The request cap has two parts.** Outside the tool loop a middleware can't see the inner calls, and inside it doesn't know where a request starts. So `RequestCapMiddleware` puts a new `RequestTally` in `ChatOptions.AdditionalProperties` (in a copy of the caller's options), and `RequestCapCounterMiddleware`, right under the tool loop, reads it
-- `UsageLoggingMiddleware` sits above the retries, so a retried call is one row with the whole latency
+- `UsageLoggingMiddleware` sits above the retries, so a retried call is one row with the whole latency. Its tokens and cost are the successful attempt's: a failed attempt's usage is held back with its other updates and discarded, so retries that a provider bills for are under-counted
 - `BudgetExceededException` and the missing-context check are thrown when the call is made, not on the first read of a stream, so nothing reaches the provider
 - The order is checked by a test that walks the built chain (`The_middleware_order_matches_the_plan`)
 - Provider SDK retries are turned off (Anthropic SDK: max retries 0), so only `RetryTimeoutMiddleware` retries
@@ -243,6 +243,7 @@ provider IChatClient          Anthropic (wrapped in AnthropicOptionsMiddleware) 
 - **Model** is the one asked for (`ChatOptions.ModelId`, or the provider client's default), which is also what the price is looked up by. Provider is the client's `ChatClientMetadata.ProviderName`
 - Every call needs an `AiCallContext`; a call without one is refused with `InvalidOperationException`, since its row would have no feature or prompt version
 - **Writing:** rows go to `ModelCallBuffer`, a bounded channel (`AI:Usage:QueueCapacity`, 1000), which never waits: when it's full, the row is dropped with a warning. `ModelCallWriter`, a background service, saves them in batches of up to 100; a batch that fails to save is logged and dropped, so a database problem can't reach a stream. On shutdown it saves what's left for up to 5 seconds. `ModelCalls.TicketId` has no foreign key, so a row never fails because of its ticket
+- Unknown-model warnings are logged once per model. A row that can't be built (it never should be) is dropped with a warning rather than breaking the call; a buffer closed at shutdown says so in its warning; a save cut short by shutdown is logged with the number of rows lost
 - `GET /api/model-calls?ticketId=` returns the rows newest first (ties by ID), at most 200; without `ticketId` it returns the newest 200 of all
 - Failures are logged with the feature, ticket ID, exception type and status code only: an SDK's message can echo the request, and so the ticket
 - Cost = input tokens × input price + output tokens × output price, from `AI:Pricing`. An unknown model gets `CostUsd = null` and a warning log, never a made-up price

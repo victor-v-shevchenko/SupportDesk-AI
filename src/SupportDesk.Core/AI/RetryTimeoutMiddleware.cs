@@ -16,10 +16,10 @@ namespace SupportDesk.Core.AI;
 /// <see cref="HttpClient"/> calls do. Every timer is a <see cref="CancellationTokenSource"/> on the injected
 /// <see cref="TimeProvider"/>, disposed when its attempt ends.
 /// </remarks>
-public sealed class RetryTimeoutMiddleware(IChatClient innerClient, AiOptions options, TimeProvider timeProvider) : DelegatingChatClient(innerClient)
+public sealed class RetryTimeoutMiddleware(IChatClient innerClient, AiOptions settings, TimeProvider timeProvider) : DelegatingChatClient(innerClient)
 {
-    private readonly AiRetrySettings _retry = options.Retry;
-    private readonly AiTimeoutSettings _timeouts = options.Timeouts;
+    private readonly AiRetrySettings _retry = settings.Retry;
+    private readonly AiTimeoutSettings _timeouts = settings.Timeouts;
 
     public override async Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
     {
@@ -95,7 +95,14 @@ public sealed class RetryTimeoutMiddleware(IChatClient innerClient, AiOptions op
                     }
 
                     var update = updates.Current;
-                    // The caller's time between updates doesn't count against the gap
+                    if (!active && (IsItem(update) || IsProgress(update)))
+                    {
+                        // From here on, the gap between updates is what's timed
+                        active = true;
+                    }
+
+                    // Stopped before anything goes to the caller: the caller's time with an update counts against
+                    // neither the first-item wait nor the gap
                     if (active)
                     {
                         itemTimer.CancelAfter(Timeout.InfiniteTimeSpan);
@@ -117,13 +124,6 @@ public sealed class RetryTimeoutMiddleware(IChatClient innerClient, AiOptions op
                         }
 
                         held.Clear();
-                    }
-
-                    if (!active && (sentFirstItem || IsProgress(update)))
-                    {
-                        // From here on, the gap between updates is what's timed
-                        active = true;
-                        itemTimer.CancelAfter(Timeout.InfiniteTimeSpan);
                     }
                 }
             }
