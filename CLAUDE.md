@@ -31,6 +31,7 @@ Run inside the dev container.
 | Start with the fake model | `AI__Chat__Provider=Fake AI__Embeddings__Provider=Fake dotnet run --project src/SupportDesk.Api` |
 | Ollama in Docker instead of on the host (optional) | `docker compose --profile ollama up -d ollama` then `docker compose exec ollama ollama pull qwen2.5:1.5b` (or `qwen2.5:7b`, about 4.7 GB) |
 | Start against Ollama in Docker | `AI__Ollama__Endpoint=http://ollama:11434 dotnet run --project src/SupportDesk.Api` |
+| Start against `qwen2.5:7b` on CPU (slow; longer timeouts, PLAN.md 6.5) | `AI__Chat__Model=qwen2.5:7b AI__Timeouts__FirstItemSeconds=180 AI__Timeouts__GapSeconds=60 AI__Timeouts__StreamTotalSeconds=600 dotnet run --project src/SupportDesk.Api` |
 | Set a provider key for `dotnet run` (Anthropic, OpenAI, Voyage) | `dotnet user-secrets set AI:Anthropic:ApiKey <key> --project src/SupportDesk.Api` |
 | Build | `dotnet build` |
 | Restore local tools (`dotnet ef`, Sonar scanner) | `dotnet tool restore` |
