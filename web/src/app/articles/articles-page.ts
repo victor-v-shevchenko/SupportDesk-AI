@@ -1,6 +1,7 @@
 import { DecimalPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { ArticlesService } from '../api/articles.service';
 import { SearchQuery } from '../api/articles.models';
 
@@ -13,7 +14,7 @@ const maxQueryLength = 500;
  */
 @Component({
   selector: 'app-articles-page',
-  imports: [DecimalPipe],
+  imports: [DecimalPipe, RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <h1>Knowledge base</h1>
@@ -53,7 +54,7 @@ const maxQueryLength = 500;
             @for (result of results.value(); track $index) {
               <li>
                 <div class="result-head">
-                  <span class="title">{{ result.articleTitle }}</span>
+                  <a class="title" [routerLink]="['/articles', result.articleSlug]">{{ result.articleTitle }}</a>
                   @if (result.heading) {
                     <span class="heading">· {{ result.heading }}</span>
                   }
@@ -81,7 +82,7 @@ const maxQueryLength = 500;
       } @else if (articles.hasValue() && articles.value().length > 0) {
         <ul class="articles">
           @for (article of articles.value(); track article.slug) {
-            <li><span class="title">{{ article.title }}</span> <span class="slug">{{ article.slug }}</span></li>
+            <li><a class="title" [routerLink]="['/articles', article.slug]">{{ article.title }}</a> <span class="slug">{{ article.slug }}</span></li>
           }
         </ul>
       } @else {
@@ -98,7 +99,7 @@ const maxQueryLength = 500;
     .results { padding-left: 1.25rem; }
     .results li { margin: 0.75rem 0; }
     .result-head { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: baseline; }
-    .title { font-weight: 600; }
+    .title { font-weight: 600; color: #1d4ed8; text-decoration: none; }
     .heading { color: #4b5563; }
     .score { margin-left: auto; font-variant-numeric: tabular-nums; color: #1d4ed8; }
     .text { margin: 0.25rem 0 0; white-space: pre-line; color: #374151; font-size: 0.9rem; }

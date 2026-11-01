@@ -3,11 +3,12 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TicketsService } from '../api/tickets.service';
+import { ReplyPanel } from './reply-panel';
 import { TicketStatusBadge } from './ticket-status';
 
 @Component({
   selector: 'app-ticket-detail-page',
-  imports: [RouterLink, DatePipe, TicketStatusBadge],
+  imports: [RouterLink, DatePipe, TicketStatusBadge, ReplyPanel],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <a class="back" routerLink="/tickets">← All tickets</a>
@@ -53,7 +54,7 @@ import { TicketStatusBadge } from './ticket-status';
 
       <section class="slot reply" aria-labelledby="reply-heading">
         <h2 id="reply-heading">Suggested reply</h2>
-        <p class="empty">No suggested reply yet.</p>
+        <app-reply-panel [ticketId]="t.id" />
       </section>
     }
   `,

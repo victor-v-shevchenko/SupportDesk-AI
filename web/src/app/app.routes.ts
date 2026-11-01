@@ -13,5 +13,10 @@ export const routes: Routes = [
     title: 'Knowledge base · SupportDesk AI',
     loadComponent: () => import('./articles/articles-page').then((m) => m.ArticlesPage),
   },
+  {
+    path: 'articles/:slug',
+    title: 'Article · SupportDesk AI',
+    loadComponent: () => import('./articles/article-detail-page').then((m) => m.ArticleDetailPage),
+  },
   { path: '**', redirectTo: 'tickets' },
 ];
