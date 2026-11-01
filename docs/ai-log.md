@@ -68,3 +68,10 @@ Entry format (from CLAUDE.md):
 - What was wrong: the articles page bound `[value]` on the `<select>`, which Angular sets before the `@for` adds the options, so the select fell back to its first option (3) while the default `k` sent to `/api/search` was 5.
 - Fix: each option binds `[selected]` to the current `k` instead (step 4 PR).
 - Test: `ArticlesPage shows the default of 5 results in the select, matching what a search sends`
+
+## 2026-11-01 — Classification retry message repeated what the model wrote
+- Step: 7
+- Found by: review subagent
+- What was wrong: validation errors quoted unknown property names and wrong enum values (up to 40 characters) from the model's answer, and they go back in the retry user message, so text the model copied from the ticket could reach a user turn outside `<ticket>`.
+- Fix: the errors name the allowed values and properties only, never what the model wrote (step 7 PR).
+- Test: `ClassificationValidatorTests.Errors_never_repeat_what_the_model_wrote_so_ticket_text_cannot_reach_the_retry_message`

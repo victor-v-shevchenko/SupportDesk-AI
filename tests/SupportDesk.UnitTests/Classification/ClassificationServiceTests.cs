@@ -109,7 +109,7 @@ public class ClassificationServiceTests
         Assert.Equal(2, provider.Calls.Count);
         var retry = provider.Calls[1].Messages[^1];
         Assert.Equal(ChatRole.User, retry.Role);
-        Assert.Contains("category must be one of: Billing, Shipping, Returns, Account, Technical, Other; got \"Privacy\"", retry.Text, StringComparison.Ordinal);
+        Assert.Contains("category must be one of: Billing, Shipping, Returns, Account, Technical, Other; got another value", retry.Text, StringComparison.Ordinal);
         Assert.Equal(ClassificationStatus.Done, result?.Status);
         Assert.Equal(Category.Billing, result?.Category);
         Assert.Equal(Priority.High, result?.Priority);

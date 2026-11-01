@@ -23,9 +23,6 @@ public static class ClassificationValidator
     public const string PriorityProperty = "priority";
     public const string ReasonProperty = "reason";
 
-    /// <summary>How much of a wrong value the error repeats, so the retry message stays short.</summary>
-    private const int EchoMaxLength = 40;
-
     private static readonly string[] Properties = [CategoryProperty, PriorityProperty, ReasonProperty];
 
     private static readonly JsonDocumentOptions DocumentOptions = new()
@@ -65,7 +62,9 @@ public static class ClassificationValidator
             {
                 if (!Properties.Contains(property.Name, StringComparer.Ordinal))
                 {
-                    errors.Add($"Unexpected property \"{Echo(property.Name)}\"; only {CategoryProperty}, {PriorityProperty} and {ReasonProperty} are allowed.");
+                    // Not named: the errors go back to the model, and nothing it wrote is repeated (it can echo the ticket)
+                    errors.Add($"The answer has a property other than {CategoryProperty}, {PriorityProperty} and {ReasonProperty}; no others are allowed.");
+                    break;
                 }
             }
 
@@ -99,7 +98,7 @@ public static class ClassificationValidator
         var text = value.GetString()!;
         if (!Enum.GetNames<TEnum>().Contains(text, StringComparer.Ordinal))
         {
-            errors.Add($"{allowed}; got \"{Echo(text)}\".");
+            errors.Add($"{allowed}; got another value.");
             return null;
         }
 
@@ -147,7 +146,4 @@ public static class ClassificationValidator
         JsonValueKind.String => "string",
         _ => "object",
     };
-
-    private static string Echo(string value) =>
-        value.Length <= EchoMaxLength ? value : string.Concat(value.AsSpan(0, EchoMaxLength), "…");
 }
