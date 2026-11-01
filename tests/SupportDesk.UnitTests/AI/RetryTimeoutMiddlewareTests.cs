@@ -205,7 +205,7 @@ public class RetryTimeoutMiddlewareTests
         await using var updates = pipeline.Client.GetStreamingResponseAsync("hi", Reply, Ct).GetAsyncEnumerator(Ct);
 
         Assert.True(await _time.RunAsync(updates.MoveNextAsync().AsTask()));
-        // Longer than FirstItemSeconds (20 s) but within GapSeconds' reach once the timer is reset: the caller is just slow
+        // Longer than FirstItemSeconds (20 s): the timer must already be stopped while the caller holds the first item
         _time.Advance(TimeSpan.FromSeconds(25));
 
         Assert.True(await _time.RunAsync(updates.MoveNextAsync().AsTask()));
