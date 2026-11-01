@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using SupportDesk.Data;
 
 namespace SupportDesk.IntegrationTests;
@@ -7,10 +8,10 @@ namespace SupportDesk.IntegrationTests;
 /// <summary>The API in Development (migrated and seeded at startup) against its own new database.</summary>
 public sealed class SeededApi : IAsyncDisposable
 {
-    private SeededApi(string connectionString, IReadOnlyDictionary<string, string?>? settings, Action<IServiceCollection>? services)
+    private SeededApi(string connectionString, IReadOnlyDictionary<string, string?>? settings, Action<IServiceCollection>? services, ILoggerProvider? logger)
     {
         ConnectionString = connectionString;
-        Factory = new ApiFactory(connectionString, "Development", settings, services: services);
+        Factory = new ApiFactory(connectionString, "Development", settings, logger, services);
         Client = Factory.CreateClient();
     }
 
@@ -24,10 +25,11 @@ public sealed class SeededApi : IAsyncDisposable
         PostgresFixture postgres,
         CancellationToken cancellationToken,
         IReadOnlyDictionary<string, string?>? settings = null,
-        Action<IServiceCollection>? services = null)
+        Action<IServiceCollection>? services = null,
+        ILoggerProvider? logger = null)
     {
         ArgumentNullException.ThrowIfNull(postgres);
-        return new SeededApi(await postgres.CreateDatabaseAsync(cancellationToken), settings, services);
+        return new SeededApi(await postgres.CreateDatabaseAsync(cancellationToken), settings, services, logger);
     }
 
     /// <summary>A DbContext on this API's database, for arranging and checking data directly.</summary>
