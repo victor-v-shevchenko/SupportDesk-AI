@@ -12,6 +12,7 @@ public sealed record TicketListItemResponse(
     TicketStatus Status,
     Category? Category,
     Priority? Priority,
+    ClassificationStatus ClassificationStatus,
     DateTimeOffset CreatedAt);
 
 public sealed record TicketDetailResponse(
@@ -39,7 +40,15 @@ public sealed record TicketClassificationResponse(
 internal static class TicketMapping
 {
     public static TicketListItemResponse ToListItem(this Ticket ticket) =>
-        new(ticket.Id, ticket.Number, ticket.Subject, ticket.Status, ticket.Classification.Category, ticket.Classification.Priority, ticket.CreatedAt);
+        new(
+            ticket.Id,
+            ticket.Number,
+            ticket.Subject,
+            ticket.Status,
+            ticket.Classification.Category,
+            ticket.Classification.Priority,
+            ticket.Classification.Status,
+            ticket.CreatedAt);
 
     public static TicketDetailResponse ToDetail(this Ticket ticket) =>
         new(
@@ -52,11 +61,14 @@ internal static class TicketMapping
             ticket.Status,
             ticket.CreatedAt,
             ticket.Summary is { } summary ? new TicketSummaryResponse(summary.Text, summary.PromptVersion, summary.GeneratedAt) : null,
-            new TicketClassificationResponse(
-                ticket.Classification.Status,
-                ticket.Classification.Category,
-                ticket.Classification.Priority,
-                ticket.Classification.Reason,
-                ticket.Classification.PromptVersion,
-                ticket.Classification.ClassifiedAt));
+            ticket.Classification.ToResponse());
+
+    public static TicketClassificationResponse ToResponse(this TicketClassification classification) =>
+        new(
+            classification.Status,
+            classification.Category,
+            classification.Priority,
+            classification.Reason,
+            classification.PromptVersion,
+            classification.ClassifiedAt);
 }

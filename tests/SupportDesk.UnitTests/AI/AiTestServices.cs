@@ -16,7 +16,7 @@ internal static class AiTestServices
     {
         ["AI:Prompts:reply"] = "reply.v1",
         ["AI:Prompts:summary"] = "summary.v1",
-        ["AI:Prompts:classify"] = "classify.v1",
+        ["AI:Prompts:classify"] = "classify.v2",
         ["AI:Ollama:Endpoint"] = "http://ollama.test:11434",
     };
 

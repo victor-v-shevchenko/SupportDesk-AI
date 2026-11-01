@@ -44,6 +44,37 @@ internal sealed class TicketRepository(SupportDeskDbContext db, TimeProvider tim
         return entity;
     }
 
+    public async Task<TicketClassification?> SaveClassificationAsync(int id, TicketClassification classification, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(classification);
+
+        DateTimeOffset? classifiedAt = classification.ClassifiedAt is { } at ? ToDatabasePrecision(at) : null;
+
+        // One UPDATE of the classification columns, so it can't overwrite a change another request made to the rest of the ticket
+        var updated = await db.Tickets
+            .Where(t => t.Id == id)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(t => t.Classification.Status, classification.Status)
+                    .SetProperty(t => t.Classification.Category, classification.Category)
+                    .SetProperty(t => t.Classification.Priority, classification.Priority)
+                    .SetProperty(t => t.Classification.Reason, classification.Reason)
+                    .SetProperty(t => t.Classification.PromptVersion, classification.PromptVersion)
+                    .SetProperty(t => t.Classification.ClassifiedAt, classifiedAt),
+                cancellationToken);
+        return updated == 0
+            ? null
+            : new TicketClassification
+            {
+                Status = classification.Status,
+                Category = classification.Category,
+                Priority = classification.Priority,
+                Reason = classification.Reason,
+                PromptVersion = classification.PromptVersion,
+                ClassifiedAt = classifiedAt,
+            };
+    }
+
     /// <summary>PostgreSQL keeps microseconds; truncating first makes the created ticket equal to the one read back later.</summary>
     internal static DateTimeOffset ToDatabasePrecision(DateTimeOffset value) =>
         value.AddTicks(-(value.Ticks % TimeSpan.TicksPerMicrosecond));
