@@ -57,15 +57,21 @@
         "Reply": [
           {
             "steps": [
-              { "type": "text", "text": "I'm sorry your order hasn't arrived. " },
-              { "type": "tool_call", "name": "propose_follow_up_task", "arguments": { "title": "Open a carrier trace for KO-208815", "notes": "Customer reports no delivery after three weeks.", "dueInDays": 2 } },
-              { "type": "usage", "inputTokens": 1300, "outputTokens": 60 }
+              { "type": "tool_call", "name": "lookup_order_status", "arguments": { "orderNumber": "KO-208815" } },
+              { "type": "usage", "inputTokens": 1300, "outputTokens": 30 }
             ]
           },
           {
             "steps": [
-              { "type": "text", "text": "I've proposed a follow-up to open a carrier trace; once an agent confirms it, we'll contact the carrier and update you within two days [1]." },
-              { "type": "usage", "inputTokens": 1450, "outputTokens": 40 }
+              { "type": "text", "text": "I'm sorry your order hasn't arrived. I couldn't find order KO-208815 in our system, so please check the order number on your confirmation email. " },
+              { "type": "tool_call", "name": "propose_follow_up_task", "arguments": { "title": "Open a carrier trace for KO-208815", "notes": "Customer reports no delivery after three weeks; the order number isn't in the order system.", "dueInDays": 2 } },
+              { "type": "usage", "inputTokens": 1400, "outputTokens": 70 }
+            ]
+          },
+          {
+            "steps": [
+              { "type": "text", "text": "An agent will look into it with the carrier and get back to you [1]." },
+              { "type": "usage", "inputTokens": 1500, "outputTokens": 20 }
             ]
           }
         ]

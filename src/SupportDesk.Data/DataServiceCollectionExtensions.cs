@@ -6,7 +6,9 @@ using Microsoft.Extensions.Options;
 using Npgsql;
 using SupportDesk.Core.AI.Usage;
 using SupportDesk.Core.Articles;
+using SupportDesk.Core.FollowUps;
 using SupportDesk.Core.Health;
+using SupportDesk.Core.Orders;
 using SupportDesk.Core.Retrieval;
 using SupportDesk.Core.Tickets;
 using SupportDesk.Data.Repositories;
@@ -44,6 +46,8 @@ public static class DataServiceCollectionExtensions
         services.AddScoped<IArticleRepository, ArticleRepository>();
         services.AddScoped<IModelCallRepository, ModelCallRepository>();
         services.AddScoped<IArticleChunkStore, ArticleChunkStore>();
+        services.AddScoped<IFollowUpRepository, FollowUpRepository>();
+        services.AddSingleton<IOrderStatusService, SeedOrderStatusService>();
         services.AddScoped<SupportDeskSeeder>();
         return services;
     }

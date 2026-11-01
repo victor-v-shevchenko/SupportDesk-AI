@@ -127,6 +127,92 @@ namespace SupportDesk.Data.Migrations
                     b.ToTable("Articles");
                 });
 
+            modelBuilder.Entity("SupportDesk.Core.FollowUps.FollowUpProposal", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly?>("DueDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Notes")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid>("ReplyRunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int>("TicketId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Status", "ExpiresAt");
+
+                    b.HasIndex("TicketId", "ReplyRunId")
+                        .IsUnique();
+
+                    b.ToTable("FollowUpProposals");
+                });
+
+            modelBuilder.Entity("SupportDesk.Core.FollowUps.FollowUpTask", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly?>("DueDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Notes")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid>("ProposalId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("TicketId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProposalId")
+                        .IsUnique();
+
+                    b.HasIndex("TicketId");
+
+                    b.ToTable("FollowUpTasks");
+                });
+
             modelBuilder.Entity("SupportDesk.Core.Tickets.Ticket", b =>
                 {
                     b.Property<int>("Id")
@@ -223,6 +309,30 @@ namespace SupportDesk.Data.Migrations
                     b.HasIndex("ArticleId", "Ordinal");
 
                     b.ToTable("ArticleChunks");
+                });
+
+            modelBuilder.Entity("SupportDesk.Core.FollowUps.FollowUpProposal", b =>
+                {
+                    b.HasOne("SupportDesk.Core.Tickets.Ticket", null)
+                        .WithMany()
+                        .HasForeignKey("TicketId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SupportDesk.Core.FollowUps.FollowUpTask", b =>
+                {
+                    b.HasOne("SupportDesk.Core.FollowUps.FollowUpProposal", null)
+                        .WithOne()
+                        .HasForeignKey("SupportDesk.Core.FollowUps.FollowUpTask", "ProposalId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SupportDesk.Core.Tickets.Ticket", null)
+                        .WithMany()
+                        .HasForeignKey("TicketId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("SupportDesk.Core.Tickets.Ticket", b =>

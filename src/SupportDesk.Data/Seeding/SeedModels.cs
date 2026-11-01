@@ -17,7 +17,7 @@ public sealed record SeedTicket(
     Category Category,
     Priority Priority);
 
-/// <summary>One entry in <c>seed/orders.json</c>, read by the order service from step 8; orders aren't stored in the database.</summary>
+/// <summary>One entry in <c>seed/orders.json</c>, read by <see cref="SeedOrderStatusService"/>; orders aren't stored in the database.</summary>
 public sealed record SeedOrder(string OrderNumber, string Status, string? Carrier, DateTimeOffset LastUpdate, string LastEvent);
 
 /// <summary>A parsed <c>seed/articles/*.md</c> file: front matter plus the Markdown after it.</summary>

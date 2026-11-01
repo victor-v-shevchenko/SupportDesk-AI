@@ -8,11 +8,11 @@ namespace SupportDesk.UnitTests.AI;
 
 /// <summary>
 /// A provider whose attempts are scripted one by one, so tests can fail then succeed, which the stateless fake provider
-/// can't. Each attempt is a function of the call's token; the last one repeats. It records each call and its options.
+/// can't. Each attempt is a function of the call's token; the last one repeats. It records each call, its options and its messages.
 /// </summary>
 internal sealed class ScriptedChatClient(TimeProvider time, params Func<CancellationToken, IAsyncEnumerable<ChatResponseUpdate>>[] attempts) : IChatClient
 {
-    private readonly List<(DateTimeOffset At, ChatOptions? Options)> _calls = [];
+    private readonly List<(DateTimeOffset At, ChatOptions? Options, IReadOnlyList<ChatMessage> Messages)> _calls = [];
 
     public int Calls
     {
@@ -32,6 +32,18 @@ internal sealed class ScriptedChatClient(TimeProvider time, params Func<Cancella
             lock (_calls)
             {
                 return [.. _calls.Select(c => c.At)];
+            }
+        }
+    }
+
+    /// <summary>The messages each call was sent, in call order.</summary>
+    public IReadOnlyList<IReadOnlyList<ChatMessage>> Messages
+    {
+        get
+        {
+            lock (_calls)
+            {
+                return [.. _calls.Select(c => c.Messages)];
             }
         }
     }
@@ -56,7 +68,7 @@ internal sealed class ScriptedChatClient(TimeProvider time, params Func<Cancella
         lock (_calls)
         {
             index = _calls.Count;
-            _calls.Add((time.GetUtcNow(), options));
+            _calls.Add((time.GetUtcNow(), options, [.. messages]));
         }
 
         return attempts[Math.Min(index, attempts.Length - 1)](cancellationToken);
@@ -82,6 +94,9 @@ internal sealed class ScriptedChatClient(TimeProvider time, params Func<Cancella
 
     public static Func<CancellationToken, Task<ChatResponseUpdate?>> Empty() =>
         _ => Task.FromResult<ChatResponseUpdate?>(new ChatResponseUpdate { Role = ChatRole.Assistant });
+
+    public static Func<CancellationToken, Task<ChatResponseUpdate?>> ToolCall(string callId, string name, IDictionary<string, object?> arguments) =>
+        _ => Task.FromResult<ChatResponseUpdate?>(new ChatResponseUpdate(ChatRole.Assistant, [new FunctionCallContent(callId, name, arguments)]));
 
     public static Func<CancellationToken, Task<ChatResponseUpdate?>> Usage(long input, long output) =>
         _ => Task.FromResult<ChatResponseUpdate?>(new ChatResponseUpdate

@@ -79,10 +79,11 @@ public class FakeChatClientTests
     }
 
     [Fact]
-    public async Task Tool_call_proposal_sends_text_then_the_proposal_arguments()
+    public async Task Tool_call_proposal_looks_up_the_order_then_sends_text_then_the_proposal_arguments()
     {
         using var client = Pipeline();
         Dictionary<string, object?>? arguments = null;
+        var lookup = AIFunctionFactory.Create((string orderNumber) => new { found = false }, "lookup_order_status");
         var tool = AIFunctionFactory.Create(
             (string title, string notes, int dueInDays) =>
             {
@@ -91,18 +92,20 @@ public class FakeChatClientTests
             },
             "propose_follow_up_task");
         var options = Options(AiFeature.Reply, "T-1008");
-        options.Tools = [tool];
+        options.Tools = [lookup, tool];
 
         var updates = await PlayAsync(client, options);
 
         Assert.NotNull(arguments);
         Assert.Equal(2, arguments["dueInDays"]);
-        var call = updates.Select(u => u.Update).SelectMany(u => u.Contents).OfType<FunctionCallContent>().Single();
-        Assert.Equal("propose_follow_up_task", call.Name);
-        // Text before the tool call reaches the caller first
+        var calls = updates.Select(u => u.Update).SelectMany(u => u.Contents).OfType<FunctionCallContent>().ToList();
+        Assert.Equal(["lookup_order_status", "propose_follow_up_task"], calls.Select(c => c.Name));
+        Assert.Equal("KO-208815", ((JsonElement)calls[0].Arguments!["orderNumber"]!).GetString());
+        // The text of the proposal's turn reaches the caller before its tool call
         var firstText = updates.FindIndex(u => u.Update.Text.Length > 0);
-        var callIndex = updates.FindIndex(u => u.Update.Contents.OfType<FunctionCallContent>().Any());
-        Assert.True(firstText < callIndex);
+        var proposalIndex = updates.FindIndex(u => u.Update.Contents.OfType<FunctionCallContent>().Any(c => c.Name == "propose_follow_up_task"));
+        Assert.True(firstText < proposalIndex);
+        Assert.Contains("couldn't find order KO-208815", string.Concat(updates.Select(u => u.Update.Text)), StringComparison.Ordinal);
     }
 
     [Theory]

@@ -69,7 +69,7 @@ public static partial class ReplyPromptBuilder
 
     /// <summary>
     /// <c>[n] &lt;title&gt; — &lt;heading&gt;</c> (or just the title), then the text; a blank line between sources (PLAN.md 6.3).
-    /// Article text is data too, so anything in it that reads as a <c>ticket</c> or <c>sources</c> tag is escaped.
+    /// Article text is data too, so anything in it that reads as a <c>ticket</c>, <c>sources</c> or <c>tool_result</c> tag is escaped.
     /// </summary>
     public static string FormatSources(IReadOnlyList<RetrievedChunk> sources)
     {
@@ -101,7 +101,7 @@ public static partial class ReplyPromptBuilder
         return text.ToString();
     }
 
-    /// <summary>Replaces the <c>&lt;</c> of anything that reads as a <c>ticket</c> or <c>sources</c> tag with <c>&amp;lt;</c>.</summary>
+    /// <summary>Replaces the <c>&lt;</c> of anything that reads as a <c>ticket</c>, <c>sources</c> or <c>tool_result</c> tag with <c>&amp;lt;</c>.</summary>
     public static string Escape(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
@@ -116,6 +116,6 @@ public static partial class ReplyPromptBuilder
             ["ticket"] = ticketText,
         });
 
-    [GeneratedRegex(@"<(?=\s*/?\s*(?:ticket|sources))", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"<(?=\s*/?\s*(?:ticket|sources|tool_result))", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex PromptTagRegex();
 }

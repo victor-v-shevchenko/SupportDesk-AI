@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using SupportDesk.Core.AI;
 using SupportDesk.Core.AI.Prompts;
 using SupportDesk.Core.AI.Usage;
+using SupportDesk.Core.Replies.Tools;
 using SupportDesk.Core.Retrieval;
 using SupportDesk.Core.Tickets;
 
@@ -14,17 +15,21 @@ namespace SupportDesk.Core.Replies;
 public interface IReplyService
 {
     /// <summary>
-    /// Streams a suggested reply for <paramref name="ticket"/> (PLAN.md 7): <see cref="ReplyToken"/>*, then
-    /// <see cref="ReplyCitations"/>, <see cref="ReplyUsage"/> and <see cref="ReplyDone"/>, or one <see cref="ReplyError"/>
-    /// at the end. The caller's cancellation isn't an error: the stream ends with <see cref="OperationCanceledException"/>.
+    /// Streams a suggested reply for <paramref name="ticket"/> (PLAN.md 7): <see cref="ReplyToken"/>s and
+    /// <see cref="ReplyToolCall"/>s, then <see cref="ReplyCitations"/>, <see cref="ReplyUsage"/> and <see cref="ReplyDone"/>,
+    /// or one <see cref="ReplyError"/> at the end. The caller's cancellation isn't an error: the stream ends with <see cref="OperationCanceledException"/>.
     /// </summary>
     IAsyncEnumerable<ReplyEvent> StreamAsync(Ticket ticket, CancellationToken cancellationToken);
 }
 
-/// <summary>A reply grounded in the knowledge base (PLAN.md 6.3, 6.4, 8), streamed through the shared pipeline.</summary>
+/// <summary>
+/// A reply grounded in the knowledge base (PLAN.md 6.3, 6.4, 8), streamed through the shared pipeline, with the two tools
+/// of PLAN.md 10. The pipeline's tool loop runs them; this service only offers them and reports the calls that ran.
+/// </summary>
 public sealed partial class ReplyService(
     IChatClient chat,
     IRetrievalService retrieval,
+    ReplyToolFactory toolFactory,
     IPromptStore prompts,
     PriceTable prices,
     IOptions<AiOptions> aiOptions,
@@ -101,7 +106,10 @@ public sealed partial class ReplyService(
     private async IAsyncEnumerable<ReplyEvent> RunAsync(Ticket ticket, Guid replyRunId, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var template = prompts.GetPrompt(PromptName);
-        var options = new AiCallContext(AiFeature.Reply, template.Version, ticket.Id, ticket.Number, replyRunId).ApplyTo(new ChatOptions());
+        var tools = toolFactory.Create(ticket, replyRunId);
+        // Only the reply offers tools, so no other feature can run one
+        var options = new AiCallContext(AiFeature.Reply, template.Version, ticket.Id, ticket.Number, replyRunId)
+            .ApplyTo(new ChatOptions { Tools = [.. tools.Tools] });
 
         var chunks = await retrieval.SearchAsync(ReplyPromptBuilder.BuildQuery(ticket), retrievalOptions.Value.ReplyChunks, cancellationToken);
         var prompt = ReplyPromptBuilder.Build(template, ticket, chunks, options, aiOptions.Value.Budget.MaxInputTokensPerCall);
@@ -115,12 +123,21 @@ public sealed partial class ReplyService(
         await foreach (var update in chat.GetStreamingResponseAsync(prompt.Messages, options, cancellationToken).WithCancellation(cancellationToken))
         {
             tokens.Observe(update);
-            // Text only: tool calls (step 8), thinking text and usage updates aren't part of the reply
+            // Text only: tool calls, thinking text and usage updates aren't part of the reply
             var piece = update.Text;
             if (piece.Length > 0)
             {
                 text.Append(piece);
                 yield return new ReplyToken(piece);
+            }
+
+            // The tool loop passes each result on after running the tool, so the event follows the tool, in call order
+            foreach (var result in update.Contents.OfType<FunctionResultContent>())
+            {
+                if (tools.Take(result.CallId) is { } call)
+                {
+                    yield return call;
+                }
             }
         }
 
