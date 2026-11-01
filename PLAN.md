@@ -153,8 +153,8 @@ All routes are under `/api`. Errors use RFC 7807 problem details.
 
   | Model | Size | Use |
   | --- | --- | --- |
-  | `qwen2.5:1.5b` | about 1 GB | default chat model: small, fast, supports tools; weak at following instructions |
-  | `qwen2.5:7b` | about 4.7 GB | better replies and tool calls; the model the step 10 evaluation runs with |
+  | `qwen2.5:1.5b` | about 1 GB | default chat model: small, fast, supports tools; weak at following instructions (in the step 5 check it used the sources but wrote no `[n]` markers) |
+  | `qwen2.5:7b` | about 4.7 GB | better replies and tool calls, and cites sources; the model the step 10 evaluation runs with. On CPU it needs longer timeouts (6.5) |
   | `mxbai-embed-large` | about 670 MB | embeddings (1024 dimensions, from step 4) |
 
   Not used here, but an option on machines with more memory: `gemma4` (tools and thinking; the smallest tags, `e2b` and `e4b`, are 4.6–9.5 GB). Its thinking output adds latency and reaches the stream as reasoning content, which step 5 would have to drop. On CPU, `qwen2.5:1.5b` takes about 35 seconds for a reply in the dev container
@@ -247,6 +247,7 @@ provider IChatClient          Anthropic (wrapped in AnthropicOptionsMiddleware) 
 - Timeouts cancel the inner call's token, so they rely on the provider honoring cancellation, as the SDKs' `HttpClient` calls do. Every timer is a `CancellationTokenSource` on the injected `TimeProvider`, disposed when its attempt ends, so tests run them on a fake clock
 - The caller's cancellation is never retried and never reported as a timeout: it comes out as `OperationCanceledException`, including during the wait before a retry
 - **Embeddings** aren't in the chat pipeline; their errors are mapped to `ModelUnavailableException` in step 4, which is the first caller
+- **Local models on CPU:** the defaults suit hosted providers and `qwen2.5:1.5b`. `qwen2.5:7b` on CPU in the dev container took about 2 minutes to load and 84 seconds for a 77-token reply (step 5 check, November 2026), so with the defaults the first call times out while the model loads, and the reply stream can run past `StreamTotalSeconds`. For a run against it, raise the timeouts with environment variables rather than changing the defaults: `AI__Timeouts__FirstItemSeconds=180`, `AI__Timeouts__GapSeconds=60`, `AI__Timeouts__StreamTotalSeconds=600`. Loading the model first (`curl http://ollama:11434/api/generate -d '{"model":"qwen2.5:7b","keep_alive":"30m"}'`) keeps the load out of the first call
 - Every failure the caller sees is one of: `ModelUnavailableException` (retries used up, timeout, provider down), `BudgetExceededException`, `ModelRefusedException` (the provider declined the request), `OperationCanceledException`
 
 ### 6.6 Usage and cost
