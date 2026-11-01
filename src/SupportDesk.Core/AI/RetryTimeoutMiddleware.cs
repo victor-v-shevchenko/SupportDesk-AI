@@ -181,6 +181,10 @@ public sealed class RetryTimeoutMiddleware(IChatClient innerClient, AiOptions se
                 itemTimer.CancelAfter(Timeout.InfiniteTimeSpan);
             }
         }
+
+        /// <summary>Thinking text shows the model is working, so it ends the first-item wait, but it's never shown and doesn't stop retries.</summary>
+        private static bool IsProgress(ChatResponseUpdate update) =>
+            update.Contents.Any(c => c is TextReasoningContent { Text.Length: > 0 });
     }
 
     /// <summary>Which wait timed out, or null when none did.</summary>
@@ -206,10 +210,6 @@ public sealed class RetryTimeoutMiddleware(IChatClient innerClient, AiOptions se
 
         return update.Contents.Any(c => c is TextContent { Text.Length: > 0 } or FunctionCallContent);
     }
-
-    /// <summary>Thinking text shows the model is working, so it ends the first-item wait, but it's never shown and doesn't stop retries.</summary>
-    private static bool IsProgress(ChatResponseUpdate update) =>
-        update.Contents.Any(c => c is TextReasoningContent { Text.Length: > 0 });
 
     /// <summary>What the caller sees for <paramref name="exception"/>: their own cancellation, a timeout, or the typed exception.</summary>
     private static Exception Normalize(Exception exception, string? timedOut, bool transientTimeout, CancellationToken callerToken)
