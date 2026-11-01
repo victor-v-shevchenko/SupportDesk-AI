@@ -251,14 +251,21 @@ public sealed class ReplyServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task A_provider_error_after_the_caller_cancelled_is_not_reported()
+    public async Task A_provider_error_after_the_caller_cancelled_ends_as_a_cancellation()
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(Ct);
-        var provider = new ScriptedChatClient(TimeProvider.System, Steps(Text("First "), Fail(500)));
-        var service = Service(provider, new StubRetrieval());
+        // Straight to the service, without the pipeline's error mapping: a client that wraps the cancellation in its own error
+        static async IAsyncEnumerable<ChatResponseUpdate> TextThenWrappedCancellation([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken token)
+        {
+            yield return new ChatResponseUpdate(ChatRole.Assistant, "First ");
+            await Task.Yield();
+            throw new HttpRequestException("The request was aborted.", new OperationCanceledException(token));
+        }
+
+        var service = Service(new ScriptedChatClient(TimeProvider.System, TextThenWrappedCancellation), new StubRetrieval(), raw: true);
         var received = new List<ReplyEvent>();
 
-        await Assert.ThrowsAnyAsync<Exception>(async () =>
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
         {
             await foreach (var reply in service.StreamAsync(Ticket(), cts.Token))
             {
@@ -278,7 +285,8 @@ public sealed class ReplyServiceTests : IDisposable
         _logs.Dispose();
     }
 
-    private ReplyService Service(IChatClient provider, IRetrievalService retrieval, Action<AiOptions>? configure = null, TimeProvider? time = null)
+    /// <summary><paramref name="raw"/> hands the service the provider itself instead of the pipeline around it.</summary>
+    private ReplyService Service(IChatClient provider, IRetrievalService retrieval, Action<AiOptions>? configure = null, TimeProvider? time = null, bool raw = false)
     {
         void Configure(AiOptions options)
         {
@@ -289,7 +297,7 @@ public sealed class ReplyServiceTests : IDisposable
         _pipeline = TestPipeline.Create(provider, time, configure: Configure);
         var options = Options.Create(TestPipeline.Settings(Configure));
         return new ReplyService(
-            _pipeline.Client,
+            raw ? provider : _pipeline.Client,
             retrieval,
             new PromptStore(options),
             new PriceTable(options, NullLogger<PriceTable>.Instance),

@@ -22,15 +22,18 @@ public sealed class RetrievalService(
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(k);
 
         var embeddings = aiOptions.Value.Embeddings;
-        IReadOnlyList<ReadOnlyMemory<float>> vectors;
+        GeneratedEmbeddings<Embedding<float>> generated;
         try
         {
-            vectors = await CheckedEmbeddings.GenerateAsync(generator, [query], embeddings.ResolvedModel, embeddings.Dimensions, cancellationToken);
+            generated = await generator.GenerateAsync([query], cancellationToken: cancellationToken);
         }
         catch (Exception exception) when (exception is not ModelUnavailableException && !cancellationToken.IsCancellationRequested)
         {
             throw ToModelUnavailable(exception);
         }
+
+        // Outside the try: a wrong vector count or size is a configuration error with a useful message, not an outage
+        var vectors = CheckedEmbeddings.Check(generated, 1, embeddings.ResolvedModel, embeddings.Dimensions);
 
         // The store returns the nearest k (so the HNSW index can serve the query); the threshold is applied after
         var nearest = await store.SearchAsync(vectors[0], embeddings.ResolvedModel, k, cancellationToken);

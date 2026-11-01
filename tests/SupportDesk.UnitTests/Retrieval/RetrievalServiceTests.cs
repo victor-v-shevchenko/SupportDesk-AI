@@ -34,6 +34,16 @@ public class RetrievalServiceTests
     }
 
     [Fact]
+    public async Task A_vector_of_the_wrong_size_stays_a_configuration_error()
+    {
+        var service = Service(new FixedGenerator(new float[3]));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.SearchAsync("refund", 5, Ct));
+
+        Assert.Contains("returned 3-dimension vectors, but AI:Embeddings:Dimensions is 1024", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task The_callers_cancellation_stays_a_cancellation()
     {
         using var cts = new CancellationTokenSource();
@@ -51,6 +61,20 @@ public class RetrievalServiceTests
         public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
             IEnumerable<string> values, EmbeddingGenerationOptions? options = null, CancellationToken cancellationToken = default) =>
             Task.FromException<GeneratedEmbeddings<Embedding<float>>>(failure);
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose()
+        {
+            // Nothing to release
+        }
+    }
+
+    private sealed class FixedGenerator(float[] vector) : IEmbeddingGenerator<string, Embedding<float>>
+    {
+        public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+            IEnumerable<string> values, EmbeddingGenerationOptions? options = null, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new GeneratedEmbeddings<Embedding<float>>(values.Select(_ => new Embedding<float>(vector))));
 
         public object? GetService(Type serviceType, object? serviceKey = null) => null;
 

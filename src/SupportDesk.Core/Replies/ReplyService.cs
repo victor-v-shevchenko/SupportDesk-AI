@@ -68,6 +68,12 @@ public sealed partial class ReplyService(
                 {
                     next = Fail(ticket, replyRunId, exception);
                 }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    // The caller cancelled and the provider threw its own error (it may wrap the cancellation): end as cancelled
+                    cancellationToken.ThrowIfCancellationRequested();
+                    throw;
+                }
 
                 // Both are last, so a caller that stops reading right after one isn't logged as cancelling
                 if (next is ReplyError or ReplyDone)
