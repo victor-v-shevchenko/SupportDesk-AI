@@ -5,6 +5,8 @@ namespace SupportDesk.Core.AI;
 /// <summary>
 /// The provider couldn't answer: it returned an error, timed out or couldn't be reached (PLAN.md 6.5). The message names the
 /// status code at most, never the provider's response body, so it's safe to log; it still never goes to the client.
+/// The <see cref="Exception.InnerException"/> is the SDK's own and its message can echo the request (ticket text), so log
+/// <see cref="StatusCode"/> and the inner exception's type, not <c>ToString()</c>, unless a debug setting allows it.
 /// </summary>
 public sealed class ModelUnavailableException : Exception
 {

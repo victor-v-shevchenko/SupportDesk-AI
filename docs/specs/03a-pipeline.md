@@ -30,7 +30,7 @@ One shared `IChatClient` pipeline that every feature uses, with provider selecti
 **Fake provider**
 - `FakeChatClient` and `FakeEmbeddingGenerator` per PLAN.md 6.8
 - Besides the step types in PLAN.md 6.8, a `finish` step sets the finish reason, which is how the `refusal` scenario is scripted
-- `tests/fixtures/fake-scenarios.json` with a default scenario (a short streamed reply with a citation marker) and these named scenarios, keyed by ticket number: `tool-call-order`, `tool-call-proposal`, `error-before-first-item`, `error-after-first-item`, `stall`, `invalid-json`, `refusal`
+- `tests/fixtures/fake-scenarios.json` with a default scenario (a short streamed reply with a citation marker) and these named scenarios, keyed by ticket number: `tool-call-order`, `tool-call-proposal`, `error-before-first-item`, `error-after-first-item`, `stall`, `stall-after-first-item` (added during review, for step 3b's gap timeout), `invalid-json`, `refusal`
 - Scenarios can be loaded from a file path in config, so tests can supply their own
 
 ## Out of scope
@@ -46,7 +46,7 @@ Retries, timeouts, budget, usage logging (step 3b). Any feature using the pipeli
 - [ ] Provider exceptions come out of the pipeline only as the typed exceptions from PLAN.md 6.5
 - [ ] `IPromptStore` loads the configured version; a missing file fails at startup, not on first use
 - [ ] `</ticket>` inside ticket text can't close the tag
-- [ ] The fake provider plays each named scenario: streamed text with delays, tool calls, errors before and after the first item, stalls, invalid JSON, refusal
+- [ ] The fake provider plays each named scenario: streamed text with delays, tool calls, errors before and after the first item, stalls before and after the first item, invalid JSON, refusal
 - [ ] `FakeEmbeddingGenerator` returns the same 1024-dimension vector for the same text
 
 ## Tests

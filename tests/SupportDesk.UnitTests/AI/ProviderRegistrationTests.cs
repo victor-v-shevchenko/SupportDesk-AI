@@ -1,5 +1,6 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using SupportDesk.Api.AI;
 using SupportDesk.Core.AI;
 
 namespace SupportDesk.UnitTests.AI;
@@ -30,6 +31,17 @@ public class ProviderRegistrationTests
         Assert.NotNull(client.GetService<FunctionInvokingChatClient>());
         Assert.NotNull(client.GetService<ErrorMappingMiddleware>());
         Assert.Equal(provider == "Anthropic", client.GetService<AnthropicOptionsMiddleware>() is not null);
+    }
+
+    [Fact]
+    public void The_pipeline_is_the_only_chat_client_registered()
+    {
+        var services = new ServiceCollection();
+
+        services.AddSupportDeskAi();
+
+        var registration = Assert.Single(services, s => s.ServiceType == typeof(IChatClient));
+        Assert.Equal(ServiceLifetime.Singleton, registration.Lifetime);
     }
 
     [Theory]

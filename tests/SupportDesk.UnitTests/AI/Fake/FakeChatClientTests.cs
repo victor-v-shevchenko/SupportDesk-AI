@@ -19,7 +19,7 @@ public class FakeChatClientTests
     [Fact]
     public void The_committed_file_has_every_named_scenario_on_its_own_ticket()
     {
-        string[] expected = ["default", "tool-call-order", "tool-call-proposal", "error-before-first-item", "error-after-first-item", "stall", "invalid-json", "refusal"];
+        string[] expected = ["default", "tool-call-order", "tool-call-proposal", "error-before-first-item", "error-after-first-item", "stall", "stall-after-first-item", "invalid-json", "refusal"];
 
         Assert.Equal(expected.Order(StringComparer.Ordinal), _scenarios.Scenarios.Select(s => s.Name).Order(StringComparer.Ordinal));
         Assert.All(_scenarios.Scenarios.Where(s => s.Name != "default"), s => Assert.Equal(s.Name, _scenarios.ScenarioFor(s.TicketNumber).Name));
@@ -158,6 +158,29 @@ public class FakeChatClientTests
         _time.Advance(TimeSpan.FromSeconds(1));
         Assert.True(await AdvanceUntilDoneAsync(first));
         Assert.Equal("Thanks", stream.Current.Text);
+    }
+
+    [Fact]
+    public async Task Stall_after_first_item_sends_some_text_then_nothing_for_thirty_seconds()
+    {
+        using var client = new FakeChatClient(_scenarios, _time);
+        await using var stream = client.GetStreamingResponseAsync([new ChatMessage(ChatRole.User, "hi")], Options(AiFeature.Reply, "T-1019"), Ct).GetAsyncEnumerator(Ct);
+
+        var text = "";
+        while (!text.EndsWith("error. ", StringComparison.Ordinal))
+        {
+            Assert.True(await AdvanceUntilDoneAsync(stream.MoveNextAsync().AsTask()));
+            text += stream.Current.Text;
+        }
+
+        var next = stream.MoveNextAsync().AsTask();
+        _time.Advance(TimeSpan.FromSeconds(29));
+        await Task.Delay(50, Ct);
+        Assert.False(next.IsCompleted);
+
+        _time.Advance(TimeSpan.FromSeconds(1));
+        Assert.True(await AdvanceUntilDoneAsync(next));
+        Assert.Equal("Please", stream.Current.Text);
     }
 
     [Fact]

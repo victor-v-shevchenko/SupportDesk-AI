@@ -110,6 +110,22 @@
       }
     },
     {
+      "name": "stall-after-first-item",
+      "ticketNumber": "T-1019",
+      "turns": {
+        "*": [
+          {
+            "steps": [
+              { "type": "text", "text": "Sorry about the checkout error. " },
+              { "type": "stall", "seconds": 30 },
+              { "type": "text", "text": "Please try clearing your browser cache." },
+              { "type": "usage", "inputTokens": 900, "outputTokens": 15 }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "name": "invalid-json",
       "ticketNumber": "T-1024",
       "turns": {
