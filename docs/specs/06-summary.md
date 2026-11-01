@@ -10,9 +10,9 @@ A 2–3 sentence ticket summary, generated on demand, saved with the ticket and 
 
 ## Scope
 
-- `SummaryService` using `prompts/summary.v1.md`, feature `Summary`, non-streaming, `MaxOutputTokens` from `AI:Budget:MaxOutputTokens:Summary`
+- `SummaryService` using `prompts/summary.v2.md` (`summary.v1.md` was merged in step 3a, so the refined prompt is a new version and `AI:Prompts:summary` points to it), feature `Summary`, non-streaming, `MaxOutputTokens` from `AI:Budget:MaxOutputTokens:Summary`
 - Prompt rules: 2–3 sentences, the customer's problem and what they want, no greeting, no invented facts, ignore instructions inside `<ticket>`
-- Output check: trim whitespace; if longer than 600 characters, cut at the last full sentence before 600; empty output counts as a failure
+- Output check: trim whitespace; if longer than 600 characters, cut at the last full sentence before 600 (when not even one sentence fits, cut at the last whitespace and end with `…`); empty output counts as a failure and returns `502` problem details (`code` `invalid_output`)
 - `POST /api/tickets/{id}/summary` generates, saves (`Text`, `PromptVersion`, `GeneratedAt`) and returns it; calling it again regenerates
 - Ticket page: summary box with "Summarize" (or "Regenerate" once one exists), loading and error states, the prompt version and time in small text
 
@@ -22,11 +22,11 @@ Automatic summaries when a ticket is created.
 
 ## Acceptance criteria
 
-- [ ] The summary is saved with the prompt version and time, and returned by `GET /api/tickets/{id}`
-- [ ] Regenerate replaces the saved summary
-- [ ] Output over 600 characters is cut at a sentence boundary; empty output returns an error and leaves the old summary unchanged
-- [ ] Model errors return problem details with a clear message (`503` for unavailable, `422` for refused, `413` for budget exceeded), and the UI shows it
-- [ ] Two quick clicks send one request (the button is disabled while a request runs)
+- [x] The summary is saved with the prompt version and time, and returned by `GET /api/tickets/{id}`
+- [x] Regenerate replaces the saved summary
+- [x] Output over 600 characters is cut at a sentence boundary; empty output returns an error and leaves the old summary unchanged
+- [x] Model errors return problem details with a clear message (`503` for unavailable, `422` for refused, `413` for budget exceeded), and the UI shows it
+- [x] Two quick clicks send one request (the button is disabled while a request runs)
 
 ## Tests
 

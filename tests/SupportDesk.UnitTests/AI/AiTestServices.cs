@@ -15,7 +15,7 @@ internal static class AiTestServices
     private static readonly Dictionary<string, string?> BaseSettings = new()
     {
         ["AI:Prompts:reply"] = "reply.v1",
-        ["AI:Prompts:summary"] = "summary.v1",
+        ["AI:Prompts:summary"] = "summary.v2",
         ["AI:Prompts:classify"] = "classify.v1",
         ["AI:Ollama:Endpoint"] = "http://ollama.test:11434",
     };

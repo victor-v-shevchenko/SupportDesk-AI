@@ -81,6 +81,19 @@ describe('TicketDetailPage', () => {
     expect(el.querySelector('.summary .empty')).toBeNull();
   });
 
+  it('shows a newly generated summary without reloading the ticket', async () => {
+    const fixture = create();
+    http.expectOne('/api/tickets/2').flush(ticket);
+    const el = await settle(fixture);
+
+    el.querySelector<HTMLButtonElement>('.summary button')?.click();
+    http.expectOne('/api/tickets/2/summary').flush({ text: 'The tent order is delayed.', promptVersion: 'summary.v2', generatedAt: '2026-11-01T12:00:00Z' });
+    await fixture.whenStable();
+
+    expect(el.querySelector('.summary .text')?.textContent).toBe('The tent order is delayed.');
+    expect(el.querySelector('.summary button')?.textContent?.trim()).toBe('Regenerate');
+  });
+
   it('says the ticket was not found on a 404, without a retry', async () => {
     const fixture = create('999');
     http.expectOne('/api/tickets/999').flush({ status: 404, title: 'Ticket not found' }, { status: 404, statusText: 'Not Found' });

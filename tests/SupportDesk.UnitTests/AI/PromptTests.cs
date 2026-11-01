@@ -77,6 +77,7 @@ public class PromptTests
     [Theory]
     [InlineData("reply", "reply.v1", "reply.v1")]
     [InlineData("summary", "summary.v1", "summary.v1")]
+    [InlineData("summary", "summary.v2", "summary.v2")]
     [InlineData("classify", "classify.v1", "classify.v1")]
     public void The_store_loads_the_configured_version(string name, string version, string expected)
     {
@@ -135,6 +136,7 @@ public class PromptTests
     [Theory]
     [InlineData("reply.v1", new[] { "sources", "ticket" })]
     [InlineData("summary.v1", new[] { "ticket" })]
+    [InlineData("summary.v2", new[] { "ticket" })]
     [InlineData("classify.v1", new[] { "ticket" })]
     public void Committed_prompts_put_the_ticket_in_the_user_message_and_tell_the_model_it_is_data(string version, string[] placeholders)
     {
