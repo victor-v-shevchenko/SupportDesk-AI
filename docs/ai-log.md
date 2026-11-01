@@ -54,3 +54,10 @@ Entry format (from CLAUDE.md):
 - What was wrong: the budget estimate (characters ÷ 4 × 1.2) came out 7–25% below Anthropic's count on 5 of the 6 prompts, because these prompts tokenize at about 2.6–3.1 characters per token and each message has a fixed cost, so the per-call guard could let an over-limit call through.
 - Fix: the estimate is now characters ÷ 3 × 1.2 plus 10 tokens per message, computed in integers; all six cases are 11–25% above the real count (step 3b PR).
 - Test: `TokenEstimateTests.The_estimate_is_not_lower_than_Anthropics_count` (opt-in), with `BudgetAndUsageTests.The_estimate_is_characters_over_3_times_1_2_rounded_up` and `Each_message_adds_10_tokens_for_its_framing` in CI
+
+## 2026-11-01 — Startup-failure tests were flaky in CI
+- Step: 3b (the tests date from step 3a)
+- Found by: test (CI: one of two runs of the same commit failed)
+- What was wrong: `AiStartupTests` expected the `OptionsValidationException` from `CreateClient()`, but inside `WebApplicationFactory` the failing app disposes its service provider while the factory still reads from it, so sometimes an `ObjectDisposedException` came out instead; the extra startup work in step 3b made that more likely.
+- Fix: the tests check the host's "Hosting failed to start" log, written before anything is disposed, and that the app didn't start (step 3b PR).
+- Test: `AiStartupTests.A_missing_api_key_stops_the_app_from_starting`, `AiStartupTests.The_fake_provider_stops_the_app_from_starting_in_Production`

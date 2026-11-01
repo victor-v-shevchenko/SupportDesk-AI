@@ -1,6 +1,5 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using SupportDesk.Core.AI;
 using SupportDesk.Core.AI.Fake;
 
@@ -15,25 +14,39 @@ public class AiStartupTests
     [Fact]
     public async Task The_fake_provider_stops_the_app_from_starting_in_Production()
     {
-        await using var factory = new ApiFactory(NoDatabase, "Production", new Dictionary<string, string?> { ["AI:Chat:Provider"] = "Fake" });
+        var failure = await StartupFailureAsync(new Dictionary<string, string?> { ["AI:Chat:Provider"] = "Fake" });
 
-        var error = Assert.Throws<OptionsValidationException>(() => factory.CreateClient());
-
-        Assert.Contains("AI:Chat:Provider is Fake, which isn't allowed in Production", error.Message, StringComparison.Ordinal);
+        Assert.Contains("AI:Chat:Provider is Fake, which isn't allowed in Production", failure, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task A_missing_api_key_stops_the_app_from_starting()
     {
-        await using var factory = new ApiFactory(NoDatabase, "Production", new Dictionary<string, string?>
+        var failure = await StartupFailureAsync(new Dictionary<string, string?>
         {
             ["AI:Chat:Provider"] = "Anthropic",
             ["AI:Anthropic:ApiKey"] = "",
         });
 
-        var error = Assert.Throws<OptionsValidationException>(() => factory.CreateClient());
+        Assert.Contains("AI:Anthropic:ApiKey is required", failure, StringComparison.Ordinal);
+    }
 
-        Assert.Contains("AI:Anthropic:ApiKey is required", error.Message, StringComparison.Ordinal);
+    /// <summary>
+    /// Starts the app in Production with <paramref name="settings"/>, expects it to fail, and returns what it reported. Which
+    /// exception reaches the test races with the failing app disposing its services inside WebApplicationFactory (the
+    /// validation error, or <see cref="ObjectDisposedException"/>), so the host's "Hosting failed to start" log, written
+    /// before anything is disposed, is what's checked.
+    /// </summary>
+    private static async Task<string> StartupFailureAsync(Dictionary<string, string?> settings)
+    {
+        using var logs = new LogCollector();
+        await using var factory = new ApiFactory(NoDatabase, "Production", settings, logs);
+
+        var error = Record.Exception(() => factory.CreateClient());
+
+        Assert.NotNull(error);
+        Assert.Contains("Hosting failed to start", logs.All, StringComparison.Ordinal);
+        return logs.All;
     }
 
     [Fact]
