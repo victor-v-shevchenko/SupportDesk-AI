@@ -143,12 +143,14 @@ public class SummaryEndpointTests(PostgresFixture postgres)
     {
         await using var api = await StartAsync(new Dictionary<string, string?> { ["AI:Budget:MaxInputTokensPerCall"] = "50" });
         var id = await IdAsync(api, "T-1001");
+        var at = new DateTimeOffset(2026, 10, 1, 0, 0, 0, TimeSpan.Zero);
+        await SetSummaryAsync(api, id, "A good summary.", "summary.v1", at);
 
         var response = await api.Client.PostAsync(SummaryUri(id), null, Ct);
 
         await AssertProblemAsync(response, HttpStatusCode.RequestEntityTooLarge, "budget_exceeded");
         var ticket = await api.Client.GetFromJsonAsync<TicketDetailResponse>($"/api/tickets/{id}", JsonDefaults.Options, Ct);
-        Assert.Null(ticket!.Summary);
+        Assert.Equal(new TicketSummaryResponse("A good summary.", "summary.v1", at), ticket!.Summary);
     }
 
     [Fact]

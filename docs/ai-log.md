@@ -68,3 +68,10 @@ Entry format (from CLAUDE.md):
 - What was wrong: the articles page bound `[value]` on the `<select>`, which Angular sets before the `@for` adds the options, so the select fell back to its first option (3) while the default `k` sent to `/api/search` was 5.
 - Fix: each option binds `[selected]` to the current `k` instead (step 4 PR).
 - Test: `ArticlesPage shows the default of 5 results in the select, matching what a search sends`
+
+## 2026-11-01 — Summary cut fell back mid-word on newlines
+- Step: 6
+- Found by: review subagent
+- What was wrong: when a summary over 600 characters had no sentence end that fit, `SummaryOutput` looked only for a space to cut at, so text broken by newlines was cut mid-word, and a cut could end in `foo,…`.
+- Fix: the fallback cut looks for any whitespace and drops trailing commas, semicolons and colons before the ellipsis (step 6 PR).
+- Test: `SummaryOutputTests.A_cut_without_a_sentence_end_breaks_at_newlines_too_and_drops_trailing_commas`

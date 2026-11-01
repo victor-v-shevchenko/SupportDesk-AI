@@ -91,6 +91,14 @@ public class SummaryOutputTests
     }
 
     [Fact]
+    public void A_cut_without_a_sentence_end_breaks_at_newlines_too_and_drops_trailing_commas()
+    {
+        var text = new string('a', 590) + ",\n" + new string('b', 100);
+
+        Assert.Equal(new string('a', 590) + "…", SummaryOutput.Check(text));
+    }
+
+    [Fact]
     public void A_long_run_without_spaces_is_cut_at_the_limit_with_an_ellipsis()
     {
         var result = SummaryOutput.Check(new string('x', 900));

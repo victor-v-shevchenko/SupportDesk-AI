@@ -25,7 +25,7 @@ public static class ModelProblems
         Problem(StatusCodes.Status413PayloadTooLarge, "budget_exceeded", "Over the token budget", "This ticket is too long for the model's token budget.");
 
     public static ProblemHttpResult InvalidOutput() =>
-        Problem(StatusCodes.Status502BadGateway, "invalid_output", "The model's answer was unusable", "The model returned an empty answer. Try again.");
+        Problem(StatusCodes.Status502BadGateway, "invalid_output", "The model's answer was unusable", "The model's answer was empty or unusable, so nothing was saved. Try again.");
 
     private static ProblemHttpResult Problem(int status, string code, string title, string detail) =>
         TypedResults.Problem(statusCode: status, title: title, detail: detail, extensions: new Dictionary<string, object?>(StringComparer.Ordinal) { ["code"] = code });

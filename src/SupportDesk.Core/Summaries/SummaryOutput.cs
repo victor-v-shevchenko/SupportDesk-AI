@@ -8,11 +8,15 @@ public static class SummaryOutput
     /// <summary>Characters that may follow a sentence's final punctuation and still belong to it: closing quotes and brackets.</summary>
     private const string Closers = "\"'”’)]";
 
+    /// <summary>Dropped before the ellipsis of a cut, so it doesn't end in <c>foo,…</c>.</summary>
+    private static readonly char[] TrailingPunctuation = [',', ';', ':', '-', ' '];
+
     /// <summary>
     /// Trims <paramref name="text"/> and, when it's longer than <see cref="MaxLength"/>, cuts it after the last full sentence
     /// that fits. A sentence ends with <c>.</c>, <c>!</c> or <c>?</c> (and any closing quotes or brackets) followed by
-    /// whitespace or the end of the text, so <c>1.5</c> or <c>example.com</c> aren't sentence ends. When not even the first
-    /// sentence fits, it's cut at the last space and ends with <c>…</c>. Returns null for empty or whitespace-only output,
+    /// whitespace or the end of the text, so <c>1.5</c> or <c>example.com</c> aren't sentence ends (abbreviations such as
+    /// <c>e.g.</c> are, a known limit of the rule). When not even the first sentence fits, it's cut at the last whitespace
+    /// and ends with <c>…</c>. Returns null for empty or whitespace-only output,
     /// which counts as a failure.
     /// </summary>
     public static string? Check(string? text)
@@ -62,8 +66,13 @@ public static class SummaryOutput
     {
         // Leave room for the ellipsis
         var limit = MaxLength - 1;
-        var space = text.LastIndexOf(' ', limit);
+        var space = limit;
+        while (space > 0 && !char.IsWhiteSpace(text[space]))
+        {
+            space--;
+        }
+
         var cut = space > 0 ? text[..space] : text[..limit];
-        return cut.TrimEnd() + "…";
+        return cut.TrimEnd().TrimEnd(TrailingPunctuation) + "…";
     }
 }
