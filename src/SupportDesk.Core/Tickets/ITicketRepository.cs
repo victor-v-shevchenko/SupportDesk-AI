@@ -8,4 +8,7 @@ public interface ITicketRepository
     Task<Ticket?> FindAsync(int id, CancellationToken cancellationToken);
 
     Task<Ticket> CreateAsync(NewTicket ticket, CancellationToken cancellationToken);
+
+    /// <summary>Replaces the ticket's summary, stamped with the current time; null when there's no such ticket.</summary>
+    Task<TicketSummary?> SaveSummaryAsync(int id, string text, string promptVersion, CancellationToken cancellationToken);
 }

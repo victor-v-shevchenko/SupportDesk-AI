@@ -136,7 +136,7 @@ All routes are under `/api`. Errors use RFC 7807 problem details.
 | `AI:Embeddings:Model` | model ID; empty means the provider's default | `mxbai-embed-large` (Ollama), `voyage-3.5` (Voyage), `text-embedding-3-small` (OpenAI), `fake-hash` (Fake) |
 | `AI:Embeddings:Dimensions` | `1024` | `1024` |
 | `AI:Ollama:Endpoint` | URL; required when Ollama is the chat or embedding provider, set only in config (no code default) | `http://host.docker.internal:11434` (plain HTTP: Ollama on the host has no TLS) |
-| `AI:Prompts:<name>` | prompt version | `reply.v1`, `summary.v1`, `classify.v1` (all three required) |
+| `AI:Prompts:<name>` | prompt version | `reply.v1`, `summary.v2`, `classify.v1` (all three required) |
 | `AI:PromptsPath` | folder | `prompts`, resolved from the app's base directory, where the build copies `prompts/` |
 | `AI:Anthropic:Effort:<feature>` | `Low`, `Medium`, `High`, `ExtraHigh` | `Reply` Medium, `Summary` Low, `Classification` Low (see 6.7) |
 | `AI:Anthropic:ApiKey`, `AI:OpenAI:ApiKey`, `AI:Voyage:ApiKey` | secret | none; user secrets or `AI__…__ApiKey` variables, never appsettings |
@@ -324,7 +324,16 @@ These come from the current API and must be checked against the SDK version in u
 - Classification uses `GetResponseAsync<ClassificationResult>` with a JSON schema: `category` (enum), `priority` (enum), `reason` (string, at most 200 characters), no extra properties
 - The result is validated even when the provider enforces the schema, because some providers (Ollama models, some adapters) only follow it from the prompt
 - **Invalid JSON or schema mismatch:** one retry with the validation error added to the prompt, then `Status = NeedsManual`
-- **Summary:** plain text, 2–3 sentences, at most 600 characters; longer output is cut at the last full sentence
+- **Summary:** plain text, 2–3 sentences, at most 600 characters (`SummaryOutput`). The output is trimmed; longer output is cut after the last full sentence that fits: `.`, `!` or `?` (with any closing quotes or brackets) followed by whitespace, so `1.5` or `kestrel.example` aren't sentence ends. If not even the first sentence fits, it's cut at the last space before the limit and ends with `…`. Empty or whitespace-only output is a failure (`ModelOutputException`)
+- **Summary endpoint** (`POST /api/tickets/{id}/summary`): one non-streaming call (`SummaryService`, feature `Summary`, `MaxOutputTokens` from `AI:Budget:MaxOutputTokens:Summary`), then the check, then the save (`Text`, `PromptVersion`, `GeneratedAt`), replacing the old summary. It returns `200` with the summary. Nothing is saved before the check passes, so a failure leaves the old summary as it was
+- **Model errors as problem details** (`ModelProblems`, for every non-streaming feature): the title and detail are fixed texts, never an exception's message, and `code` is the reply stream's error code (PLAN.md 7) or `invalid_output`:
+
+  | Failure | Status | `code` |
+  | --- | --- | --- |
+  | `ModelUnavailableException` | 503 | `model_unavailable`, or `timeout` when `IsTimeout` |
+  | `ModelRefusedException` | 422 | `model_refused` |
+  | `BudgetExceededException` | 413 | `budget_exceeded` |
+  | `ModelOutputException` (output failed the check, such as an empty summary) | 502 | `invalid_output` |
 
 ## 10. Tools
 
