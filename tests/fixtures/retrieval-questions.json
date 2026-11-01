@@ -1,0 +1,17 @@
+[
+  { "question": "I forgot my login and the email to set a new one never showed up", "expectedSlug": "account-and-password" },
+  { "question": "Can I phone someone? What hours are you around?", "expectedSlug": "contacting-support" },
+  { "question": "My tent came with a ripped rainfly straight out of the box, what now?", "expectedSlug": "damaged-items" },
+  { "question": "My aunt gave me a voucher two years ago, is it still good?", "expectedSlug": "gift-cards" },
+  { "question": "I live in Germany, will I have to pay extra fees when the parcel arrives?", "expectedSlug": "international-shipping" },
+  { "question": "I ordered the wrong colour jacket ten minutes ago, can I swap it before you send it?", "expectedSlug": "order-changes" },
+  { "question": "Can I split the cost into a few smaller payments?", "expectedSlug": "payment-methods" },
+  { "question": "I sent my boots back two weeks ago and still don't have my money", "expectedSlug": "refunds" },
+  { "question": "Can I send back a sleeping bag I bought in the sale last month?", "expectedSlug": "returns-policy" },
+  { "question": "I need my order in Denver by Friday, what's the fastest you can get it to me?", "expectedSlug": "shipping-times" },
+  { "question": "I'm somewhere between a medium and a large for a rain shell, which one should I get?", "expectedSlug": "sizing-guide" },
+  { "question": "The zip on my backpack broke after a year of normal use, will you fix it?", "expectedSlug": "warranty" },
+  { "question": "The tracking says it was delivered but there's nothing at my door", "expectedSlug": "shipping-times" },
+  { "question": "You took the money out of my account twice for one order", "expectedSlug": "refunds" },
+  { "question": "PayPal keeps failing every time I try to check out", "expectedSlug": "payment-methods" }
+]

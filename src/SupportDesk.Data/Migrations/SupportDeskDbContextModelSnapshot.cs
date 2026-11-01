@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
+using Pgvector;
 using SupportDesk.Data;
 
 #nullable disable
@@ -176,6 +177,54 @@ namespace SupportDesk.Data.Migrations
                     b.ToTable("Tickets");
                 });
 
+            modelBuilder.Entity("SupportDesk.Data.ArticleChunk", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("ArticleId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .IsFixedLength();
+
+                    b.Property<Vector>("Embedding")
+                        .IsRequired()
+                        .HasColumnType("vector(1024)");
+
+                    b.Property<string>("EmbeddingModel")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Heading")
+                        .HasColumnType("text");
+
+                    b.Property<int>("Ordinal")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Embedding");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("Embedding"), "hnsw");
+                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("Embedding"), new[] { "vector_cosine_ops" });
+
+                    b.HasIndex("ArticleId", "Ordinal");
+
+                    b.ToTable("ArticleChunks");
+                });
+
             modelBuilder.Entity("SupportDesk.Core.Tickets.Ticket", b =>
                 {
                     b.OwnsOne("SupportDesk.Core.Tickets.TicketClassification", "Classification", b1 =>
@@ -253,6 +302,17 @@ namespace SupportDesk.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Summary");
+                });
+
+            modelBuilder.Entity("SupportDesk.Data.ArticleChunk", b =>
+                {
+                    b.HasOne("SupportDesk.Core.Articles.Article", "Article")
+                        .WithMany()
+                        .HasForeignKey("ArticleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Article");
                 });
 #pragma warning restore 612, 618
         }

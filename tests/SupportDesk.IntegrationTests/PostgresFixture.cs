@@ -6,7 +6,11 @@ namespace SupportDesk.IntegrationTests;
 /// <summary>One PostgreSQL + pgvector container for the whole test run; Testcontainers generates its credentials.</summary>
 public sealed class PostgresFixture : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("pgvector/pgvector:pg17").Build();
+    // Every test database gets its own Npgsql pool, whose idle connections stay open for minutes; the default limit of 100
+    // runs out once there are a few dozen databases
+    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("pgvector/pgvector:pg17")
+        .WithCommand("-c", "max_connections=500")
+        .Build();
 
     public string ConnectionString => _container.GetConnectionString();
 

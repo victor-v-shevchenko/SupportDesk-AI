@@ -8,6 +8,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSupportDeskApi();
 builder.Services.AddSupportDeskData();
 builder.Services.AddSupportDeskAi();
+builder.Services.AddSupportDeskRetrieval();
 
 var app = builder.Build();
 
@@ -23,5 +24,6 @@ app.MapHealthEndpoints();
 app.MapTicketEndpoints();
 app.MapArticleEndpoints();
 app.MapModelCallEndpoints();
+app.MapSearchEndpoints();
 
 await app.RunAsync();

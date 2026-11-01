@@ -61,3 +61,10 @@ Entry format (from CLAUDE.md):
 - What was wrong: `AiStartupTests` expected the `OptionsValidationException` from `CreateClient()`, but inside `WebApplicationFactory` the failing app disposes its service provider while the factory still reads from it, so sometimes an `ObjectDisposedException` came out instead; the extra startup work in step 3b made that more likely.
 - Fix: the tests check the host's "Hosting failed to start" log, written before anything is disposed, and that the app didn't start (step 3b PR).
 - Test: `AiStartupTests.A_missing_api_key_stops_the_app_from_starting`, `AiStartupTests.The_fake_provider_stops_the_app_from_starting_in_Production`
+
+## 2026-11-01 — Search results select showed 3 while searches sent 5
+- Step: 4
+- Found by: browser check
+- What was wrong: the articles page bound `[value]` on the `<select>`, which Angular sets before the `@for` adds the options, so the select fell back to its first option (3) while the default `k` sent to `/api/search` was 5.
+- Fix: each option binds `[selected]` to the current `k` instead (step 4 PR).
+- Test: `ArticlesPage shows the default of 5 results in the select, matching what a search sends`

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>SupportDesk.EmbedFixtures</RootNamespace>
+    <UserSecretsId>supportdesk-api</UserSecretsId>
+  </PropertyGroup>
+
+  <!-- The API's composition root picks the embedding provider from the same settings the app uses -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SupportDesk.Api\SupportDesk.Api.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\..\src\SupportDesk.Api\appsettings.json" Link="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

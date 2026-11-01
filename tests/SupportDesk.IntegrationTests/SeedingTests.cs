@@ -85,7 +85,7 @@ public class SeedingTests(PostgresFixture postgres)
         // CreateClient starts the host, which migrates and seeds
         await Task.WhenAll(Task.Run(first.CreateClient, Ct), Task.Run(second.CreateClient, Ct));
 
-        await using var db = new SupportDeskDbContext(new DbContextOptionsBuilder<SupportDeskDbContext>().UseNpgsql(connectionString).Options);
+        await using var db = TestDatabase.CreateDbContext(connectionString);
         Assert.Equal((await SeedFiles.ReadTicketsAsync(SeedPath.Value, Ct)).Count, await db.Tickets.CountAsync(Ct));
         Assert.Equal((await SeedFiles.ReadArticlesAsync(SeedPath.Value, Ct)).Count, await db.Articles.CountAsync(Ct));
     }

@@ -30,11 +30,13 @@ describe('App shell', () => {
   const healthy = (request: ReturnType<HttpTestingController['expectOne']>) =>
     request.flush({ status: 'ok', database: 'ok' });
 
-  it('renders the header with the Tickets link', async () => {
+  it('renders the header with the Tickets and Knowledge base links', async () => {
     const el = await render(healthy);
 
     expect(el.querySelector('header .brand')?.textContent).toContain('SupportDesk AI');
-    expect(el.querySelector('nav a')?.textContent).toContain('Tickets');
+    const links = [...el.querySelectorAll('nav a')];
+    expect(links.map((a) => a.textContent?.trim())).toEqual(['Tickets', 'Knowledge base']);
+    expect(links[1].getAttribute('href')).toBe('/articles');
   });
 
   it('shows checking while the health request is pending', () => {
