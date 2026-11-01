@@ -28,7 +28,8 @@ Run inside the dev container.
 | --- | --- |
 | Start everything (dev container) | `docker compose up -d db` then `dotnet run --project src/SupportDesk.Api` and `npm --prefix web start` |
 | Start everything (Docker only) | `docker compose up --build` |
-| Start with the fake model (from step 3a; until then the variables are ignored) | `AI__Chat__Provider=Fake AI__Embeddings__Provider=Fake dotnet run --project src/SupportDesk.Api` |
+| Start with the fake model | `AI__Chat__Provider=Fake AI__Embeddings__Provider=Fake dotnet run --project src/SupportDesk.Api` |
+| Set a provider key for `dotnet run` (Anthropic, OpenAI, Voyage) | `dotnet user-secrets set AI:Anthropic:ApiKey <key> --project src/SupportDesk.Api` |
 | Build | `dotnet build` |
 | Restore local tools (`dotnet ef`, Sonar scanner) | `dotnet tool restore` |
 | Tests (CI set) | `dotnet test --filter "Category!=Eval"` |

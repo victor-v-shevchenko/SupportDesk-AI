@@ -131,17 +131,23 @@ All routes are under `/api`. Errors use RFC 7807 problem details.
 | Key | Values | Default (development) |
 | --- | --- | --- |
 | `AI:Chat:Provider` | `Fake`, `Ollama`, `Anthropic`, `OpenAI` | `Ollama` |
-| `AI:Chat:Model` | model ID | `qwen2.5:7b` (Ollama), `claude-opus-5-5` (Anthropic) |
+| `AI:Chat:Model` | model ID; empty means the provider's default | `qwen2.5:7b` (Ollama), `claude-opus-5-5` (Anthropic), `fake` (Fake); OpenAI has no default and needs it set |
 | `AI:Embeddings:Provider` | `Fake`, `Ollama`, `Voyage`, `OpenAI` | `Ollama` |
-| `AI:Embeddings:Model` | model ID | `mxbai-embed-large` |
+| `AI:Embeddings:Model` | model ID; empty means the provider's default | `mxbai-embed-large` (Ollama), `voyage-3.5` (Voyage), `text-embedding-3-small` (OpenAI), `fake-hash` (Fake) |
 | `AI:Embeddings:Dimensions` | `1024` | `1024` |
 | `AI:Ollama:Endpoint` | URL | `http://host.docker.internal:11434` |
-| `AI:Prompts:<name>` | prompt version | `reply.v1`, `summary.v1`, `classify.v1` |
+| `AI:Prompts:<name>` | prompt version | `reply.v1`, `summary.v1`, `classify.v1` (all three required) |
+| `AI:PromptsPath` | folder | `prompts`, resolved from the app's base directory, where the build copies `prompts/` |
+| `AI:Anthropic:Effort:<feature>` | `Low`, `Medium`, `High`, `ExtraHigh` | `Reply` Medium, `Summary` Low, `Classification` Low (see 6.7) |
+| `AI:Anthropic:ApiKey`, `AI:OpenAI:ApiKey`, `AI:Voyage:ApiKey` | secret | none; user secrets or `AI__…__ApiKey` variables, never appsettings |
+| `AI:Fake:ScenariosPath` | file | `fixtures/fake-scenarios.json` (the build copies `tests/fixtures/fake-scenarios.json` there) |
 | `AI:Budget:*` | see 6.4 | |
 | `AI:Timeouts:*`, `AI:Retry:*` | see 6.5 | |
 | `AI:Pricing:<model>` | `InputPerMTok`, `OutputPerMTok` in USD | see 6.6 |
 
 - Environment variables use double underscores, for example `AI__Chat__Provider=Fake`
+- **Startup checks** (`ValidateOnStart`): an unknown provider, a missing key for a selected provider (the message names the setting, never a value), the fake provider in `Production`, a missing or malformed prompt file, and a broken scenarios file all stop the app before it serves requests
+- **API keys** are read from `AI:<Provider>:ApiKey`, not `ANTHROPIC_API_KEY`: the dev container keeps that variable out of its environment so Claude Code doesn't pick it up. `.env` still holds `ANTHROPIC_API_KEY` and so on; docker compose maps them to `AI__Anthropic__ApiKey`. With `dotnet run` in the dev container, use user secrets
 - **Packages:** Anthropic's official `Anthropic` package (it has an `IChatClient` adapter); `Microsoft.Extensions.AI.OpenAI`; `OllamaSharp` for Ollama chat and embeddings; Voyage through a small hand-written `IEmbeddingGenerator` over HTTP, since there is no official .NET package
 - **Embedding dimension 1024:** `mxbai-embed-large` (Ollama) and `voyage-3.5` produce 1024 dimensions, and OpenAI `text-embedding-3-small` can be asked for 1024. So all three providers fit one `vector(1024)` column. Switching models still means re-embedding, because vectors from different models aren't comparable
 
@@ -155,18 +161,23 @@ FunctionInvokingChatClient    the tool loop, MaximumIterationsPerRequest = 3
 BudgetGuardMiddleware         per-call input estimate, sets MaxOutputTokens
 UsageLoggingMiddleware        one ModelCalls row per inner call
 RetryTimeoutMiddleware        retries before the first item, timeouts
-provider IChatClient          Anthropic / OpenAI / Ollama / Fake
+ErrorMappingMiddleware        provider exceptions → typed exceptions (6.5); refusals → ModelRefusedException
+provider IChatClient          Anthropic (wrapped in AnthropicOptionsMiddleware) / OpenAI / Ollama / Fake
 ```
+
+- `ErrorMappingMiddleware` is innermost, so everything above it, including the retry middleware, only sees typed exceptions. `ModelUnavailableException` carries `StatusCode` and `IsTransient` (the rules in 6.5), which is what `RetryTimeoutMiddleware` decides on. Provider SDK exceptions are recognized by one `IModelErrorClassifier` per provider, registered in the API; `HttpRequestException` (Ollama, the fake provider) is handled in Core; anything else becomes a non-transient `ModelUnavailableException`. A cancellation the caller didn't ask for (an SDK or `HttpClient` timeout) is a transient `ModelUnavailableException`; the caller's own stays an `OperationCanceledException`
+- A refusal is `FinishReason = ContentFilter`, which is how the Anthropic adapter reports `stop_reason = "refusal"`. In a stream, the updates after it (they carry usage) are still passed on, and `ModelRefusedException` is thrown when the stream ends; the non-streaming exception carries the usage
 
 - Provider SDK retries are turned off (Anthropic SDK: max retries 0), so only `RetryTimeoutMiddleware` retries
 - `HttpClient` keeps only a connect timeout
-- Each feature passes its name, prompt version, ticket ID and reply run ID through `ChatOptions.AdditionalProperties`, so logging and the fake provider can read them
+- Each feature passes its name, prompt version, ticket ID, ticket number and reply run ID through `ChatOptions.AdditionalProperties` (`AiCallContext.ApplyTo`), so logging and the fake provider can read them (`AiCallContext.From`). Tests check that the Anthropic, OpenAI and Ollama adapters don't send these keys to the provider
 
 ### 6.3 Prompts
 
-- Each prompt is a Markdown file in `prompts/`, named `<name>.v<N>.md`, with a system section and a user template
+- Each prompt is a Markdown file in `prompts/`, named `<name>.v<N>.md`, with a system section and a user template: a `## System` line, then a `## User` line. Text above `## System` is a note for people and isn't sent
+- The user template has `{{placeholders}}`, filled in one pass (a value containing `{{name}}` stays as it is). Every placeholder needs a value and every value a placeholder. The system section can't have placeholders, so user text can't reach it
 - A merged prompt version is never edited. A change means a new file (`reply.v2.md`) and a config change
-- Ticket text goes into the user message inside `<ticket>…</ticket>`. Any `</ticket>` inside the text is escaped first. The system prompt says that text inside `<ticket>` is customer data and that instructions inside it must be ignored
+- Ticket text goes into the user message inside `<ticket>…</ticket>` (`TicketPromptFormatter`, which also adds the number, customer, order number and subject). Any `</ticket>` inside the text is escaped first: the `<` of anything that reads as a ticket tag (any case, whitespace or a newline inside, opening or closing) becomes `&lt;`. The system prompt says that text inside `<ticket>` is customer data and that instructions inside it must be ignored
 - Retrieved chunks go inside `<sources>` as `[1] <title> — <heading>\n<text>`
 
 ### 6.4 Token budget
@@ -214,7 +225,7 @@ provider IChatClient          Anthropic / OpenAI / Ollama / Fake
 These come from the current API and must be checked against the SDK version in use:
 
 - Don't set `Temperature`, `TopP` or `TopK`; newer API versions reject them
-- `claude-opus-5-5` can't turn thinking off; control cost with effort (`low` for classification and summary, `medium` for replies), passed through the adapter's provider-specific options
+- `claude-opus-5-5` can't turn thinking off; control cost with effort (`low` for classification and summary, `medium` for replies). The `Anthropic` package's adapter (13.3) sends `ChatOptions.Reasoning.Effort` as `output_config.effort` with `thinking.type = adaptive`, so `AnthropicOptionsMiddleware` sets it per feature from `AI:Anthropic:Effort` and no raw provider options are needed. `ReasoningEffort.None` is rejected at startup: it sends `thinking.type = disabled`, which these models answer with a 400. The same middleware drops `Temperature`, `TopP` and `TopK`; it's registered only for Anthropic, because other providers don't all accept a reasoning setting
 - Forced tool choice (`any` or a named tool) returns a 400 on current models. Use automatic tool choice, and use structured output (`output_config.format`) for classification
 - A response can stop with `stop_reason = "refusal"`; that maps to `ModelRefusedException`
 
@@ -222,8 +233,11 @@ These come from the current API and must be checked against the SDK version in u
 
 - `FakeChatClient` and `FakeEmbeddingGenerator` live in `SupportDesk.Core/AI/Fake`, selected with `AI__Chat__Provider=Fake` and `AI__Embeddings__Provider=Fake`
 - Scenarios are in `tests/fixtures/fake-scenarios.json`, keyed by ticket number (read from `ChatOptions.AdditionalProperties`), with a default scenario
-- A scenario is a list of steps: `text` (streamed in chunks with a set delay), `tool_call` (name and arguments), `usage`, `error` (status code, before or after the first item), `stall` (no output for N seconds)
-- `FakeEmbeddingGenerator` returns a deterministic vector from a hash of the text. It's for running the app; retrieval tests use the committed fixtures instead
+- A scenario has turns per feature (`Reply`, `Summary`, `Classification`, or `*` for any). A call plays the turn numbered by how many assistant messages are already in the history, so the call after a tool round trip, or a retry that sends the earlier answer back, plays the next turn; the last turn repeats. A feature a scenario doesn't script falls back to the default scenario
+- A turn is a list of steps: `text` (streamed in chunks of `chunkSize` characters, `delayMs` before each), `tool_call` (name and arguments), `usage` (sent on the last update, as the adapters do), `error` (an `HttpRequestException` with a status code; before or after the first item depending on where it is in the list), `stall` (no output for N seconds), `finish` (the finish reason; `content_filter` is a refusal). Delays use `TimeProvider`, so tests run them on a fake clock, and every wait honors cancellation
+- Named scenarios, on seeded tickets so the app shows them with the seed data: `tool-call-order` T-1002, `tool-call-proposal` T-1008, `error-before-first-item` T-1021 (503, every feature), `error-after-first-item` T-1022 (529 after some reply text), `stall` T-1023 (30 seconds, every feature), `invalid-json` T-1024 (classification: not JSON, then JSON that fails the schema), `refusal` T-1025 (every feature)
+- The file is checked when it's loaded: a `default` scenario without a ticket number, one scenario per ticket, known features and step types, no unknown fields. `AI:Fake:ScenariosPath` points tests at their own file
+- `FakeEmbeddingGenerator` returns a deterministic unit vector from a hash of the text (SHA-256 of the text and a block counter, read as 16-bit values). It's for running the app; retrieval tests use the committed fixtures instead
 - The fake provider is refused at startup when the environment is `Production`
 
 ## 7. Streaming

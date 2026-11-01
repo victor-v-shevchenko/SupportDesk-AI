@@ -9,6 +9,9 @@ RUN dotnet restore src/SupportDesk.Api/SupportDesk.Api.csproj
 COPY src/ src/
 # Copied into the app by SupportDesk.Data.csproj; seeded at startup in Development
 COPY seed/ seed/
+# Copied into the app by SupportDesk.Core.csproj: prompt files, and the fake provider's scenarios
+COPY prompts/ prompts/
+COPY tests/fixtures/fake-scenarios.json tests/fixtures/
 RUN dotnet publish src/SupportDesk.Api/SupportDesk.Api.csproj -c Release --no-restore -o /app
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0

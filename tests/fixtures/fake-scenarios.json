@@ -1,0 +1,147 @@
+{
+  "scenarios": [
+    {
+      "name": "default",
+      "ticketNumber": null,
+      "turns": {
+        "Reply": [
+          {
+            "steps": [
+              { "type": "text", "text": "Thanks for getting in touch. Standard shipping takes 3 to 5 business days, and you'll get a tracking link by email once your order leaves our warehouse [1]. Let us know if there's anything else we can help with." },
+              { "type": "usage", "inputTokens": 1200, "outputTokens": 48 }
+            ]
+          }
+        ],
+        "Summary": [
+          {
+            "steps": [
+              { "type": "text", "text": "The customer asks about their order and wants an update. No action has been taken yet.", "chunkSize": 20, "delayMs": 10 },
+              { "type": "usage", "inputTokens": 400, "outputTokens": 22 }
+            ]
+          }
+        ],
+        "Classification": [
+          {
+            "steps": [
+              { "type": "text", "text": "{\"category\":\"Other\",\"priority\":\"Normal\",\"reason\":\"General question with no urgency.\"}", "chunkSize": 200, "delayMs": 0 },
+              { "type": "usage", "inputTokens": 350, "outputTokens": 25 }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "tool-call-order",
+      "ticketNumber": "T-1002",
+      "turns": {
+        "Reply": [
+          {
+            "steps": [
+              { "type": "tool_call", "name": "lookup_order_status", "arguments": { "orderNumber": "KO-205002" } },
+              { "type": "usage", "inputTokens": 1300, "outputTokens": 30 }
+            ]
+          },
+          {
+            "steps": [
+              { "type": "text", "text": "I checked order KO-205002: it's marked as delayed with the carrier. Delayed parcels usually move again within a few days, and you can follow it with the tracking link in your shipping email [1]." },
+              { "type": "usage", "inputTokens": 1400, "outputTokens": 45 }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "tool-call-proposal",
+      "ticketNumber": "T-1008",
+      "turns": {
+        "Reply": [
+          {
+            "steps": [
+              { "type": "text", "text": "I'm sorry your order hasn't arrived. " },
+              { "type": "tool_call", "name": "propose_follow_up_task", "arguments": { "title": "Open a carrier trace for KO-208815", "notes": "Customer reports no delivery after three weeks.", "dueInDays": 2 } },
+              { "type": "usage", "inputTokens": 1300, "outputTokens": 60 }
+            ]
+          },
+          {
+            "steps": [
+              { "type": "text", "text": "I've proposed a follow-up to open a carrier trace; once an agent confirms it, we'll contact the carrier and update you within two days [1]." },
+              { "type": "usage", "inputTokens": 1450, "outputTokens": 40 }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "error-before-first-item",
+      "ticketNumber": "T-1021",
+      "turns": {
+        "*": [
+          { "steps": [ { "type": "error", "statusCode": 503 } ] }
+        ]
+      }
+    },
+    {
+      "name": "error-after-first-item",
+      "ticketNumber": "T-1022",
+      "turns": {
+        "Reply": [
+          {
+            "steps": [
+              { "type": "text", "text": "Thanks for your question about charging the headlamp. " },
+              { "type": "error", "statusCode": 529 }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "stall",
+      "ticketNumber": "T-1023",
+      "turns": {
+        "*": [
+          {
+            "steps": [
+              { "type": "stall", "seconds": 30 },
+              { "type": "text", "text": "Thanks for the feedback on the Alpine Shell jacket." },
+              { "type": "usage", "inputTokens": 900, "outputTokens": 12 }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "invalid-json",
+      "ticketNumber": "T-1024",
+      "turns": {
+        "Classification": [
+          {
+            "steps": [
+              { "type": "text", "text": "Sure! Here is the classification: {\"category\": \"Account\", \"priority\": ", "chunkSize": 200, "delayMs": 0 },
+              { "type": "usage", "inputTokens": 350, "outputTokens": 20 }
+            ]
+          },
+          {
+            "steps": [
+              { "type": "text", "text": "{\"category\": \"Privacy\", \"priority\": \"Normal\"}", "chunkSize": 200, "delayMs": 0 },
+              { "type": "usage", "inputTokens": 420, "outputTokens": 15 }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "refusal",
+      "ticketNumber": "T-1025",
+      "turns": {
+        "*": [
+          {
+            "steps": [
+              { "type": "finish", "reason": "content_filter" },
+              { "type": "usage", "inputTokens": 800, "outputTokens": 0 }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

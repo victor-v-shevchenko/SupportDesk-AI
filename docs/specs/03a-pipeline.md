@@ -14,11 +14,11 @@ One shared `IChatClient` pipeline that every feature uses, with provider selecti
 - `AI:Chat:Provider` selects Anthropic (official `Anthropic` package and its `IChatClient` adapter), OpenAI (`Microsoft.Extensions.AI.OpenAI`), Ollama (`OllamaSharp`) or Fake
 - `AI:Embeddings:Provider` selects Ollama, OpenAI, Voyage (hand-written `IEmbeddingGenerator` over HTTP) or Fake
 - Provider SDK retries off (Anthropic: max retries 0); `HttpClient` connect timeout from `AI:Timeouts:ConnectSeconds`
-- Missing API key for the selected provider fails at startup with a clear message naming the setting
+- Missing API key for the selected provider fails at startup with a clear message naming the setting. Keys are `AI:Anthropic:ApiKey`, `AI:OpenAI:ApiKey` and `AI:Voyage:ApiKey` (user secrets, or `AI__…__ApiKey` from docker compose), not `ANTHROPIC_API_KEY`, which the dev container keeps out of its environment for Claude Code's sake (PLAN.md 6.1)
 - The fake provider fails at startup in `Production`
 
 **Pipeline** (in `SupportDesk.Core/AI`)
-- `ChatClientBuilder` with `FunctionInvokingChatClient` (max 3 iterations) and an `ErrorMappingMiddleware` that turns provider exceptions into `ModelUnavailableException` or `ModelRefusedException` (Anthropic `stop_reason = "refusal"`)
+- `ChatClientBuilder` with `FunctionInvokingChatClient` (max 3 iterations) and an `ErrorMappingMiddleware` that turns provider exceptions into `ModelUnavailableException` or `ModelRefusedException` (Anthropic `stop_reason = "refusal"`). It sits innermost, under the step 3b middleware, and recognizes SDK exceptions through one `IModelErrorClassifier` per provider registered in the API, so Core never references an SDK (PLAN.md 6.2)
 - `AiCallContext` helpers that put and read feature, prompt version, ticket ID, ticket number and reply run ID in `ChatOptions.AdditionalProperties`
 - Anthropic options per PLAN.md 6.7: no temperature or sampling options; effort set per feature through the adapter's provider-specific options. If the adapter can't pass effort, write that down in PLAN.md and continue without it
 
@@ -29,6 +29,7 @@ One shared `IChatClient` pipeline that every feature uses, with provider selecti
 
 **Fake provider**
 - `FakeChatClient` and `FakeEmbeddingGenerator` per PLAN.md 6.8
+- Besides the step types in PLAN.md 6.8, a `finish` step sets the finish reason, which is how the `refusal` scenario is scripted
 - `tests/fixtures/fake-scenarios.json` with a default scenario (a short streamed reply with a citation marker) and these named scenarios, keyed by ticket number: `tool-call-order`, `tool-call-proposal`, `error-before-first-item`, `error-after-first-item`, `stall`, `invalid-json`, `refusal`
 - Scenarios can be loaded from a file path in config, so tests can supply their own
 
