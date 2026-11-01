@@ -80,6 +80,70 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
 
+  e2e:
+    name: End-to-end tests
+    runs-on: ubuntu-latest
+    services:
+      db:
+        # The image docker-compose.yml uses
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: supportdesk
+          POSTGRES_PASSWORD: ${{ secrets.CI_POSTGRES_PASSWORD }}
+          POSTGRES_DB: supportdesk
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U supportdesk -d supportdesk"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Restore
+        run: |
+          dotnet restore
+          npm --prefix web ci --ignore-scripts
+
+      - name: Build the API
+        run: dotnet build --no-restore src/SupportDesk.Api
+
+      - name: Build the Angular app
+        run: npm --prefix web run build
+
+      - name: Install Chromium
+        run: npm --prefix web exec playwright -- install --with-deps chromium
+
+      # Playwright starts the API (fake providers) and serves the Angular build (web/playwright.config.ts).
+      # The connection string is built here, so the password only exists as a secret
+      - name: Playwright
+        env:
+          ConnectionStrings__SupportDesk: Host=localhost;Port=5432;Database=supportdesk;Username=supportdesk;Password=${{ secrets.CI_POSTGRES_PASSWORD }}
+        run: npm --prefix web run e2e
+
+      - name: Upload the report and failure screenshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            web/playwright-report/
+            web/test-results/
+            web/e2e-artifacts/
+          if-no-files-found: ignore
+          retention-days: 14
+
   gitleaks:
     name: Secret scan
     runs-on: ubuntu-latest

@@ -41,7 +41,7 @@ Run inside the dev container.
 | Evaluation (real model, costs money with a hosted provider; the token-count check only needs an Anthropic key and is free) | `dotnet test tests/SupportDesk.Eval --filter Category=Eval` |
 | Angular tests and lint | `npm --prefix web test -- --watch=false` and `npm --prefix web run lint` |
 | Angular tests with coverage (as CI) | `npm --prefix web run test:ci` |
-| End-to-end tests | `npm --prefix web run e2e` |
+| End-to-end tests (Playwright starts the API with the fake providers and the production Angular build; point `ConnectionStrings__SupportDesk` at a disposable database, since the tests create tickets; `E2E_WEB_PORT=4201` if another dev server holds 4200) | `npm --prefix web run e2e` |
 | New migration | `dotnet ef migrations add <Name> --project src/SupportDesk.Data --startup-project src/SupportDesk.Api` |
 | Regenerate embedding fixtures (needs Ollama with `mxbai-embed-large`; `ollama pull mxbai-embed-large`) | `dotnet run --project tools/EmbedFixtures` |
 
