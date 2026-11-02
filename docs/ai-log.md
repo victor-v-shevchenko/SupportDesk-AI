@@ -180,3 +180,10 @@ Entry format (from CLAUDE.md):
 - What was wrong: the global styles gave buttons no padding or font, so Summarize and Classify used the browser defaults (19px tall) next to Suggest reply (36px), which got its padding from the reply panel's own styles.
 - Fix: the padding and font are set once for every button in `styles.css`, and the per-component and articles-page button rules are removed (fix/action-button-sizes).
 - Test: e2e `the action buttons at 1440 px in the light theme Summarize, Classify and Suggest reply share one size and style` (and the dark and 375 px cases)
+
+## 2026-11-02 — E2E Tab check skipped controls taken out of the Tab order
+- Step: 11
+- Found by: test (found while rewriting the Tab walk for #28)
+- What was wrong: the Tab walk only collected controls with `tabIndex >= 0`, so a native button or link with `tabindex="-1"` was dropped silently and the test could not fail on it.
+- Fix: every visible control must have `tabIndex >= 0` and no `inert` ancestor, checked directly, and the walk is bounded for long lists (fix/e2e-tab-walk).
+- Test: `accessibility.spec.ts` "the ticket page is accessible by keyboard and every control is named" and "the ticket list is accessible by keyboard and every control is named" (shown failing with a temporary `tabindex="-1"` on "Suggest again" and on a `.ticket` row, not committed)
