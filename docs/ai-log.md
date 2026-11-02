@@ -117,3 +117,17 @@ Entry format (from CLAUDE.md):
 - What was wrong: only the tool loop's rounds were limited (`MaximumIterationsPerRequest = 3`), not the calls in one answer, so a hostile or broken model could send hundreds of tool calls in one answer and get one order lookup, proposal upsert and `tool_call` event for each.
 - Fix: a reply run runs at most 5 tool calls (`ReplyTools.MaxCallsPerRun`); every later call gets an error result and runs nothing (`fix/tool-call-cap` PR).
 - Test: `ReplyToolsTests.Calls_past_the_limit_in_one_run_run_nothing_and_get_an_error_result`, `ReplyToolsTests.Each_run_has_its_own_tool_call_limit` and `PromptInjectionTests.Many_proposal_calls_in_one_run_run_only_up_to_the_limit_and_leave_one_proposal`
+
+## 2026-11-01 — Ticket list kept its old badges after a classification
+- Step: 11
+- Found by: test
+- What was wrong: with the list beside the ticket, classifying the open ticket left its row in the list showing "Not classified" (the list was read once and never again).
+- Fix: `TicketsService.classify` bumps `listStale`, and the tickets page reloads the list, keeping its rows on screen meanwhile (step 11 branch). The fix was written before its test, which breaks the failing-test-first rule; the unit tests were added afterwards, and the second one was added in review.
+- Test: `TicketsService classify marks the ticket list stale so the list beside the ticket reads itself again`, `TicketsPage reads the list again when a ticket was classified, keeping the rows on screen meanwhile`; end-to-end `summarizes and classifies a ticket`
+
+## 2026-11-02 — Cost readout stopped retrying when two calls overlapped
+- Step: 11
+- Found by: review subagent
+- What was wrong: each refresh compared the row count with the count at that moment, and a reload does nothing while a read is loading. When a second call ended during the first call's read, its refresh was dropped and the first read's one row ended the retries, so the readout stayed at "1 call".
+- Fix: the readout keeps a running target (one more than the larger of the target and the rows shown, per ended call) and retries until the rows reach it; a new ticket resets it (step 11 branch).
+- Test: `TicketCost after a model call, while its row is not saved yet keeps reading while a second call ends before the first call read has finished` (committed failing first)

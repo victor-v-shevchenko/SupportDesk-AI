@@ -20,11 +20,11 @@ import { ApiStatus } from './api-status';
     </main>
   `,
   styles: `
-    .header { display: flex; align-items: center; gap: 1.5rem; padding: 0.75rem 1.5rem; border-bottom: 1px solid #dde1e6; }
-    .brand { font-weight: 600; color: inherit; text-decoration: none; }
-    nav { flex: 1; display: flex; gap: 1rem; }
-    nav a { color: #4c566a; text-decoration: none; }
-    nav a.active { color: #1f2937; font-weight: 600; }
+    .header { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.5rem; padding: 0.75rem 1.5rem; border-bottom: 1px solid var(--border); }
+    .brand { font-weight: 600; color: var(--fg); text-decoration: none; white-space: nowrap; }
+    nav { flex: 1; display: flex; gap: 1rem; white-space: nowrap; }
+    nav a { color: var(--muted); text-decoration: none; }
+    nav a.active { color: var(--fg); font-weight: 600; }
     .content { padding: 1.5rem; }
   `,
 })

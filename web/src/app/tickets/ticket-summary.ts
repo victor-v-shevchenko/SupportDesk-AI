@@ -2,6 +2,7 @@ import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, effect, inject, input, output, signal } from '@angular/core';
 import { Subscription } from 'rxjs';
+import { problemMessage } from '../api/api-errors';
 import { TicketSummary } from '../api/tickets.models';
 import { TicketsService } from '../api/tickets.service';
 
@@ -47,15 +48,17 @@ export interface GeneratedSummary {
     .header { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; }
     h2 { font-size: 1rem; margin: 0; }
     .text { margin: 0 0 0.25rem; line-height: 1.5; max-width: 70ch; }
-    .generated { margin: 0; font-size: 0.75rem; color: #6b7280; }
-    .loading, .empty { color: #6b7280; }
-    .error { color: #9b1c1c; }
+    .generated { margin: 0; font-size: 0.75rem; color: var(--muted); }
+    .loading, .empty { color: var(--muted); }
+    .error { color: var(--danger); }
   `,
 })
 export class TicketSummaryBox {
   readonly ticketId = input.required<number>();
   readonly summary = input<TicketSummary | null>(null);
   readonly generated = output<GeneratedSummary>();
+  /** A request ended, successfully or not: either way it wrote a usage row. */
+  readonly finished = output<void>();
 
   private readonly tickets = inject(TicketsService);
   protected readonly pending = signal(false);
@@ -87,26 +90,26 @@ export class TicketSummaryBox {
       next: (summary) => {
         this.pending.set(false);
         this.generated.emit({ ticketId, summary });
+        this.finished.emit();
       },
       error: (error: unknown) => {
         this.pending.set(false);
         this.error.set(messageFor(error));
+        this.finished.emit();
       },
     });
   }
 }
 
-/** The problem details' `detail` (written for people, PLAN.md 6.5), or a general message when there's none. */
+/** The problem details' text (PLAN.md 6.5), or a general message when there's none. */
 function messageFor(error: unknown): string {
-  if (error instanceof HttpErrorResponse) {
-    const detail: unknown = (error.error as { detail?: unknown } | null)?.detail;
-    if (typeof detail === 'string' && detail.length > 0) {
-      return detail;
-    }
+  const message = problemMessage(error);
+  if (message) {
+    return message;
+  }
 
-    if (error.status === 0) {
-      return "Couldn't reach the server. Check your connection and try again.";
-    }
+  if (error instanceof HttpErrorResponse && error.status === 0) {
+    return "Couldn't reach the server. Check your connection and try again.";
   }
 
   return "Couldn't generate a summary. Try again.";

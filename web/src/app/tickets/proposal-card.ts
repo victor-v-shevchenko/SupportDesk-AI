@@ -42,15 +42,15 @@ import { ProposalPayload } from '../api/replies.models';
     }
   `,
   styles: `
-    :host { display: block; padding: 0.75rem 1rem; border: 1px solid #e5e7eb; border-left: 3px solid #d97706; border-radius: 6px; background: #fffbeb; }
-    .label { margin: 0; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: #92400e; }
+    :host { display: block; padding: 0.75rem 1rem; border: 1px solid var(--border); border-left: 3px solid var(--warn-border); border-radius: 6px; background: var(--warn-bg); }
+    .label { margin: 0; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--warn-fg); }
     .title { margin: 0.25rem 0; font-size: 0.95rem; }
     .notes { margin: 0.25rem 0; white-space: pre-wrap; max-width: 70ch; }
-    .due { margin: 0.25rem 0 0.5rem; font-size: 0.85rem; color: #6b7280; }
+    .due { margin: 0.25rem 0 0.5rem; font-size: 0.85rem; color: var(--muted); }
     button { padding: 0.35rem 0.75rem; font: inherit; }
-    .confirmed { margin: 0; color: #166534; font-weight: 600; }
-    .expired { margin: 0; color: #6b7280; }
-    .error { margin: 0.5rem 0 0; color: #9b1c1c; }
+    .confirmed { margin: 0; color: var(--ok-fg); font-weight: 600; }
+    .expired { margin: 0; color: var(--muted); }
+    .error { margin: 0.5rem 0 0; color: var(--danger); }
   `,
 })
 export class ProposalCard {

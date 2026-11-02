@@ -14,9 +14,9 @@ import { HealthService } from './api/health.service';
     </span>
   `,
   styles: `
-    .status { font-size: 0.875rem; padding: 0.125rem 0.5rem; border-radius: 999px; background: #eceff3; color: #3b4252; }
-    .status[data-state='ok'] { background: #e3f4e8; color: #1d6b36; }
-    .status[data-state='error'] { background: #fbe7e7; color: #9b1c1c; }
+    .status { white-space: nowrap; font-size: 0.875rem; padding: 0.125rem 0.5rem; border-radius: 999px; background: var(--gray-bg); color: var(--gray-fg); }
+    .status[data-state='ok'] { background: var(--ok-bg); color: var(--ok-fg); }
+    .status[data-state='error'] { background: var(--red-bg); color: var(--danger); }
   `,
 })
 export class ApiStatus {
