@@ -96,13 +96,13 @@ public class EvalSuiteTests
 
         var folder = dryRun ? Path.Combine(AppContext.BaseDirectory, "eval-dry-runs") : Path.Combine(RepositoryRoot(), "docs", "eval");
         Directory.CreateDirectory(folder);
-        var path = Path.Combine(folder, EvalReport.FileName(run.Date, settings.Model));
+        var path = Path.Combine(folder, EvalReport.FileName(run.Date, settings.Model, settings.Label));
         await File.WriteAllTextAsync(path, report, Ct);
         TestContext.Current.SendDiagnosticMessage($"Report: {path}");
         if (settings.SaveReplies)
         {
             // Off by default: a reply can quote the ticket, and CLAUDE.md keeps ticket text out of logs unless a setting asks
-            var replies = Path.Combine(AppContext.BaseDirectory, "eval-replies", Path.GetFileNameWithoutExtension(EvalReport.FileName(run.Date, settings.Model)));
+            var replies = Path.Combine(AppContext.BaseDirectory, "eval-replies", Path.GetFileNameWithoutExtension(EvalReport.FileName(run.Date, settings.Model, settings.Label)));
             Directory.CreateDirectory(replies);
             foreach (var outcome in outcomes)
             {

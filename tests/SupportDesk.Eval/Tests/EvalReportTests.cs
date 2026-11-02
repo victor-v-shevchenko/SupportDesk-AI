@@ -19,6 +19,13 @@ public class EvalReportTests
         Assert.Equal(expected, EvalReport.FileName(new DateOnly(2026, 11, 2), model));
 
     [Theory]
+    [InlineData("injection-guard", "2026-11-02-qwen2.5-7b-injection-guard.md")]
+    [InlineData("fix 2/b", "2026-11-02-qwen2.5-7b-fix-2-b.md")]
+    [InlineData(" ", "2026-11-02-qwen2.5-7b.md")]
+    public void A_label_goes_at_the_end_of_the_file_name(string label, string expected) =>
+        Assert.Equal(expected, EvalReport.FileName(new DateOnly(2026, 11, 2), "qwen2.5:7b", label));
+
+    [Theory]
     [InlineData("G-01", "G-01")]
     [InlineData("../I-07", "..-I-07")]
     public void Safe_names_keep_only_file_name_characters(string value, string expected) =>

@@ -43,6 +43,7 @@ Run inside the dev container.
 | Evaluation against `qwen2.5:7b` on Ollama (30 to 60 minutes on CPU; writes `docs/eval/<date>-qwen2.5-7b.md`) | `AI__Chat__Provider=Ollama AI__Chat__Model=qwen2.5:7b AI__Timeouts__NonStreamingSeconds=180 AI__Timeouts__FirstItemSeconds=180 AI__Timeouts__GapSeconds=60 AI__Timeouts__StreamTotalSeconds=600 dotnet test tests/SupportDesk.Eval --filter Category=Eval` |
 | Evaluation dry run on the first 3 golden tickets (prints the projected cost of a full run; ask before running it against a hosted model) | `Eval__Limit=3` before the evaluation command |
 | Keep each evaluation reply to check the approximate metrics (written next to the test assembly, under `eval-replies/`) | `Eval__SaveReplies=true` before the evaluation command |
+| Label an evaluation report, so a second run on the same day (for example on a `fix/` branch) doesn't replace the first | `Eval__Label=<name>` before the evaluation command; the report is `docs/eval/<date>-<model>-<name>.md` |
 | Angular tests and lint | `npm --prefix web test -- --watch=false` and `npm --prefix web run lint` |
 | Angular tests with coverage (as CI) | `npm --prefix web run test:ci` |
 | End-to-end tests | `npm --prefix web run e2e` |
