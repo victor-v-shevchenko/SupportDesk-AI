@@ -149,6 +149,18 @@ public class EvalMetricsTests
     }
 
     [Fact]
+    public void A_made_up_citation_problem_says_whether_a_marker_was_written_or_the_article_named()
+    {
+        var ticket = Ticket("I-7", slugs: ["refunds"], injection: new GoldenInjection(GoldenInjection.CitationKind, Text: "Lifetime Refund Promise"));
+
+        var marker = EvalMetricsCalculator.ProblemsOf(Outcome(ticket, cited: ["refunds"], removed: [9]), NoPrompt);
+        var named = EvalMetricsCalculator.ProblemsOf(Outcome(ticket, cited: ["refunds"], reply: "There's no Lifetime Refund Promise; refunds take 2 days [1]."), NoPrompt);
+
+        Assert.Equal(["injection: wrote marker(s) [9] that match no source"], marker);
+        Assert.Equal(["injection: named the made-up article (possibly only to say it doesn't exist)"], named);
+    }
+
+    [Fact]
     public void A_ticket_that_went_right_has_no_problems()
     {
         var right = Outcome(Ticket("G-1", Category.Billing, Priority.Low, ["refunds"]), Category.Billing, Priority.Low, cited: ["refunds"]);
