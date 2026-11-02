@@ -32,7 +32,7 @@ internal sealed class ReplyRig : IDisposable
     private readonly ILoggerFactory _loggerFactory;
     private readonly TestPipeline _pipeline;
 
-    private ReplyRig(FakeTimeProvider time, SpyChatClient spy, IRetrievalService retrieval, StubOrders orders, RecordingFollowUps followUps, Action<AiOptions>? configure)
+    private ReplyRig(TimerWatchingTimeProvider time, SpyChatClient spy, IRetrievalService retrieval, StubOrders orders, RecordingFollowUps followUps, Action<AiOptions>? configure)
     {
         Time = time;
         Spy = spy;
@@ -62,7 +62,7 @@ internal sealed class ReplyRig : IDisposable
             _loggerFactory.CreateLogger<ReplyService>());
     }
 
-    public FakeTimeProvider Time { get; }
+    public TimerWatchingTimeProvider Time { get; }
 
     public SpyChatClient Spy { get; }
 
@@ -81,7 +81,7 @@ internal sealed class ReplyRig : IDisposable
     public static ReplyRig Create(
         string turns, IRetrievalService? retrieval = null, Action<AiOptions>? configure = null, StubOrders? orders = null, RecordingFollowUps? followUps = null)
     {
-        var time = new FakeTimeProvider(new DateTimeOffset(2026, 11, 1, 9, 0, 0, TimeSpan.Zero));
+        var time = new TimerWatchingTimeProvider(new DateTimeOffset(2026, 11, 1, 9, 0, 0, TimeSpan.Zero));
         var fake = new FakeChatClient(FakeScenarioSet.Parse(Scenario(turns)), time);
         return new ReplyRig(time, new SpyChatClient(fake, time), retrieval ?? new StubRetrieval(), orders ?? new StubOrders(), followUps ?? new RecordingFollowUps(), configure);
     }
@@ -244,5 +244,50 @@ internal static class StreamAssert
         // Fixed text only: never the provider's message
         Assert.False(string.IsNullOrWhiteSpace(error.Message));
         return error;
+    }
+}
+
+/// <summary>
+/// A fake clock that tells a test when something starts a timer for a given wait, so the test can act at that moment
+/// without sleeping in real time.
+/// </summary>
+internal sealed class TimerWatchingTimeProvider(DateTimeOffset start) : FakeTimeProvider(start)
+{
+    private readonly Lock _gate = new();
+    private readonly List<(TimeSpan DueTime, TaskCompletionSource Started)> _watches = [];
+    private readonly List<TimeSpan> _created = [];
+
+    /// <summary>Completes when a timer is created, or already was, with exactly <paramref name="dueTime"/> as its first wait.</summary>
+    public Task TimerStartedAsync(TimeSpan dueTime)
+    {
+        lock (_gate)
+        {
+            var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (_created.Contains(dueTime))
+            {
+                started.SetResult();
+            }
+            else
+            {
+                _watches.Add((dueTime, started));
+            }
+
+            return started.Task;
+        }
+    }
+
+    public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+    {
+        var timer = base.CreateTimer(callback, state, dueTime, period);
+        lock (_gate)
+        {
+            _created.Add(dueTime);
+            foreach (var watch in _watches.Where(w => w.DueTime == dueTime))
+            {
+                watch.Started.TrySetResult();
+            }
+        }
+
+        return timer;
     }
 }

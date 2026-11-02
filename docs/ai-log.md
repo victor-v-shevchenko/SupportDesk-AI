@@ -159,3 +159,10 @@ Entry format (from CLAUDE.md):
 - What was wrong: the three "cancels the provider call within one second" tests moved the fake clock 100 ms for each millisecond of real time while waiting for the cancelled read. When the machine was busy, the cancellation took more real time to land, the fake clock passed one second, and the test failed (seen once in a full run alongside the integration tests).
 - Fix: the tests wait for the cancelled read in real time, with a 10-second limit, while the fake clock stays where it is, so the read must finish without any fake time passing; a call that needed the clock to notice would time out and fail (fix/disconnect-test-clock). The abort-and-restart test waits for its cancelled first read the same way.
 - Test: `ClientAndTransportTests.A_disconnect_mid_stream_cancels_the_provider_call_within_one_second_and_sends_no_error` and the two other disconnect tests; a flaky failure can't be committed as a failing test first, so 20 isolated runs and 5 full runs under load are the evidence
+
+## 2026-11-02 — Retry-disconnect test didn't confirm the call was in its backoff
+- Step: 9
+- Found by: review subagent
+- What was wrong: `A_disconnect_while_waiting_to_retry_stops_the_retries_within_one_second` slept a real 100 ms and assumed the call was waiting out its backoff. A cancellation that landed earlier still passed, through the error path, so the test might not check "while waiting to retry" (issue #29).
+- Fix: the rig's fake clock reports when a timer is created for a given wait; the provider asks for a 3.7 s retry wait, no other timer in the call has that wait, and the test cancels only after that timer exists (this PR).
+- Test: `ClientAndTransportTests.A_disconnect_while_waiting_to_retry_stops_the_retries_within_one_second`; with the retry wait made to ignore the token, it now fails (timeout after 10 s), checked by hand
