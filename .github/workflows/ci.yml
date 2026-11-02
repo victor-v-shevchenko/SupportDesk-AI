@@ -119,8 +119,9 @@ jobs:
       - name: Build the API
         run: dotnet build --no-restore src/SupportDesk.Api
 
+      # The Playwright CLI that npm ci installed, at the version package-lock.json pins; nothing is fetched from npm here
       - name: Install Chromium
-        run: npm --prefix web exec playwright -- install --with-deps chromium
+        run: web/node_modules/.bin/playwright install --with-deps chromium
 
       # Playwright starts the API (fake providers) and serves the app with `ng serve --configuration production`
       # (web/playwright.config.ts), which builds it first.

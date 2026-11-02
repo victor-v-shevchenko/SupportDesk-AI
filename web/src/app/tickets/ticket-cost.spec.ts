@@ -166,6 +166,10 @@ describe('TicketCost', () => {
 
       await vi.advanceTimersByTimeAsync(60_000);
       http.expectNone(url);
+      // The readout keeps showing what the last read returned
+      fixture.detectChanges();
+      const text = (fixture.nativeElement as HTMLElement).querySelector('.totals')?.textContent?.replace(/\s+/g, ' ');
+      expect(text).toContain('1 call');
       fixture.destroy();
     });
   });
