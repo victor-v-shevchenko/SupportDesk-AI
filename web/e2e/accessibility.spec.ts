@@ -2,13 +2,16 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, Page, test } from '@playwright/test';
 import { createTicket, openTicket } from './support';
 
-// The Tab walk presses a key per control and the ticket list grows with every run, so these tests need more than 30 s on a busy machine
-test.describe.configure({ timeout: 120_000 });
+// The Tab walk is bounded, but the ARIA snapshot, the cursor scan and axe still scale with the rows of the ticket list (about 3 s per 100 tickets)
+test.describe.configure({ timeout: 60_000 });
 
 /**
  * What the page gives a keyboard and screen reader user:
  * - every link, button and form control in the ARIA snapshot (what a screen reader is given) has an accessible name;
- * - the Tab key reaches every visible, enabled control that can take focus (a native control, or an element with a tabindex);
+ * - the Tab key reaches every visible, enabled control that can take focus (a native control, or an element with a tabindex).
+ *   In any outermost `ul`/`ol` with more than four controls, the walk covers the first three controls and the last one; the
+ *   rest are checked directly to have `tabIndex >= 0` and not to sit under an `inert` ancestor. So the walk's length doesn't
+ *   grow with the data (the ticket list has no paging), though the whole test still does a little;
  * - nothing that looks clickable (`cursor: pointer`) sits outside a focusable control, which would be a mouse-only action;
  * - axe finds no text below the AA contrast ratio.
  * Disabled controls are skipped on purpose: they are not meant to take focus.
@@ -26,21 +29,67 @@ async function expectAccessible(page: Page): Promise<void> {
   }, focusable);
   expect(mouseOnly, 'elements that look clickable but cannot take focus').toEqual([]);
 
-  // Walk the page with Tab: each enabled, visible control must take focus
-  const controls = await page.evaluate((selector) => {
-    const visible = [...document.querySelectorAll<HTMLElement>(selector)].filter((el) => el.getClientRects().length > 0 && el.tabIndex >= 0);
-    visible.forEach((el, i) => el.setAttribute('data-e2e-control', String(i)));
-    return visible.length;
+  // Walk the page with Tab: each enabled, visible control must take focus. The walk is bounded: in a list of controls
+  // (the ticket list grows with every run) the first three controls and the last one are walked and the walk jumps over
+  // the rest; those are checked directly instead (tabIndex >= 0, not inert).
+  const walk = await page.evaluate((selector) => {
+    document.querySelectorAll('[data-e2e-index], [data-e2e-control], [data-e2e-jump-to]').forEach((el) => {
+      el.removeAttribute('data-e2e-index');
+      el.removeAttribute('data-e2e-control');
+      el.removeAttribute('data-e2e-jump-to');
+    });
+    const native = 'a[href], button, input, select, textarea, summary';
+    const visible = [...document.querySelectorAll<HTMLElement>(selector)].filter(
+      (el) => el.getClientRects().length > 0 && (el.matches(native) || el.tabIndex >= 0),
+    );
+    const notTabbable = visible.filter((el) => el.tabIndex < 0 || el.closest('[inert]') !== null).map((el) => el.outerHTML.slice(0, 120));
+    // Group by the outermost list, so the controls of a nested list belong to the row that holds it and are skipped with it
+    const groups = new Map<Element, HTMLElement[]>();
+    for (const el of visible) {
+      let list = el.closest('ul, ol');
+      while (list?.parentElement?.closest('ul, ol')) {
+        list = list.parentElement.closest('ul, ol');
+      }
+      if (list) {
+        groups.set(list, [...(groups.get(list) ?? []), el]);
+      }
+    }
+    const walked = 3;
+    const skipped = new Set<HTMLElement>();
+    visible.forEach((el, i) => el.setAttribute('data-e2e-index', String(i)));
+    for (const members of groups.values()) {
+      // With one control between the walked ones and the last, the next Tab reaches the last anyway
+      if (members.length > walked + 2) {
+        members.slice(walked, -1).forEach((el) => skipped.add(el));
+        // After the last walked control, focus the one before the last so the next Tab reaches the last
+        members[walked - 1].setAttribute('data-e2e-jump-to', members[members.length - 2].getAttribute('data-e2e-index') ?? '');
+      }
+    }
+    const toWalk = visible.filter((el) => !skipped.has(el));
+    toWalk.forEach((el) => el.setAttribute('data-e2e-control', el.getAttribute('data-e2e-index') ?? ''));
+    return { count: toWalk.length, notTabbable };
   }, focusable);
-  expect(controls).toBeGreaterThan(0);
+  expect(walk.count).toBeGreaterThan(0);
+  expect(walk.notTabbable, 'controls that are taken out of the Tab order').toEqual([]);
 
   const reached = new Set<string>();
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  for (let i = 0; i < controls * 2 + 10 && reached.size < controls; i++) {
+  for (let i = 0; i < walk.count * 2 + 10 && reached.size < walk.count; i++) {
     await page.keyboard.press('Tab');
-    const id = await page.evaluate(() => document.activeElement?.getAttribute('data-e2e-control') ?? null);
-    if (id !== null) {
-      reached.add(id);
+    const step = await page.evaluate(() => {
+      const active = document.activeElement as HTMLElement | null;
+      const jumpTo = active?.getAttribute('data-e2e-jump-to');
+      let jumpMissing = false;
+      if (jumpTo) {
+        const target = document.querySelector<HTMLElement>(`[data-e2e-index="${jumpTo}"]`);
+        jumpMissing = target === null;
+        target?.focus();
+      }
+      return { id: active?.getAttribute('data-e2e-control') ?? null, jumpMissing };
+    });
+    expect(step.jumpMissing, 'jump target vanished; the list re-rendered during the walk').toBe(false);
+    if (step.id !== null) {
+      reached.add(step.id);
     }
   }
   const missed = await page.evaluate((seen) => {
