@@ -54,6 +54,43 @@ public class EvalSetupTests
     }
 
     [Fact]
+    public async Task Building_the_golden_embeddings_from_the_committed_vectors_gives_the_committed_file()
+    {
+        var (tickets, queries, _) = await ReadGoldenAsync();
+        var golden = await GoldenData.LoadAsync(Ct);
+
+        // Batches of 4, so the last batch is a partial one
+        var built = await GoldenSet.BuildAsync(tickets, golden.Embeddings, queries.Model, queries.Dimensions, batchSize: 4, Ct);
+
+        Assert.Equal((queries.Model, queries.Dimensions), (built.Model, built.Dimensions));
+        Assert.Equal(queries.Items.Select(i => (i.Question, i.Hash)), built.Items.Select(i => (i.Question, i.Hash)));
+        Assert.All(built.Items.Zip(queries.Items), pair => Assert.Equal(pair.Second.Vector, pair.First.Vector));
+    }
+
+    [Fact]
+    public async Task Regenerating_writes_the_golden_embeddings_next_to_the_tickets_as_the_tool_does()
+    {
+        var golden = await GoldenData.LoadAsync(Ct);
+        var folder = Directory.CreateTempSubdirectory("golden-").FullName;
+        try
+        {
+            File.Copy(Path.Combine(GoldenData.Folder, GoldenSet.TicketsFile), Path.Combine(folder, GoldenSet.TicketsFile));
+
+            var count = await GoldenSet.RegenerateAsync(folder, golden.Embeddings, golden.Embeddings.Model, 1024, batchSize: 16, Ct);
+
+            Assert.Equal(golden.Tickets.Count, count);
+            // Byte for byte what's committed, so regenerating with the same model leaves no diff
+            Assert.Equal(
+                await File.ReadAllTextAsync(Path.Combine(GoldenData.Folder, GoldenSet.EmbeddingsFile), Ct),
+                await File.ReadAllTextAsync(Path.Combine(folder, GoldenSet.EmbeddingsFile), Ct));
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Golden_embeddings_from_another_model_fail_early_naming_the_command()
     {
         var (tickets, queries, articles) = await ReadGoldenAsync();

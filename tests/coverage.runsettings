@@ -7,7 +7,8 @@
         <Configuration>
           <!-- Sonar reads OpenCover; coverlet writes Cobertura by default -->
           <Format>opencover</Format>
-          <Include>[SupportDesk.*]*</Include>
+          <!-- The fixture tool's assembly is EmbedFixtures; its file and golden-set code is run by the integration and eval tests -->
+          <Include>[SupportDesk.*]*,[EmbedFixtures]*</Include>
           <Exclude>[SupportDesk.*Tests]*,[SupportDesk.Eval]*</Exclude>
           <ExcludeByFile>**/Migrations/*.cs</ExcludeByFile>
           <ExcludeByAttribute>GeneratedCodeAttribute,CompilerGeneratedAttribute,ExcludeFromCodeCoverageAttribute</ExcludeByAttribute>

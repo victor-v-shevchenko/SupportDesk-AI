@@ -54,13 +54,8 @@ internal static class Program
         await EmbeddingFixtures.WriteAsync(Path.Combine(folder, EmbeddingFixtures.QuestionsFile), questionFile, cancel.Token);
         Console.WriteLine($"Wrote {articleFile.Items.Count} chunks and {questionFile.Items.Count} questions to {EmbeddingFixtures.FolderPath}.");
 
-        var golden = Path.Combine(root, GoldenSet.FolderPath);
-        var tickets = await GoldenSet.ReadTicketsAsync(Path.Combine(golden, GoldenSet.TicketsFile), cancel.Token);
-        var vectors = await EmbeddingFixtures.EmbedAsync(
-            generator, [.. tickets.Select(GoldenSet.QueryOf)], options.ResolvedModel, options.Dimensions, batchSize, cancel.Token);
-        await EmbeddingFixtures.WriteAsync(
-            Path.Combine(golden, GoldenSet.EmbeddingsFile), GoldenSet.ToFixture(tickets, vectors, options.ResolvedModel, options.Dimensions), cancel.Token);
-        Console.WriteLine($"Wrote {tickets.Count} golden ticket queries to {GoldenSet.FolderPath}.");
+        var goldenCount = await GoldenSet.RegenerateAsync(Path.Combine(root, GoldenSet.FolderPath), generator, options.ResolvedModel, options.Dimensions, batchSize, cancel.Token);
+        Console.WriteLine($"Wrote {goldenCount} golden ticket queries to {GoldenSet.FolderPath}.");
         return 0;
     }
 

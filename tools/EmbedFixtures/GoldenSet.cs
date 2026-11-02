@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.AI;
 using SupportDesk.Core.Replies;
 using SupportDesk.Core.Retrieval;
 using SupportDesk.Core.Tickets;
@@ -45,17 +46,39 @@ public static class GoldenSet
         });
     }
 
-    /// <summary>One item per golden ticket: its query, the query's hash and its vector.</summary>
-    public static FixtureFile<QuestionFixture> ToFixture(IReadOnlyList<GoldenTicket> tickets, IReadOnlyList<float[]> vectors, string model, int dimensions)
+    /// <summary>
+    /// Reads <see cref="TicketsFile"/> in <paramref name="folder"/>, embeds every ticket's query and writes
+    /// <see cref="EmbeddingsFile"/> next to it; returns the number of tickets.
+    /// </summary>
+    public static async Task<int> RegenerateAsync(
+        string folder,
+        IEmbeddingGenerator<string, Embedding<float>> generator,
+        string model,
+        int dimensions,
+        int batchSize,
+        CancellationToken cancellationToken)
+    {
+        var tickets = await ReadTicketsAsync(Path.Combine(folder, TicketsFile), cancellationToken);
+        var file = await BuildAsync(tickets, generator, model, dimensions, batchSize, cancellationToken);
+        await EmbeddingFixtures.WriteAsync(Path.Combine(folder, EmbeddingsFile), file, cancellationToken);
+        return tickets.Count;
+    }
+
+    /// <summary>Embeds each golden ticket's query, in batches: one item per ticket with the query, its hash and its vector.</summary>
+    public static async Task<FixtureFile<QuestionFixture>> BuildAsync(
+        IReadOnlyList<GoldenTicket> tickets,
+        IEmbeddingGenerator<string, Embedding<float>> generator,
+        string model,
+        int dimensions,
+        int batchSize,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(tickets);
-        ArgumentNullException.ThrowIfNull(vectors);
 
-        return new FixtureFile<QuestionFixture>(model, dimensions, [.. tickets.Select((t, i) =>
-        {
-            var query = QueryOf(t);
-            return new QuestionFixture(query, ArticleChunkDraft.HashOf(query), vectors[i]);
-        })]);
+        var queries = tickets.Select(QueryOf).ToList();
+        var vectors = await EmbeddingFixtures.EmbedAsync(generator, queries, model, dimensions, batchSize, cancellationToken);
+        return new FixtureFile<QuestionFixture>(
+            model, dimensions, [.. queries.Select((q, i) => new QuestionFixture(q, ArticleChunkDraft.HashOf(q), vectors[i]))]);
     }
 }
 
