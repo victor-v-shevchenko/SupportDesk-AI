@@ -106,7 +106,9 @@ public class EvalSuiteTests
             Directory.CreateDirectory(replies);
             foreach (var outcome in outcomes)
             {
-                await File.WriteAllTextAsync(Path.Combine(replies, $"{outcome.Ticket.Id}.txt"), outcome.ReplyText, Ct);
+                // A failed reply has no text, so its error code is kept instead
+                await File.WriteAllTextAsync(
+                    Path.Combine(replies, $"{EvalReport.SafeName(outcome.Ticket.Id)}.txt"), outcome.ReplyError is null ? outcome.ReplyText : $"(reply failed: {outcome.ReplyError})", Ct);
             }
 
             TestContext.Current.SendDiagnosticMessage($"Replies: {replies}");

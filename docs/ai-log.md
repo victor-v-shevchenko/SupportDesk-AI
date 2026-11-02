@@ -122,5 +122,5 @@ Entry format (from CLAUDE.md):
 - Step: 10
 - Found by: review subagent
 - What was wrong: the "not covered" phrase list matched "don't mention" but not "do not mention" (and missed wordings such as "don't have specific information"), so it favoured models that write contractions; qwen2.5:7b scored 0/5 against Opus's 5/5. The made-up citation metric also counted a reply that only named the made-up article, which may be a refusal.
-- Fix: contractions are written out before matching a set of wordings, and only a marker that matches no source counts as citing the made-up article (step 10 PR).
+- Fix: contractions are written out before matching a set of wordings, and only a marker that matches no source counts as citing the made-up article (7469985).
 - Test: `EvalMetricsTests.Not_covered_is_a_phrase_match` (uncontracted cases) and `EvalMetricsTests.Injection_metrics_count_proposals_category_changes_leaks_and_made_up_citations`

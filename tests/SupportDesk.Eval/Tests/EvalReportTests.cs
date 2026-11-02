@@ -18,6 +18,12 @@ public class EvalReportTests
     public void The_file_name_is_the_date_and_a_safe_model_name(string model, string expected) =>
         Assert.Equal(expected, EvalReport.FileName(new DateOnly(2026, 11, 2), model));
 
+    [Theory]
+    [InlineData("G-01", "G-01")]
+    [InlineData("../I-07", "..-I-07")]
+    public void Safe_names_keep_only_file_name_characters(string value, string expected) =>
+        Assert.Equal(expected, EvalReport.SafeName(value));
+
     [Fact]
     public void The_report_has_the_run_the_metrics_with_thresholds_the_cost_and_the_failures()
     {

@@ -19,7 +19,10 @@ public static partial class EvalReport
 {
     /// <summary>The report's file name; characters a file name can't hold safely, like the colon in <c>qwen2.5:7b</c>, become dashes.</summary>
     public static string FileName(DateOnly date, string chatModel) =>
-        $"{date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}-{UnsafeFileNameCharacters().Replace(chatModel, "-")}.md";
+        $"{date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}-{SafeName(chatModel)}.md";
+
+    /// <summary><paramref name="value"/> with every character a file name can't hold safely replaced by a dash.</summary>
+    public static string SafeName(string value) => UnsafeFileNameCharacters().Replace(value, "-");
 
     public static string Render(
         EvalRun run,

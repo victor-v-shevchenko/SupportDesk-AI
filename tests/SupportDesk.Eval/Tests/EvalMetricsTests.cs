@@ -70,6 +70,8 @@ public class EvalMetricsTests
     [InlineData("We do not have any information about price matching.", true)]
     [InlineData("I don't have specific information about recycling old gear.", true)]
     [InlineData("I was unable to find details on that.", true)]
+    // A known false hit: a stated policy matches a wording about the sources (docs/eval/README.md)
+    [InlineData("We do not provide tent rentals.", true)]
     [InlineData("We offer a 10% student discount at checkout.", false)]
     [InlineData("", false)]
     public void Not_covered_is_a_phrase_match(string reply, bool expected)
