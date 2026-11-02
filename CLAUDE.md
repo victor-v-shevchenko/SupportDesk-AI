@@ -45,7 +45,7 @@ Run inside the dev container.
 | Keep each evaluation reply to check the approximate metrics (written next to the test assembly, under `eval-replies/`) | `Eval__SaveReplies=true` before the evaluation command |
 | Angular tests and lint | `npm --prefix web test -- --watch=false` and `npm --prefix web run lint` |
 | Angular tests with coverage (as CI) | `npm --prefix web run test:ci` |
-| End-to-end tests | `npm --prefix web run e2e` |
+| End-to-end tests (Playwright starts the API with the fake providers and the production Angular build; an API you started yourself is reused, so give it the same environment: `AI__Chat__Provider=Fake AI__Embeddings__Provider=Fake Retrieval__MinSimilarity=0 AI__Pricing__6__Model=fake AI__Pricing__6__InputPerMTok=1000 AI__Pricing__6__OutputPerMTok=2000`; point `ConnectionStrings__SupportDesk` at a disposable database, since the tests create tickets; `E2E_WEB_PORT=4201` if another dev server holds 4200) | `npm --prefix web run e2e` |
 | New migration | `dotnet ef migrations add <Name> --project src/SupportDesk.Data --startup-project src/SupportDesk.Api` |
 | Regenerate embedding fixtures, including the evaluation's golden embeddings (needs Ollama with `mxbai-embed-large`; `ollama pull mxbai-embed-large`) | `dotnet run --project tools/EmbedFixtures` |
 

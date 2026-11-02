@@ -23,14 +23,14 @@ import { Category, ClassificationStatus, Priority } from '../api/tickets.models'
   `,
   styles: `
     .badges { display: inline-flex; gap: 0.375rem; }
-    .badge { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 0.125rem 0.5rem; border-radius: 999px; background: #eceff3; color: #3b4252; white-space: nowrap; }
-    .category { background: #ede9fe; color: #5b21b6; }
-    .priority[data-priority='Low'] { background: #eceff3; color: #4b5563; }
-    .priority[data-priority='Normal'] { background: #e0ecff; color: #1e40af; }
-    .priority[data-priority='High'] { background: #fff4d6; color: #8a5a00; }
-    .priority[data-priority='Urgent'] { background: #fde2e2; color: #9b1c1c; }
-    .manual { background: #fde2e2; color: #9b1c1c; }
-    .not-run { font-size: 0.75rem; color: #6b7280; }
+    .badge { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 0.125rem 0.5rem; border-radius: 999px; background: var(--gray-bg); color: var(--gray-fg); white-space: nowrap; }
+    .category { background: var(--violet-bg); color: var(--violet-fg); }
+    .priority[data-priority='Low'] { background: var(--gray-bg); color: var(--muted); }
+    .priority[data-priority='Normal'] { background: var(--blue-bg); color: var(--blue-fg); }
+    .priority[data-priority='High'] { background: var(--amber-bg); color: var(--amber-fg); }
+    .priority[data-priority='Urgent'] { background: var(--red-bg); color: var(--danger); }
+    .manual { background: var(--red-bg); color: var(--danger); }
+    .not-run { font-size: 0.75rem; color: var(--muted); }
   `,
 })
 export class ClassificationBadges {

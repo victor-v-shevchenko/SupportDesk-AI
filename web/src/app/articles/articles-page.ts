@@ -43,7 +43,7 @@ const maxQueryLength = 500;
 
       @if (query()) {
         @if (results.isLoading()) {
-          <p class="loading">Searching…</p>
+          <p class="loading" role="status">Searching…</p>
         } @else if (results.error()) {
           <div class="error" role="alert">
             <p>{{ searchError() }}</p>
@@ -73,7 +73,7 @@ const maxQueryLength = 500;
     <section aria-labelledby="articles-heading">
       <h2 id="articles-heading">Articles</h2>
       @if (articles.isLoading() && !articles.hasValue()) {
-        <p class="loading">Loading articles…</p>
+        <p class="loading" role="status">Loading articles…</p>
       } @else if (articles.error()) {
         <div class="error" role="alert">
           <p>Couldn't load the articles.</p>
@@ -95,19 +95,19 @@ const maxQueryLength = 500;
     form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
     input[type='search'] { flex: 1 1 20rem; padding: 0.4rem 0.5rem; font: inherit; }
     select, button { padding: 0.4rem 0.6rem; font: inherit; }
-    label { font-size: 0.875rem; color: #4b5563; }
+    label { font-size: 0.875rem; color: var(--muted); }
     .results { padding-left: 1.25rem; }
     .results li { margin: 0.75rem 0; }
     .result-head { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: baseline; }
-    .title { font-weight: 600; color: #1d4ed8; text-decoration: none; }
-    .heading { color: #4b5563; }
-    .score { margin-left: auto; font-variant-numeric: tabular-nums; color: #1d4ed8; }
-    .text { margin: 0.25rem 0 0; white-space: pre-line; color: #374151; font-size: 0.9rem; }
+    .title { font-weight: 600; color: var(--link); text-decoration: none; }
+    .heading { color: var(--muted); }
+    .score { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--link); }
+    .text { margin: 0.25rem 0 0; white-space: pre-line; color: var(--fg); font-size: 0.9rem; }
     .articles { list-style: none; padding: 0; }
-    .articles li { padding: 0.4rem 0; border-bottom: 1px solid #e5e7eb; }
-    .slug { margin-left: 0.5rem; color: #6b7280; font-size: 0.85rem; }
-    .loading, .empty { color: #6b7280; }
-    .error { color: #9b1c1c; }
+    .articles li { padding: 0.4rem 0; border-bottom: 1px solid var(--border); }
+    .slug { margin-left: 0.5rem; color: var(--muted); font-size: 0.85rem; }
+    .loading, .empty { color: var(--muted); }
+    .error { color: var(--danger); }
   `,
 })
 export class ArticlesPage {

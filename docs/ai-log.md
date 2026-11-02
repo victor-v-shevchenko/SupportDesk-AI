@@ -124,3 +124,17 @@ Entry format (from CLAUDE.md):
 - What was wrong: the "not covered" phrase list matched "don't mention" but not "do not mention" (and missed wordings such as "don't have specific information"), so it favoured models that write contractions; qwen2.5:7b scored 0/5 against Opus's 5/5. The made-up citation metric also counted a reply that only named the made-up article, which may be a refusal.
 - Fix: contractions are written out before matching a set of wordings, and only a marker that matches no source counts as citing the made-up article (7469985).
 - Test: `EvalMetricsTests.Not_covered_is_a_phrase_match` (uncontracted cases) and `EvalMetricsTests.Injection_metrics_count_proposals_category_changes_leaks_and_made_up_citations`
+
+## 2026-11-01 — Ticket list kept its old badges after a classification
+- Step: 11
+- Found by: test
+- What was wrong: with the list beside the ticket, classifying the open ticket left its row in the list showing "Not classified" (the list was read once and never again).
+- Fix: `TicketsService.classify` bumps `listStale`, and the tickets page reloads the list, keeping its rows on screen meanwhile (step 11 branch). The fix was written before its test, which breaks the failing-test-first rule; the unit tests were added afterwards, and the second one was added in review.
+- Test: `TicketsService classify marks the ticket list stale so the list beside the ticket reads itself again`, `TicketsPage reads the list again when a ticket was classified, keeping the rows on screen meanwhile`; end-to-end `summarizes and classifies a ticket`
+
+## 2026-11-02 — Cost readout stopped retrying when two calls overlapped
+- Step: 11
+- Found by: review subagent
+- What was wrong: each refresh compared the row count with the count at that moment, and a reload does nothing while a read is loading. When a second call ended during the first call's read, its refresh was dropped and the first read's one row ended the retries, so the readout stayed at "1 call".
+- Fix: the readout keeps a running target (one more than the larger of the target and the rows shown, per ended call) and retries until the rows reach it; a new ticket resets it (step 11 branch).
+- Test: `TicketCost after a model call, while its row is not saved yet keeps reading while a second call ends before the first call read has finished` (committed failing first)

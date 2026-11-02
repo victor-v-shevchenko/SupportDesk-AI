@@ -1,2 +1,76 @@
+/* Theme tokens: light by default, dark when the system asks for it. Text pairs are meant to meet WCAG AA (4.5:1), checked
+   on each page by axe in the end-to-end tests; --control-border is at least 3:1 (WCAG 1.4.11) against the page and surface. */
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #1f2937;
+  --muted: #4b5563;
+  --surface: #f8f9fb;
+  --border: #c9ced6;
+  --control-border: #7d8796;
+  --link: #1d4ed8;
+  --focus: #1d4ed8;
+  --danger: #9b1c1c;
+  --ok-fg: #166534;
+  --ok-bg: #e3f4e8;
+  --red-bg: #fde2e2;
+  --gray-bg: #eceff3;
+  --gray-fg: #3b4252;
+  --blue-bg: #e0ecff;
+  --blue-fg: #1e40af;
+  --amber-bg: #fff4d6;
+  --amber-fg: #8a5a00;
+  --violet-bg: #ede9fe;
+  --violet-fg: #5b21b6;
+  --warn-bg: #fffbeb;
+  --warn-border: #d97706;
+  --warn-fg: #92400e;
+  --info-border: #2563eb;
+  --selected: #e8effd;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1419;
+    --fg: #e5e7eb;
+    --muted: #a9b2bf;
+    --surface: #182029;
+    --border: #3a4452;
+    --control-border: #6b7686;
+    --link: #8ab4ff;
+    --focus: #8ab4ff;
+    --danger: #ff9f9f;
+    --ok-fg: #7ee0a0;
+    --ok-bg: #12301d;
+    --red-bg: #3b1a1a;
+    --gray-bg: #262d38;
+    --gray-fg: #cbd5e1;
+    --blue-bg: #172b4d;
+    --blue-fg: #a9c8ff;
+    --amber-bg: #3d2f0a;
+    --amber-fg: #f5cd6b;
+    --violet-bg: #2b2150;
+    --violet-fg: #cdbcff;
+    --warn-bg: #2d2410;
+    --warn-border: #d97706;
+    --warn-fg: #fbbf24;
+    --info-border: #3b82f6;
+    --selected: #1b2a44;
+  }
+}
+
 html, body { margin: 0; }
-body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; color: #1f2937; background: #fff; }
+body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; color: var(--fg); background: var(--bg); }
+
+a { color: var(--link); }
+
+button, input, select {
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--control-border);
+  border-radius: 6px;
+}
+button { cursor: pointer; }
+button:disabled { cursor: default; opacity: 0.7; }
+
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
