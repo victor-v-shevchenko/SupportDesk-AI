@@ -28,10 +28,12 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
-  <!-- The golden set, its query embeddings, the article fixtures they're checked against, and the thresholds -->
+  <!-- The golden set, its query embeddings, the article fixtures they're checked against, the retrieval questions it
+       mustn't copy, and the thresholds -->
   <ItemGroup>
     <Content Include="golden\*.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\fixtures\embeddings\articles.json" Link="fixtures\embeddings\articles.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\fixtures\retrieval-questions.json" Link="fixtures\retrieval-questions.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="eval-thresholds.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

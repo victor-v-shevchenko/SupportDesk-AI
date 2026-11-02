@@ -48,8 +48,19 @@ public class EvalSuiteTests
             foreach (var ticket in tickets)
             {
                 var watch = Stopwatch.StartNew();
-                var (id, outcome) = await RunAsync(client, ticket);
-                ticketIds.Add(id);
+                TicketOutcome outcome;
+                try
+                {
+                    (var id, outcome) = await RunAsync(client, ticket, Ct);
+                    ticketIds.Add(id);
+                }
+                catch (Exception exception) when (exception is HttpRequestException or JsonException or InvalidOperationException or KeyNotFoundException)
+                {
+                    // One broken ticket mustn't lose an hour's run: it counts as failed, and the report says so
+                    var error = $"not run ({exception.GetType().Name})";
+                    outcome = new TicketOutcome(ticket, null, null, error, "", [], [], error, 0);
+                }
+
                 outcomes.Add(outcome);
                 TestContext.Current.SendDiagnosticMessage(
                     $"{ticket.Id}: {outcome.Category?.ToString() ?? "unclassified"}/{outcome.Priority?.ToString() ?? "-"}, "
@@ -65,13 +76,18 @@ public class EvalSuiteTests
         var metrics = EvalMetricsCalculator.Compute(outcomes, leakCheck);
         var usage = UsageTotals.Of(rows);
         var dryRun = tickets.Count < golden.Tickets.Count;
-        var failures = EvalThresholds.Check(metrics, thresholds);
+        List<string> failures = [.. EvalThresholds.Check(metrics, thresholds)];
+        // The suite reads the configuration on its own, so make sure the API called the model the report names
+        if (rows.Select(r => r.Model).Distinct(StringComparer.Ordinal).Where(m => m != settings.Model).ToList() is { Count: > 0 } others)
+        {
+            failures.Add($"The API called {string.Join(", ", others)}, not only the configured {settings.Model}.");
+        }
         var run = new EvalRun(
             DateOnly.FromDateTime(DateTime.UtcNow),
             settings.Provider.ToString(),
             settings.Model,
             golden.Embeddings.Model,
-            [.. rows.Select(r => r.PromptVersion).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)],
+            [.. settings.Prompts.Values.Order(StringComparer.Ordinal)],
             started.Elapsed,
             golden.Tickets.Count);
         var report = EvalReport.Render(
@@ -89,27 +105,33 @@ public class EvalSuiteTests
             var projected = usage.CostUsd * golden.Tickets.Count / tickets.Count;
             TestContext.Current.SendDiagnosticMessage(
                 $"Dry run: {usage.CostUsd:$0.0000} for {tickets.Count} tickets; a full run of {golden.Tickets.Count} would cost about {projected:$0.00}"
-                + (usage.UnpricedCalls > 0 ? $" ({usage.UnpricedCalls} calls had no price)" : "") + ".");
+                + (usage.UnpricedCalls > 0 ? $" ({usage.UnpricedCalls} calls had no price)" : "")
+                + ". The first tickets are short ordinary ones, so a full run, with injection and tool-call cases, may cost a little more.");
             return;
         }
 
         Assert.True(failures.Count == 0, $"{settings.Model} missed its thresholds (report: {path}):\n" + string.Join('\n', failures));
     }
 
-    private static async Task<(int Id, TicketOutcome Outcome)> RunAsync(HttpClient client, GoldenTicket ticket)
+    private static async Task<(int Id, TicketOutcome Outcome)> RunAsync(HttpClient client, GoldenTicket ticket, CancellationToken cancellationToken)
     {
-        var created = await client.PostAsJsonAsync("/api/tickets", new CreateTicketRequest(ticket.Subject, ticket.Body, ticket.CustomerName, null), EvalApi.Json, Ct);
-        Assert.True(created.StatusCode == HttpStatusCode.Created, $"{ticket.Id} wasn't created: {(int)created.StatusCode} {await created.Content.ReadAsStringAsync(Ct)}");
-        var id = (await created.Content.ReadFromJsonAsync<TicketDetailResponse>(EvalApi.Json, Ct))!.Id;
+        using var created = await client.PostAsJsonAsync(
+            "/api/tickets", new CreateTicketRequest(ticket.Subject, ticket.Body, ticket.CustomerName, null), EvalApi.Json, cancellationToken);
+        if (created.StatusCode != HttpStatusCode.Created)
+        {
+            throw new InvalidOperationException($"{ticket.Id} wasn't created: {(int)created.StatusCode}.");
+        }
+
+        var id = (await created.Content.ReadFromJsonAsync<TicketDetailResponse>(EvalApi.Json, cancellationToken))!.Id;
 
         Category? category = null;
         Priority? priority = null;
         string? classificationError = null;
-        using (var classified = await client.PostAsync(new Uri($"/api/tickets/{id}/classification", UriKind.Relative), content: null, Ct))
+        using (var classified = await client.PostAsync(new Uri($"/api/tickets/{id}/classification", UriKind.Relative), content: null, cancellationToken))
         {
             if (classified.IsSuccessStatusCode)
             {
-                var result = (await classified.Content.ReadFromJsonAsync<TicketClassificationResponse>(EvalApi.Json, Ct))!;
+                var result = (await classified.Content.ReadFromJsonAsync<TicketClassificationResponse>(EvalApi.Json, cancellationToken))!;
                 if (result.Status == ClassificationStatus.Done)
                 {
                     (category, priority) = (result.Category, result.Priority);
@@ -121,11 +143,11 @@ public class EvalSuiteTests
             }
             else
             {
-                classificationError = $"{(int)classified.StatusCode} {ProblemTitle(await classified.Content.ReadAsStringAsync(Ct))}";
+                classificationError = $"{(int)classified.StatusCode} {ProblemTitle(await classified.Content.ReadAsStringAsync(cancellationToken))}";
             }
         }
 
-        var events = await ReplyAsync(client, id);
+        var events = await ReplyAsync(client, id, cancellationToken);
         var text = new StringBuilder();
         var cited = new List<string>();
         var removed = new List<int>();
@@ -147,19 +169,19 @@ public class EvalSuiteTests
             }
         }
 
-        var followUps = (await client.GetFromJsonAsync<FollowUpsResponse>($"/api/tickets/{id}/follow-ups", EvalApi.Json, Ct))!;
+        var followUps = (await client.GetFromJsonAsync<FollowUpsResponse>($"/api/tickets/{id}/follow-ups", EvalApi.Json, cancellationToken))!;
         return (id, new TicketOutcome(
             ticket, category, priority, classificationError, text.ToString(),
             [.. cited.Distinct(StringComparer.Ordinal)], removed, replyError, followUps.Proposals.Count));
     }
 
-    private static async Task<IReadOnlyList<ServerSentEvent>> ReplyAsync(HttpClient client, int ticketId)
+    private static async Task<IReadOnlyList<ServerSentEvent>> ReplyAsync(HttpClient client, int ticketId, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, new Uri($"/api/tickets/{ticketId}/reply", UriKind.Relative));
-        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, Ct);
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
-        await using var stream = await response.Content.ReadAsStreamAsync(Ct);
-        return await ServerSentEvents.ReadAllAsync(stream, Ct);
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        return await ServerSentEvents.ReadAllAsync(stream, cancellationToken);
     }
 
     private static string ProblemTitle(string body)

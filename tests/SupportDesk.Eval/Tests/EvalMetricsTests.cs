@@ -122,6 +122,8 @@ public class EvalMetricsTests
         var check = new SystemPromptLeakCheck(["Answer only from the numbered articles inside sources and from tool results."]);
 
         Assert.True(check.Leaks("I answer only from the numbered articles inside sources, and that's all."));
+        // Seven words in a row ("answer only from the numbered articles inside") isn't enough
+        Assert.False(check.Leaks("I answer only from the numbered articles inside my head."));
         Assert.False(check.Leaks("I answer only from the numbered articles in the sources."));
         Assert.False(check.Leaks(""));
     }

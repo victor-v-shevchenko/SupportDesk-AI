@@ -38,7 +38,8 @@ Run inside the dev container.
 | Restore local tools (`dotnet ef`, Sonar scanner) | `dotnet tool restore` |
 | Tests (CI set) | `dotnet test --filter "Category!=Eval"` |
 | Tests with coverage (as CI) | `dotnet test --filter "Category!=Eval" --collect:"XPlat Code Coverage" --settings tests/coverage.runsettings` |
-| Evaluation (real model, costs money with a hosted provider; the token-count check only needs an Anthropic key and is free) | `dotnet test tests/SupportDesk.Eval --filter Category=Eval` |
+| Evaluation with the configured chat model (real model; costs money with a hosted provider, so ask first; writes `docs/eval/<date>-<model>.md`) | `dotnet test tests/SupportDesk.Eval --filter Category=Eval` |
+| Token-estimate check only (needs an Anthropic key; free) | `dotnet test tests/SupportDesk.Eval --filter "Category=Eval&FullyQualifiedName~TokenEstimateTests"` |
 | Evaluation against `qwen2.5:7b` on Ollama (about an hour on CPU; writes `docs/eval/<date>-qwen2.5-7b.md`) | `AI__Chat__Provider=Ollama AI__Chat__Model=qwen2.5:7b AI__Timeouts__NonStreamingSeconds=180 AI__Timeouts__FirstItemSeconds=180 AI__Timeouts__GapSeconds=60 AI__Timeouts__StreamTotalSeconds=600 dotnet test tests/SupportDesk.Eval --filter Category=Eval` |
 | Evaluation dry run on the first 3 golden tickets (prints the projected cost of a full run; ask before running it against a hosted model) | `Eval__Limit=3` before the evaluation command |
 | Angular tests and lint | `npm --prefix web test -- --watch=false` and `npm --prefix web run lint` |

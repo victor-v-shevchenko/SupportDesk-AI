@@ -74,14 +74,15 @@ public class EvalSetupTests
     }
 
     [Fact]
-    public async Task Golden_tickets_are_not_copies_of_the_seed_tickets_or_retrieval_questions()
+    public async Task Article_fixtures_older_than_the_articles_fail_early_naming_the_command()
     {
-        var golden = await GoldenSet.ReadTicketsAsync(Path.Combine(GoldenData.Folder, GoldenSet.TicketsFile), Ct);
-        var seed = await SupportDesk.Data.Seeding.SeedFiles.ReadTicketsAsync(Path.Combine(AppContext.BaseDirectory, "seed"), Ct);
+        var (_, _, articles) = await ReadGoldenAsync();
+        string[] current = [.. articles.Items.Skip(1).Select(i => i.Hash), ArticleChunkDraft.HashOf("A paragraph added since.")];
 
-        var seedSubjects = seed.Select(t => t.Subject).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var seedBodies = seed.Select(t => ArticleChunkDraft.HashOf(t.Body)).ToHashSet(StringComparer.Ordinal);
-        Assert.DoesNotContain(golden, t => seedSubjects.Contains(t.Subject) || seedBodies.Contains(ArticleChunkDraft.HashOf(t.Body)));
+        var error = Assert.Throws<InvalidOperationException>(() => GoldenData.CheckArticles(current, articles));
+
+        Assert.Contains(EmbeddingFixtures.RegenerateCommand, error.Message, StringComparison.Ordinal);
+        GoldenData.CheckArticles([.. articles.Items.Select(i => i.Hash)], articles);
     }
 
     [Fact]

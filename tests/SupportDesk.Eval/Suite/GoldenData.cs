@@ -1,5 +1,6 @@
 using Microsoft.Extensions.AI;
 using SupportDesk.Core.Retrieval;
+using SupportDesk.Data.Seeding;
 using SupportDesk.EmbedFixtures;
 
 namespace SupportDesk.Eval.Suite;
@@ -31,6 +32,8 @@ public sealed class GoldenData
             Path.Combine(AppContext.BaseDirectory, "fixtures", "embeddings", EmbeddingFixtures.ArticlesFile), cancellationToken);
 
         Check(tickets, queries, articles);
+        var seedArticles = await SeedFiles.ReadArticlesAsync(Path.Combine(AppContext.BaseDirectory, "seed"), cancellationToken);
+        CheckArticles([.. seedArticles.SelectMany(a => ArticleChunker.Chunk(a.BodyMarkdown)).Select(c => c.ContentHash)], articles);
         var vectors = articles.Items.Select(i => (i.Hash, i.Vector)).Concat(queries.Items.Select(i => (i.Hash, i.Vector)))
             .DistinctBy(i => i.Hash, StringComparer.Ordinal)
             .ToDictionary(i => i.Hash, i => i.Vector, StringComparer.Ordinal);
@@ -57,6 +60,24 @@ public sealed class GoldenData
         {
             throw new InvalidOperationException(
                 $"The golden embeddings don't match these tickets: {string.Join(", ", stale)}. Regenerate them with `{EmbeddingFixtures.RegenerateCommand}`.");
+        }
+    }
+
+    /// <summary>
+    /// Throws, naming the command, when an article chunk has no committed vector, so a changed article stops the run here
+    /// rather than inside the API's startup.
+    /// </summary>
+    public static void CheckArticles(IReadOnlyCollection<string> chunkHashes, FixtureFile<ArticleChunkFixture> articles)
+    {
+        ArgumentNullException.ThrowIfNull(chunkHashes);
+        ArgumentNullException.ThrowIfNull(articles);
+
+        var committed = articles.Items.Select(i => i.Hash).ToHashSet(StringComparer.Ordinal);
+        var missing = chunkHashes.Count(h => !committed.Contains(h));
+        if (missing > 0)
+        {
+            throw new InvalidOperationException(
+                $"{missing} article chunk(s) have no committed vector: the articles changed. Regenerate the fixtures with `{EmbeddingFixtures.RegenerateCommand}`.");
         }
     }
 }

@@ -30,6 +30,13 @@ An opt-in suite that measures the real model on a fixed set of tickets and write
 - One run with Ollama (`qwen2.5:7b`)
 - One run with a hosted model, only after the user approves the cost (estimate it from a 3-ticket dry run first)
 
+## Changes made during the step
+
+- Only the chat model is real: retrieval uses the committed `mxbai-embed-large` vectors (the article fixtures, and `golden/embeddings.json` for the golden tickets' queries, written by `tools/EmbedFixtures`). So "the embedding model doesn't match the fixtures" means the golden embeddings and the article fixtures weren't made by the same model, or a ticket or article changed since; the suite checks both before it starts (PLAN.md 11)
+- Zero injected proposals is a constant in code (`EvalThresholds.MaxInjectedProposals`), not an entry in `eval-thresholds.json`, so no model's entry can loosen it
+- A dry run (`Eval__Limit=<n>`) writes its report next to the test assembly, not to `docs/eval/`, and doesn't enforce thresholds
+- Three expected labels follow the seed tickets for the same situation (transit damage is Returns, as T-1009; a charge after cancelling and a locked account are High, as T-1014 and T-1018), and one ticket was reworded so retrieval returns the article it expects; a unit test now checks every expected article is retrievable
+
 ## Out of scope
 
 LLM-as-judge grading. Changing prompts to raise the score (separate `fix/` branches, each with a new report).
