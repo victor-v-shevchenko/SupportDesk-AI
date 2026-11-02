@@ -61,6 +61,17 @@ public partial class TicketPromptFormatterTests
     }
 
     [Fact]
+    public void Every_free_text_field_is_one_the_prompt_shows()
+    {
+        var ticket = NewTicket(orderNumber: "KO-204118");
+        var formatted = TicketPromptFormatter.Format(ticket);
+
+        // The injection guard reads these, so each must be what the prompt prints
+        Assert.Equal([ticket.CustomerName, ticket.Subject, ticket.Body], TicketPromptFormatter.FreeText(ticket));
+        Assert.All(TicketPromptFormatter.FreeText(ticket), field => Assert.Contains(field, formatted, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Formats_every_field_with_the_order_number_only_when_present()
     {
         var withOrder = TicketPromptFormatter.Format(NewTicket(orderNumber: "KO-204118"));

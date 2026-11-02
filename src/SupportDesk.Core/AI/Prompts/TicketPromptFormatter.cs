@@ -31,6 +31,17 @@ public static partial class TicketPromptFormatter
     }
 
     /// <summary>
+    /// The fields <see cref="Format"/> writes that the customer types freely: the name, the subject and the body. The number is
+    /// ours and the order number is checked against its pattern when the ticket is created. The injection guard reads these.
+    /// </summary>
+    public static IReadOnlyList<string> FreeText(Ticket ticket)
+    {
+        ArgumentNullException.ThrowIfNull(ticket);
+
+        return [ticket.CustomerName, ticket.Subject, ticket.Body];
+    }
+
+    /// <summary>
     /// Replaces the <c>&lt;</c> of anything that reads as a <c>ticket</c> tag (<c>&lt;/ticket&gt;</c>, <c>&lt;/TICKET &gt;</c>,
     /// <c>&lt; /ticket</c>, <c>&lt;ticket&gt;</c>) with <c>&amp;lt;</c>, and the same for <c>tool_result</c> and <c>sources</c>,
     /// so the customer can't fake a tool result or an article the reply prompt says to trust. The rest of the text is
