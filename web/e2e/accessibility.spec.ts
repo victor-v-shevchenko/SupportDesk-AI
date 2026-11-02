@@ -159,7 +159,7 @@ for (const scheme of ['light', 'dark'] as const) {
         });
         return 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
       };
-      const button = document.querySelector('button') as HTMLElement;
+      const button = document.querySelector<HTMLElement>('button.suggest')!; // "Suggest again"
       const border = luminance(parse(getComputedStyle(button).borderTopColor));
       const page = luminance(parse(getComputedStyle(document.body).backgroundColor));
       const [light, dark] = border > page ? [border, page] : [page, border];

@@ -32,7 +32,8 @@ export default defineConfig({
     {
       command: 'dotnet run --project ../src/SupportDesk.Api',
       url: 'http://localhost:5080/api/health',
-      // A server that is already running is reused locally: start it with the same environment as below
+      // A server that is already running is reused locally: start it with the same environment as below (the fake providers,
+      // Retrieval__MinSimilarity=0 and the three AI__Pricing__6__* values), or the replies and the cost test fail confusingly
       reuseExistingServer: !ci,
       timeout: 180_000,
       env: {

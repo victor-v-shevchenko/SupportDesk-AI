@@ -54,20 +54,34 @@ export class TicketCost {
   protected readonly rows = inject(ModelCallsService).forTicket(this.ticketId);
   protected readonly totals = computed(() => (this.rows.hasValue() ? totalCalls(this.rows.value()) : undefined));
 
+  /**
+   * How many rows the ticket has once every call that has ended is saved. Each ended call adds one, on top of what is
+   * already shown, so calls that end while an earlier read is still loading (a reload then does nothing) are counted too.
+   */
+  private target = 0;
+
   constructor() {
+    // A different ticket starts counting again
+    effect(() => {
+      this.ticketId();
+      this.target = 0;
+    });
+
     effect((onCleanup) => {
       if (this.refresh() === 0) {
         return;
       }
 
-      const before = untracked(() => this.totals()?.calls ?? 0);
+      untracked(() => {
+        this.target = Math.max(this.target, this.totals()?.calls ?? 0) + 1;
+      });
       let timer: ReturnType<typeof setTimeout> | undefined;
       const attempt = (index: number): void => {
         this.rows.reload();
         if (index < reloadBackoffMs.length) {
           timer = setTimeout(() => {
-            // Stop once the new row is in
-            if ((this.totals()?.calls ?? 0) <= before) {
+            // Stop once every ended call's row is in
+            if ((this.totals()?.calls ?? 0) < this.target) {
               attempt(index + 1);
             }
           }, reloadBackoffMs[index]);

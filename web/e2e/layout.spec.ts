@@ -63,7 +63,7 @@ test.describe('at 375 px wide', () => {
     await expect(page.getByText('1,200 input + 48 output tokens')).toBeVisible();
     await page.getByRole('button', { name: 'Summarize' }).click();
     await expect(page.getByRole('button', { name: 'Regenerate' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Tickets', level: 1 })).toBeHidden();
+    await expect(page.getByRole('region', { name: 'Tickets' })).toBeHidden();
     await expectNoHorizontalScroll(page);
     await page.screenshot({ path: `${shots}/ticket-375.png`, fullPage: true });
 
