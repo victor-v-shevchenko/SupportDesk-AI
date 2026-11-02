@@ -81,3 +81,63 @@ test.describe('at 375 px wide', () => {
     await page.screenshot({ path: `${shots}/proposal-375.png`, fullPage: true });
   });
 });
+
+interface ButtonLook {
+  height: number;
+  font: string;
+  family: string;
+  weight: string;
+  lineHeight: string;
+  padding: string;
+  radius: string;
+  border: string;
+  borderColor: string;
+  color: string;
+  background: string;
+  opacity: string;
+}
+
+const pageBackground = { light: 'rgb(255, 255, 255)', dark: 'rgb(15, 20, 25)' };
+
+for (const width of [1440, 375]) {
+  for (const scheme of ['light', 'dark'] as const) {
+    test.describe(`the action buttons at ${width} px in the ${scheme} theme`, () => {
+      test.use({ viewport: { width, height: 900 }, colorScheme: scheme });
+
+      test('Summarize, Classify and Suggest reply share one size and style', async ({ page, request }) => {
+        const ticket = await createTicket(request);
+        await openTicket(page, ticket.subject);
+        // The run really is in this theme, so the colors below are the ones for it
+        expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe(pageBackground[scheme]);
+
+        const names = ['Summarize', 'Classify', 'Suggest reply'];
+        const looks: ButtonLook[] = await Promise.all(
+          names.map(async (name) => {
+            const button = page.getByRole('button', { name, exact: true });
+            await expect(button).toBeVisible();
+            return button.evaluate((el): ButtonLook => {
+              const s = getComputedStyle(el);
+              return {
+                height: Math.round(el.getBoundingClientRect().height),
+                font: s.fontSize,
+                family: s.fontFamily,
+                weight: s.fontWeight,
+                lineHeight: s.lineHeight,
+                padding: s.padding,
+                radius: s.borderRadius,
+                border: s.borderTopWidth,
+                borderColor: s.borderTopColor,
+                color: s.color,
+                background: s.backgroundColor,
+                opacity: s.opacity,
+              };
+            });
+          }),
+        );
+        expect(looks[1]).toEqual(looks[0]);
+        expect(looks[2]).toEqual(looks[0]);
+        await page.screenshot({ path: `${shots}/actions-${width}-${scheme}.png`, fullPage: true });
+      });
+    });
+  }
+}

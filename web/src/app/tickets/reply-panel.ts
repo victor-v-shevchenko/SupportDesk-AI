@@ -107,7 +107,6 @@ export const replyErrorMessages = errorMessages;
   styles: `
     .actions { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
     .tool-calls { display: grid; gap: 0.5rem; margin-bottom: 0.75rem; max-width: 70ch; }
-    button { padding: 0.4rem 0.75rem; font: inherit; }
     .reply-text { white-space: pre-wrap; line-height: 1.5; max-width: 70ch; }
     .cite a { color: var(--link); }
     h3 { font-size: 0.875rem; margin: 1rem 0 0.25rem; }
