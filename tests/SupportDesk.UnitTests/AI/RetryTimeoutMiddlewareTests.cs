@@ -1,5 +1,4 @@
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Time.Testing;
 using SupportDesk.Core.AI;
 using SupportDesk.Core.AI.Fake;
 using SupportDesk.Core.AI.Usage;
@@ -10,7 +9,7 @@ namespace SupportDesk.UnitTests.AI;
 /// <summary>Retries and timeouts (PLAN.md 6.5), through the whole pipeline on a fake clock.</summary>
 public class RetryTimeoutMiddlewareTests
 {
-    private readonly FakeTimeProvider _time = new();
+    private readonly TrackedFakeTime _time = new();
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -105,12 +104,12 @@ public class RetryTimeoutMiddlewareTests
         var provider = new ScriptedChatClient(_time, Steps(Fail(503)));
         using var pipeline = Pipeline(provider, o => o.Retry.MaxAttempts = 3);
 
-        await Assert.ThrowsAsync<ModelUnavailableException>(() => _time.RunAsync(pipeline.Client.GetResponseAsync("hi", Reply, Ct), TimeSpan.FromMilliseconds(10)));
+        await Assert.ThrowsAsync<ModelUnavailableException>(() => _time.RunAsync(pipeline.Client.GetResponseAsync("hi", Reply, Ct)));
 
         var times = provider.CallTimes;
-        // Base 500 ms: the first wait is 250–500 ms, the second 500–1000 ms (plus at most one clock step)
-        Assert.InRange((times[1] - times[0]).TotalMilliseconds, 250, 510);
-        Assert.InRange((times[2] - times[1]).TotalMilliseconds, 500, 1010);
+        // Base 500 ms: the first wait is 250–500 ms, the second 500–1000 ms
+        Assert.InRange((times[1] - times[0]).TotalMilliseconds, 250, 500);
+        Assert.InRange((times[2] - times[1]).TotalMilliseconds, 500, 1000);
     }
 
     [Fact]
@@ -119,9 +118,9 @@ public class RetryTimeoutMiddlewareTests
         var provider = new ScriptedChatClient(_time, Steps(Fail(429, retryAfterSeconds: 4)), Steps(Text("Hello")));
         using var pipeline = Pipeline(provider);
 
-        await _time.RunAsync(pipeline.Client.GetResponseAsync("hi", Reply, Ct), TimeSpan.FromMilliseconds(50));
+        await _time.RunAsync(pipeline.Client.GetResponseAsync("hi", Reply, Ct));
 
-        Assert.InRange((provider.CallTimes[1] - provider.CallTimes[0]).TotalSeconds, 4, 4.05);
+        Assert.InRange((provider.CallTimes[1] - provider.CallTimes[0]).TotalSeconds, 4, 4.01);
     }
 
     [Fact]
@@ -144,7 +143,7 @@ public class RetryTimeoutMiddlewareTests
         var received = new List<ChatResponseUpdate>();
 
         var error = await Assert.ThrowsAsync<ModelUnavailableException>(() =>
-            _time.ReadAllAsync(pipeline.Client.GetStreamingResponseAsync("hi", Reply, Ct), received, TimeSpan.FromMilliseconds(250)));
+            _time.ReadAllAsync(pipeline.Client.GetStreamingResponseAsync("hi", Reply, Ct), received));
 
         Assert.True(error.IsTimeout);
         Assert.Contains("first item", error.Message, StringComparison.Ordinal);
@@ -162,7 +161,7 @@ public class RetryTimeoutMiddlewareTests
         var received = new List<ChatResponseUpdate>();
 
         var error = await Assert.ThrowsAsync<ModelUnavailableException>(() =>
-            _time.ReadAllAsync(pipeline.Client.GetStreamingResponseAsync("hi", Reply, Ct), received, TimeSpan.FromMilliseconds(250)));
+            _time.ReadAllAsync(pipeline.Client.GetStreamingResponseAsync("hi", Reply, Ct), received));
 
         Assert.True(error.IsTimeout);
         Assert.Contains("next update", error.Message, StringComparison.Ordinal);
@@ -178,7 +177,7 @@ public class RetryTimeoutMiddlewareTests
         using var pipeline = Pipeline(provider);
         var received = new List<ChatResponseUpdate>();
 
-        await _time.ReadAllAsync(pipeline.Client.GetStreamingResponseAsync("hi", Reply, Ct), received, TimeSpan.FromMilliseconds(250));
+        await _time.ReadAllAsync(pipeline.Client.GetStreamingResponseAsync("hi", Reply, Ct), received);
 
         Assert.Equal("abc", string.Concat(received.Select(u => u.Text)));
     }
@@ -222,7 +221,7 @@ public class RetryTimeoutMiddlewareTests
         var received = new List<ChatResponseUpdate>();
 
         var error = await Assert.ThrowsAsync<ModelUnavailableException>(() =>
-            _time.ReadAllAsync(pipeline.Client.GetStreamingResponseAsync("hi", Reply, Ct), received, TimeSpan.FromMilliseconds(500)));
+            _time.ReadAllAsync(pipeline.Client.GetStreamingResponseAsync("hi", Reply, Ct), received));
 
         Assert.True(error.IsTimeout);
         Assert.Contains("whole stream", error.Message, StringComparison.Ordinal);
@@ -235,10 +234,10 @@ public class RetryTimeoutMiddlewareTests
         var provider = new ScriptedChatClient(_time, Steps(Wait(_time, TimeSpan.FromSeconds(40)), Text("late")));
         using var pipeline = Pipeline(provider, o => o.Retry.MaxAttempts = 1);
 
-        var error = await Assert.ThrowsAsync<ModelUnavailableException>(() => _time.RunAsync(pipeline.Client.GetResponseAsync("hi", Reply, Ct), TimeSpan.FromMilliseconds(250)));
+        var error = await Assert.ThrowsAsync<ModelUnavailableException>(() => _time.RunAsync(pipeline.Client.GetResponseAsync("hi", Reply, Ct)));
 
         Assert.True(error.IsTimeout);
-        Assert.InRange((_time.GetUtcNow() - provider.CallTimes[0]).TotalSeconds, 30, 31);
+        Assert.InRange((_time.GetUtcNow() - provider.CallTimes[0]).TotalSeconds, 30, 30.01);
     }
 
     [Fact]

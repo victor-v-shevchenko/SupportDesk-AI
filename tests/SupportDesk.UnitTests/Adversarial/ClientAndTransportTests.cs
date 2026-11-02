@@ -15,8 +15,6 @@ namespace SupportDesk.UnitTests.Adversarial;
 /// </summary>
 public sealed partial class ClientAndTransportTests
 {
-    private static readonly TimeSpan Step = TimeSpan.FromMilliseconds(100);
-
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [GeneratedRegex(@"(?m)^\[\d+\] Title of ", RegexOptions.CultureInvariant)]
@@ -131,7 +129,7 @@ public sealed partial class ClientAndTransportTests
         var secondRead = rig.ReadAsync(Ticket(id: 7), secondEvents, Ct);
 
         await WaitForCancelledReadAsync(firstRead);
-        await rig.Time.RunAsync(secondRead, Step);
+        await rig.Time.RunAsync(secondRead);
 
         // The aborted run has no terminal event; the new one finishes normally
         Assert.DoesNotContain(firstEvents, e => e is ReplyError or ReplyDone);
@@ -171,7 +169,7 @@ public sealed partial class ClientAndTransportTests
         // Both are waiting on the fake clock in their second call at the same time
         await WaitForAsync(() => rig.Spy.Calls.Count == 4);
         Assert.False(readA.IsCompleted || readB.IsCompleted);
-        await rig.Time.RunAsync(Task.WhenAll(readA, readB), Step);
+        await rig.Time.RunAsync(Task.WhenAll(readA, readB));
 
         foreach (var events in new[] { tabA, tabB })
         {

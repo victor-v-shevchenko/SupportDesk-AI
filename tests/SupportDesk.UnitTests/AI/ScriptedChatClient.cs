@@ -1,7 +1,7 @@
+using System.Diagnostics;
 using System.Net;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Time.Testing;
 using SupportDesk.Core.AI.Fake;
 
 namespace SupportDesk.UnitTests.AI;
@@ -129,30 +129,89 @@ internal sealed class ScriptedChatClient(TimeProvider time, params Func<Cancella
     }
 }
 
-/// <summary>Runs a call on a fake clock: moves time on in small steps until the call is done.</summary>
+/// <summary>
+/// Runs a call on a fake clock. Time moves only while the call waits on a timer: once it has gone quiet, the clock jumps
+/// to the next pending timer, so how fast the machine runs changes nothing in fake time.
+/// "Quiet" is a short real-time check, not a proof. The code under test normally reacts to a timer inline, inside
+/// <c>Advance</c>, so its next timer exists before the check starts. A continuation that hops to another thread and is
+/// descheduled for more than a few milliseconds before setting its timer could still be taken for quiet. Queued thread-pool
+/// work only pauses the count rather than resetting it, because the queue is process-wide: under parallel tests it is
+/// rarely empty, and resetting on it kept calls from ever settling. Each round waits about 1 ms (about 15 ms on Windows).
+/// </summary>
 internal static class FakeClock
 {
-    public static async Task<T> RunAsync<T>(this FakeTimeProvider time, Task<T> task, TimeSpan? step = null)
+    private const int QuietRounds = 5;
+    private static readonly TimeSpan RealTimeLimit = TimeSpan.FromSeconds(120);
+
+    public static async Task<T> RunAsync<T>(this TrackedFakeTime time, Task<T> task)
     {
+        var sinceProgress = Stopwatch.StartNew();
         while (!task.IsCompleted)
         {
-            time.Advance(step ?? TimeSpan.FromMilliseconds(100));
-            await Task.WhenAny(task, Task.Delay(1, TestContext.Current.CancellationToken));
+            await WaitUntilQuietAsync(time, task);
+            if (time.CallbackFailure is { } failure)
+            {
+                throw new InvalidOperationException("A timer callback threw.", failure);
+            }
+
+            if (task.IsCompleted)
+            {
+                break;
+            }
+
+            if (sinceProgress.Elapsed > RealTimeLimit)
+            {
+                throw new TimeoutException("The call has neither finished nor waited on a timer for two minutes of real time.");
+            }
+
+            if (time.NextDue is { } due)
+            {
+                var wait = due - time.GetUtcNow();
+                var before = time.Changes;
+                time.Advance(wait > TimeSpan.Zero ? wait : TimeSpan.Zero);
+                // Moving the clock, or a timer reacting, is progress; a timer that stays due without firing is not
+                if (wait > TimeSpan.Zero || time.Changes != before)
+                {
+                    sinceProgress.Restart();
+                }
+            }
         }
 
         return await task;
     }
 
-    public static async Task RunAsync(this FakeTimeProvider time, Task task, TimeSpan? step = null) =>
-        await time.RunAsync(task.ContinueWith(t => t, TaskScheduler.Default), step).Unwrap();
+    public static async Task RunAsync(this TrackedFakeTime time, Task task) =>
+        await time.RunAsync(task.ContinueWith(t => t, TaskScheduler.Default)).Unwrap();
 
     /// <summary>Reads the stream to the end on the fake clock; <paramref name="received"/> gets every update, even when it fails.</summary>
-    public static async Task ReadAllAsync(this FakeTimeProvider time, IAsyncEnumerable<ChatResponseUpdate> stream, List<ChatResponseUpdate> received, TimeSpan? step = null)
+    public static async Task ReadAllAsync(this TrackedFakeTime time, IAsyncEnumerable<ChatResponseUpdate> stream, List<ChatResponseUpdate> received)
     {
         await using var updates = stream.GetAsyncEnumerator(TestContext.Current.CancellationToken);
-        while (await time.RunAsync(updates.MoveNextAsync().AsTask(), step))
+        while (await time.RunAsync(updates.MoveNextAsync().AsTask()))
         {
             received.Add(updates.Current);
+        }
+    }
+
+    /// <summary>Waits until no timer has been created, changed or disposed for a few real milliseconds with no work queued.</summary>
+    private static async Task WaitUntilQuietAsync(TrackedFakeTime time, Task task)
+    {
+        var seen = time.Changes;
+        var quiet = 0;
+        while (quiet < QuietRounds && !task.IsCompleted)
+        {
+            await Task.WhenAny(task, Task.Delay(1, TestContext.Current.CancellationToken));
+            var now = time.Changes;
+            if (now != seen || time.CallbackPending)
+            {
+                seen = now;
+                quiet = 0;
+            }
+            else if (ThreadPool.PendingWorkItemCount == 0)
+            {
+                // Queued work, such as the call's next step, may be about to create a timer; other tests' work only delays this
+                quiet++;
+            }
         }
     }
 }

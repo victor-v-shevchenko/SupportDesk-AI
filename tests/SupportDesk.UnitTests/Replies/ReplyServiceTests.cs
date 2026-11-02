@@ -2,7 +2,6 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Microsoft.Extensions.Time.Testing;
 using SupportDesk.Core.AI;
 using SupportDesk.Core.AI.Prompts;
 using SupportDesk.Core.AI.Usage;
@@ -162,11 +161,11 @@ public sealed class ReplyServiceTests : IDisposable
     [Fact]
     public async Task A_stall_after_the_first_token_gives_timeout()
     {
-        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var time = new TrackedFakeTime(DateTimeOffset.UtcNow);
         var provider = new ScriptedChatClient(time, Steps(Text("Sorry about "), Wait(time, TimeSpan.FromSeconds(30)), Text("that.")));
         var service = Service(provider, new StubRetrieval(), time: time);
 
-        var events = await time.RunAsync(ReadAllAsync(service.StreamAsync(Ticket(), Ct)), TimeSpan.FromSeconds(1));
+        var events = await time.RunAsync(ReadAllAsync(service.StreamAsync(Ticket(), Ct)));
 
         Assert.Equal([typeof(ReplyToken), typeof(ReplyError)], events.Select(e => e.GetType()));
         Assert.Equal(ReplyErrorCodes.Timeout, ((ReplyError)events[1]).Code);

@@ -2,7 +2,6 @@ using System.Reflection;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Microsoft.Extensions.Time.Testing;
 using SupportDesk.Core.AI;
 using SupportDesk.Core.AI.Fake;
 using SupportDesk.Core.AI.Usage;
@@ -15,7 +14,7 @@ public class BudgetAndUsageTests
 {
     private const string TicketText = "SECRET-TICKET-TEXT-7f3a";
 
-    private readonly FakeTimeProvider _time = new();
+    private readonly TrackedFakeTime _time = new();
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
