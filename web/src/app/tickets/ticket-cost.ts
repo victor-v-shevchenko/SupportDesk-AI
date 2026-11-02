@@ -5,7 +5,8 @@ import { ModelCallsService } from '../api/model-calls.service';
 
 /**
  * The usage writer saves rows in the background, so a call's row can land a moment after the call ends. After a call the
- * rows are read at once and then again after each of these waits, until there are more rows than before the call.
+ * rows are read at once and then again after each of these waits, until there are more rows than before the call and
+ * the count stops growing (a reply can make several model calls).
  */
 export const reloadBackoffMs = [500, 1000, 2000, 4000];
 
@@ -76,16 +77,27 @@ export class TicketCost {
         this.target = Math.max(this.target, this.totals()?.calls ?? 0) + 1;
       });
       let timer: ReturnType<typeof setTimeout> | undefined;
+      // The rows shown at the previous check: reaching the target is not enough to stop, because a reply with several
+      // model calls writes several rows. The reads stop once a read shows the target and the count has stopped growing.
+      let lastSeen = untracked(() => this.totals()?.calls ?? 0);
       const attempt = (index: number): void => {
         this.rows.reload();
-        if (index < reloadBackoffMs.length) {
-          timer = setTimeout(() => {
-            // Stop once every ended call's row is in
-            if ((this.totals()?.calls ?? 0) < this.target) {
-              attempt(index + 1);
-            }
-          }, reloadBackoffMs[index]);
-        }
+        // After the last wait there is no further read, but the last one is still checked
+        const wait = reloadBackoffMs[Math.min(index, reloadBackoffMs.length - 1)];
+        timer = setTimeout(() => {
+          const shown = this.totals()?.calls ?? 0;
+          if (shown >= this.target && shown === lastSeen) {
+            return;
+          }
+          lastSeen = shown;
+          if (index < reloadBackoffMs.length) {
+            attempt(index + 1);
+          } else {
+            // Gave up: a call that wrote no row (a 404, a failed request) must not leave the target too high for the
+            // calls after it, or each of them would run every retry
+            this.target = Math.min(this.target, shown);
+          }
+        }, wait);
       };
       untracked(() => attempt(0));
       onCleanup(() => clearTimeout(timer));

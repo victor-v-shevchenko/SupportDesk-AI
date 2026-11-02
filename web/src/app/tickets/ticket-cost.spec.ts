@@ -123,6 +123,8 @@ describe('TicketCost', () => {
 
       await vi.advanceTimersByTimeAsync(reloadBackoffMs[1]);
       await flushNext([row(2, 50, 5, 0.001), row(1, 100, 10, 0.002)]); // there
+      await vi.advanceTimersByTimeAsync(reloadBackoffMs[2]);
+      await flushNext([row(2, 50, 5, 0.001), row(1, 100, 10, 0.002)]); // one more read: the count has stopped growing
 
       expect((fixture.nativeElement as HTMLElement).querySelector('.totals')?.textContent).toContain('2 calls');
       await vi.advanceTimersByTimeAsync(reloadBackoffMs.reduce((a, b) => a + b, 0));
@@ -145,8 +147,65 @@ describe('TicketCost', () => {
       await flushNext([row(1, 100, 10, 0.002)]); // still one: the second call's row is not saved yet
       await vi.advanceTimersByTimeAsync(reloadBackoffMs[1]);
       await flushNext([row(2, 50, 5, 0.001), row(1, 100, 10, 0.002)]);
+      await vi.advanceTimersByTimeAsync(reloadBackoffMs[2]);
+      await flushNext([row(2, 50, 5, 0.001), row(1, 100, 10, 0.002)]);
 
       expect((fixture.nativeElement as HTMLElement).querySelector('.totals')?.textContent).toContain('2 calls');
+      await vi.advanceTimersByTimeAsync(60_000);
+      http.expectNone(url);
+      fixture.destroy();
+    });
+
+    it('stops early for a later call after an earlier call wrote no row', async () => {
+      const fixture = create();
+      await flushNext([row(1, 100, 10, 0.002)]);
+
+      // A call that writes no row (a 404, say): all reads keep returning one row until the readout gives up
+      fixture.componentRef.setInput('refresh', 1);
+      TestBed.tick();
+      await flushNext([row(1, 100, 10, 0.002)]);
+      for (const wait of reloadBackoffMs) {
+        await vi.advanceTimersByTimeAsync(wait);
+        await flushNext([row(1, 100, 10, 0.002)]);
+      }
+      await vi.advanceTimersByTimeAsync(60_000);
+      http.expectNone(url);
+
+      // The next call writes its row at once: the readout must not run all the retries
+      fixture.componentRef.setInput('refresh', 2);
+      TestBed.tick();
+      await flushNext([row(2, 50, 5, 0.001), row(1, 100, 10, 0.002)]);
+      let reads = 1;
+      for (const wait of reloadBackoffMs) {
+        await vi.advanceTimersByTimeAsync(wait);
+        TestBed.tick();
+        for (const request of http.match(url)) {
+          request.flush([row(2, 50, 5, 0.001), row(1, 100, 10, 0.002)]);
+          reads++;
+        }
+        await vi.advanceTimersByTimeAsync(0);
+      }
+
+      expect(reads).toBeLessThan(reloadBackoffMs.length + 1);
+      expect((fixture.nativeElement as HTMLElement).querySelector('.totals')?.textContent).toContain('2 calls');
+      fixture.destroy();
+    });
+
+    it('keeps reading while a reply with several model calls writes more rows than one', async () => {
+      const fixture = create();
+      await flushNext([]);
+
+      fixture.componentRef.setInput('refresh', 1); // the reply ends: three calls ran, rows land one by one
+      TestBed.tick();
+      await flushNext([row(1, 100, 10, 0.002)]);
+      await vi.advanceTimersByTimeAsync(reloadBackoffMs[0]);
+      await flushNext([row(2, 50, 5, 0.001), row(1, 100, 10, 0.002)]);
+      await vi.advanceTimersByTimeAsync(reloadBackoffMs[1]);
+      await flushNext([row(3, 20, 2, 0.0005), row(2, 50, 5, 0.001), row(1, 100, 10, 0.002)]);
+      await vi.advanceTimersByTimeAsync(reloadBackoffMs[2]);
+      await flushNext([row(3, 20, 2, 0.0005), row(2, 50, 5, 0.001), row(1, 100, 10, 0.002)]);
+
+      expect((fixture.nativeElement as HTMLElement).querySelector('.totals')?.textContent).toContain('3 calls');
       await vi.advanceTimersByTimeAsync(60_000);
       http.expectNone(url);
       fixture.destroy();
