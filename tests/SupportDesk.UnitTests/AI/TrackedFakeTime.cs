@@ -17,11 +17,21 @@ internal sealed class TrackedFakeTime : FakeTimeProvider
     private int _inFlight;
     private Exception? _callbackFailure;
 
-    public TrackedFakeTime(DateTimeOffset? start = null, TimeSpan? callbackLatency = null)
+    public TrackedFakeTime(DateTimeOffset? start = null, TimeSpan? callbackLatency = null, TimeSpan? followOnDelay = null)
         : base(start ?? new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero))
     {
         CallbackLatency = callbackLatency ?? TimeSpan.Zero;
+        FollowOnDelay = followOnDelay ?? TimeSpan.Zero;
     }
+
+    /// <summary>
+    /// Real time the work that follows a timer firing is held up, as a chain of short thread-pool hops, before the callback
+    /// runs. Unlike <see cref="CallbackLatency"/> this is not tracked as a callback in flight: it models a pool continuation
+    /// that is slow to reach the code under test, which only the thread pool's own counters can see.
+    /// </summary>
+    public TimeSpan FollowOnDelay { get; }
+
+    private static readonly TimeSpan HopLength = TimeSpan.FromMilliseconds(4);
 
     /// <summary>Real time between a timer coming due and its callback running.</summary>
     public TimeSpan CallbackLatency { get; }
@@ -128,6 +138,27 @@ internal sealed class TrackedFakeTime : FakeTimeProvider
             lock (owner._gate)
             {
                 Due = _period == Timeout.InfiniteTimeSpan || _period == TimeSpan.Zero ? null : owner.GetUtcNow() + _period;
+            }
+
+            if (owner.FollowOnDelay > TimeSpan.Zero)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        for (var left = owner.FollowOnDelay; left > TimeSpan.Zero; left -= HopLength)
+                        {
+                            await Task.Delay(HopLength);
+                        }
+
+                        callback(state);
+                    }
+                    catch (Exception ex)
+                    {
+                        Interlocked.CompareExchange(ref owner._callbackFailure, ex, null);
+                    }
+                });
+                return;
             }
 
             Interlocked.Increment(ref owner._inFlight);

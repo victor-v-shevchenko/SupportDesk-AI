@@ -10,6 +10,7 @@ using static SupportDesk.UnitTests.AI.ScriptedChatClient;
 namespace SupportDesk.UnitTests.AI;
 
 /// <summary>The token budget (PLAN.md 6.4), usage rows and cost (6.6), and the middleware order (6.2).</summary>
+[Collection(FakeClockGroup.Name)]
 public class BudgetAndUsageTests
 {
     private const string TicketText = "SECRET-TICKET-TEXT-7f3a";

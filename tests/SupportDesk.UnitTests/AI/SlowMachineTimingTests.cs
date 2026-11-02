@@ -11,6 +11,7 @@ namespace SupportDesk.UnitTests.AI;
 /// The fake-clock helpers must move time only while the code under test waits on a timer. A busy machine makes the code
 /// slow to react once a timer fires; here the timers fire 30 ms late in real time, which must change nothing in fake time.
 /// </summary>
+[Collection(FakeClockGroup.Name)]
 public class SlowMachineTimingTests
 {
     private static readonly TimeSpan Late = TimeSpan.FromMilliseconds(30);
@@ -33,6 +34,25 @@ public class SlowMachineTimingTests
         Assert.True(error.IsTimeout);
         Assert.Equal(3, provider.Calls);
         // 20 s first-item timeout, then a backoff of at most one second (PLAN.md 6.5)
+        Assert.InRange((provider.CallTimes[1] - provider.CallTimes[0]).TotalSeconds, 20.2, 21);
+    }
+
+    [Fact]
+    public async Task A_retry_is_not_cut_short_when_the_pool_continuation_after_a_timeout_is_held_up()
+    {
+        // The work after the 20 s timeout fires reaches the code under test 60 ms late, in 4 ms thread-pool hops, with no
+        // timer or callback in flight and nothing queued for most of that time. The clock must wait for it, not jump on to the
+        // 120 s stream total.
+        var time = new TrackedFakeTime(followOnDelay: TimeSpan.FromMilliseconds(60));
+        var provider = new ScriptedChatClient(time, Steps(Empty(), Wait(time, TimeSpan.FromSeconds(25)), Text("late")));
+        using var pipeline = TestPipeline.Create(provider, time, new FakeErrorClassifier());
+        var received = new List<ChatResponseUpdate>();
+
+        var error = await Assert.ThrowsAsync<ModelUnavailableException>(() =>
+            time.ReadAllAsync(pipeline.Client.GetStreamingResponseAsync("hi", Reply, Ct), received));
+
+        Assert.True(error.IsTimeout);
+        Assert.Equal(3, provider.Calls);
         Assert.InRange((provider.CallTimes[1] - provider.CallTimes[0]).TotalSeconds, 20.2, 21);
     }
 

@@ -5,6 +5,7 @@ using SupportDesk.Core.FollowUps;
 using SupportDesk.Core.Orders;
 using SupportDesk.Core.Replies;
 using SupportDesk.Core.Replies.Tools;
+using SupportDesk.UnitTests.AI;
 using SupportDesk.UnitTests.Replies;
 using static SupportDesk.UnitTests.Adversarial.ReplyRig;
 
@@ -14,6 +15,7 @@ namespace SupportDesk.UnitTests.Adversarial;
 /// Step 9, prompt injection (PLAN.md 6.3, 7, 8, 10): the fake provider plays a model that follows the injected text, and the
 /// tests check what reached the model and what the system did with the model's output.
 /// </summary>
+[Collection(FakeClockGroup.Name)]
 public sealed partial class PromptInjectionTests
 {
     private const string Marker = "INJECTED-MARKER";
