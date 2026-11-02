@@ -70,8 +70,13 @@ public sealed partial class ClientAndTransportTests
         using var client = CancellationTokenSource.CreateLinkedTokenSource(Ct);
         var events = new List<ReplyEvent>();
         var read = rig.ReadAsync(Ticket(), events, client.Token);
-        // Cancel only once the call has started waiting out its backoff
-        await rig.Time.TimerStartedAsync(backoff).WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        // Cancel only once the call has started waiting out its backoff; a read that ends first shows its own failure
+        await Task.WhenAny(rig.Time.TimerStartedAsync(backoff), read).WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        if (read.IsCompleted)
+        {
+            await read;
+            Assert.Fail("The read ended before its backoff started");
+        }
 
         await client.CancelAsync();
         await WaitForCancelledReadAsync(read);

@@ -164,5 +164,5 @@ Entry format (from CLAUDE.md):
 - Step: 9
 - Found by: review subagent
 - What was wrong: `A_disconnect_while_waiting_to_retry_stops_the_retries_within_one_second` slept a real 100 ms and assumed the call was waiting out its backoff. A cancellation that landed earlier still passed, through the error path, so the test might not check "while waiting to retry" (issue #29).
-- Fix: the rig's fake clock reports when a timer is created for a given wait; the provider asks for a 3.7 s retry wait, no other timer in the call has that wait, and the test cancels only after that timer exists (this PR).
+- Fix: the rig's fake clock reports when a timer is created for a given wait; the provider asks for a 3.7 s retry wait, no other timer in the call has that wait, and the test cancels only after that timer exists (fix/retry-backoff-test).
 - Test: `ClientAndTransportTests.A_disconnect_while_waiting_to_retry_stops_the_retries_within_one_second`; with the retry wait made to ignore the token, it now fails (timeout after 10 s), checked by hand

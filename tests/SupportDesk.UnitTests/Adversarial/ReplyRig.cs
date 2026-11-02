@@ -257,7 +257,10 @@ internal sealed class TimerWatchingTimeProvider(DateTimeOffset start) : FakeTime
     private readonly List<(TimeSpan DueTime, TaskCompletionSource Started)> _watches = [];
     private readonly List<TimeSpan> _created = [];
 
-    /// <summary>Completes when a timer is created, or already was, with exactly <paramref name="dueTime"/> as its first wait.</summary>
+    /// <summary>
+    /// Completes when a timer is created, or already was, with exactly <paramref name="dueTime"/> as its first wait.
+    /// <c>Task.Delay</c> cuts its wait to whole milliseconds, so <paramref name="dueTime"/> must be whole milliseconds too.
+    /// </summary>
     public Task TimerStartedAsync(TimeSpan dueTime)
     {
         lock (_gate)
