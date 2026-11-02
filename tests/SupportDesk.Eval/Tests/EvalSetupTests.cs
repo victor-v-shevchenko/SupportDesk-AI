@@ -28,9 +28,11 @@ public class EvalSetupTests
             ["AI:Chat:Provider"] = "Ollama",
             ["AI:Chat:Model"] = "qwen2.5:7b",
             ["Eval:Limit"] = "3",
+            ["Eval:SaveReplies"] = "true",
         }));
 
-        Assert.Equal(new EvalSettings(ChatProvider.Ollama, "qwen2.5:7b", settings.Prompts, 3), settings);
+        Assert.Equal(new EvalSettings(ChatProvider.Ollama, "qwen2.5:7b", settings.Prompts, 3, SaveReplies: true), settings);
+        Assert.False(EvalSettings.From(Configuration(new() { ["AI:Chat:Provider"] = "Ollama" })).SaveReplies);
         Assert.Equal("reply.v2", settings.Prompts["reply"]);
         Assert.Equal("classify.v2", settings.Prompts["classify"]);
         Assert.Equal("claude-opus-5-5", EvalSettings.From(Configuration(new() { ["AI:Chat:Provider"] = "Anthropic" })).Model);
