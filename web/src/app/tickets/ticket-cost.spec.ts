@@ -91,7 +91,7 @@ describe('TicketCost', () => {
     http.expectOne(url).flush([]);
     await fixture.whenStable();
 
-    fixture.componentRef.setInput('refresh', 1);
+    fixture.componentRef.setInput('refresh', { calls: 1 });
     TestBed.tick();
     http.expectOne(url).flush([row(1, 100, 10, 0.002)]);
     await fixture.whenStable();
@@ -114,7 +114,7 @@ describe('TicketCost', () => {
       const fixture = create();
       await flushNext([row(1, 100, 10, 0.002)]);
 
-      fixture.componentRef.setInput('refresh', 1);
+      fixture.componentRef.setInput('refresh', { calls: 1 });
       TestBed.tick();
       await flushNext([row(1, 100, 10, 0.002)]); // read at once: the new row is not saved yet
 
@@ -134,9 +134,9 @@ describe('TicketCost', () => {
       const fixture = create();
       await flushNext([]);
 
-      fixture.componentRef.setInput('refresh', 1);
+      fixture.componentRef.setInput('refresh', { calls: 1 });
       TestBed.tick();
-      fixture.componentRef.setInput('refresh', 2);
+      fixture.componentRef.setInput('refresh', { calls: 1 });
       TestBed.tick();
       // The first read is still loading, so the second call's read was a no-op; it answers with one row
       await flushNext([row(1, 100, 10, 0.002)]);
@@ -152,11 +152,137 @@ describe('TicketCost', () => {
       fixture.destroy();
     });
 
+    const one = [row(1, 100, 10, 0.002)];
+    const two = [row(2, 50, 5, 0.001), row(1, 100, 10, 0.002)];
+    const three = [row(3, 20, 2, 0.0005), ...two];
+
+    /** Lets the backoff run out, answering each read with `body`; returns how many reads it made. */
+    async function readsUntilItStops(body: ModelCallRow[]) {
+      let reads = 0;
+      for (const wait of [...reloadBackoffMs, 60_000]) {
+        await vi.advanceTimersByTimeAsync(wait);
+        TestBed.tick();
+        for (const request of http.match(url)) {
+          request.flush(body);
+          reads++;
+        }
+        await vi.advanceTimersByTimeAsync(0);
+      }
+      return reads;
+    }
+
+    it('stops early for a later call after an earlier call wrote no row', async () => {
+      const fixture = create();
+      await flushNext(one);
+
+      // A call that writes no row (a 404, say): the reads keep returning one row until the readout gives up
+      fixture.componentRef.setInput('refresh', { calls: 1 });
+      TestBed.tick();
+      await flushNext(one);
+      expect(await readsUntilItStops(one)).toBe(reloadBackoffMs.length);
+
+      // The next call's row is there at once, so there are no more reads
+      fixture.componentRef.setInput('refresh', { calls: 1 });
+      TestBed.tick();
+      await flushNext(two);
+      expect(await readsUntilItStops(two)).toBe(0);
+
+      expect((fixture.nativeElement as HTMLElement).querySelector('.totals')?.textContent).toContain('2 calls');
+      fixture.destroy();
+    });
+
+    it('keeps the target when the last read failed, so a later call still waits for its row', async () => {
+      const fixture = create();
+      await flushNext(one);
+
+      fixture.componentRef.setInput('refresh', { calls: 1 });
+      TestBed.tick();
+      await flushNext(one);
+      for (const wait of reloadBackoffMs) {
+        await vi.advanceTimersByTimeAsync(wait);
+        TestBed.tick();
+        const request = http.expectOne(url);
+        if (wait === reloadBackoffMs.at(-1)) {
+          request.flush(null, { status: 500, statusText: 'Server Error' }); // the last read fails
+        } else {
+          request.flush(one);
+        }
+        await vi.advanceTimersByTimeAsync(0);
+      }
+      await vi.advanceTimersByTimeAsync(60_000);
+      http.expectNone(url);
+
+      // The next call: its row is not there on the first read, so the readout must read again
+      fixture.componentRef.setInput('refresh', { calls: 1 });
+      TestBed.tick();
+      await flushNext(one);
+      await vi.advanceTimersByTimeAsync(reloadBackoffMs[0]);
+      await flushNext(two);
+
+      expect((fixture.nativeElement as HTMLElement).querySelector('.totals')?.textContent).toContain('2 calls');
+      fixture.destroy();
+    });
+
+    it('keeps the target when the last read is still loading as it gives up', async () => {
+      const fixture = create();
+      await flushNext(one);
+
+      // A reply's row is late: every read shows the rows from before, and the last one is slow, then fails
+      fixture.componentRef.setInput('refresh', { calls: 1 });
+      TestBed.tick();
+      await flushNext(one);
+      let last: ReturnType<typeof http.expectOne> | undefined;
+      for (const wait of reloadBackoffMs) {
+        await vi.advanceTimersByTimeAsync(wait);
+        TestBed.tick();
+        const request = http.expectOne(url);
+        if (wait === reloadBackoffMs.at(-1)) {
+          last = request;
+        } else {
+          request.flush(one);
+          await vi.advanceTimersByTimeAsync(0);
+        }
+      }
+      await vi.advanceTimersByTimeAsync(5_000); // gives up while that read is still loading
+      last?.flush(null, { status: 500, statusText: 'Server Error' });
+      await vi.advanceTimersByTimeAsync(0);
+
+      // A summary ends: the late reply row is in, but not the summary's, so the readout must read again
+      fixture.componentRef.setInput('refresh', { calls: 1 });
+      TestBed.tick();
+      await flushNext(two);
+      await vi.advanceTimersByTimeAsync(reloadBackoffMs[0]);
+      await flushNext(three);
+
+      expect((fixture.nativeElement as HTMLElement).querySelector('.totals')?.textContent).toContain('3 calls');
+      fixture.destroy();
+    });
+
+    it('waits for as many rows as a reply with several model calls made, even when the last one lands late', async () => {
+      const fixture = create();
+      await flushNext([]);
+
+      fixture.componentRef.setInput('refresh', { calls: 3 }); // the reply's usage event said three calls
+      TestBed.tick();
+      await flushNext(two); // two rows saved at once
+      await vi.advanceTimersByTimeAsync(reloadBackoffMs[0]);
+      await flushNext(two);
+      await vi.advanceTimersByTimeAsync(reloadBackoffMs[1]);
+      await flushNext(two); // the third lands about 1.6 s later, past what a "count stopped changing" rule waits
+      await vi.advanceTimersByTimeAsync(reloadBackoffMs[2]);
+      await flushNext(three);
+
+      expect((fixture.nativeElement as HTMLElement).querySelector('.totals')?.textContent).toContain('3 calls');
+      await vi.advanceTimersByTimeAsync(60_000);
+      http.expectNone(url);
+      fixture.destroy();
+    });
+
     it('gives up after the last wait of the backoff', async () => {
       const fixture = create();
       await flushNext([row(1, 100, 10, 0.002)]);
 
-      fixture.componentRef.setInput('refresh', 1);
+      fixture.componentRef.setInput('refresh', { calls: 1 });
       TestBed.tick();
       await flushNext([row(1, 100, 10, 0.002)]);
       for (const wait of reloadBackoffMs) {

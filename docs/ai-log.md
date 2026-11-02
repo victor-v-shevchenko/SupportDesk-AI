@@ -187,3 +187,10 @@ Entry format (from CLAUDE.md):
 - What was wrong: the Tab walk only collected controls with `tabIndex >= 0`, so a native button or link with `tabindex="-1"` was dropped silently and the test could not fail on it.
 - Fix: every visible control must have `tabIndex >= 0` and no `inert` ancestor, checked directly, and the walk is bounded for long lists (fix/e2e-tab-walk).
 - Test: `accessibility.spec.ts` "the ticket page is accessible by keyboard and every control is named" and "the ticket list is accessible by keyboard and every control is named" (shown failing with a temporary `tabindex="-1"` on "Suggest again" and on a `.ticket` row, not committed)
+
+## 2026-11-02 — Cost readout miscounted calls without a row and replies with several model calls
+- Step: 11
+- Found by: review subagent
+- What was wrong: a call that wrote no row (a 404, a refused budget) left the readout's target one too high, so every later call ran all 5 retries; and a reply with several model calls wrote several rows but counted as one call, so the readout stopped at the first new row and could show too few calls.
+- Fix: the reply's `usage` event carries `calls`, the number of model calls the run made, and the readout adds that many to its target; when the last read ends below the target and finished successfully, the target drops to the rows shown (branch `fix/cost-readout-count`).
+- Test: `TicketCost after a model call, while its row is not saved yet stops early for a later call after an earlier call wrote no row`, `keeps the target when the last read failed, so a later call still waits for its row`, `waits for as many rows as a reply with several model calls made, even when the last one lands late`; `keeps the target when the last read is still loading as it gives up`; `ReplyServiceTests.Tool_call_events_arrive_in_call_order_and_a_repeated_proposal_in_the_run_leaves_one` and `A_round_with_two_tool_calls_counts_one_model_call` (calls equals the rows written)

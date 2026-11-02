@@ -5,9 +5,17 @@ import { ModelCallsService } from '../api/model-calls.service';
 
 /**
  * The usage writer saves rows in the background, so a call's row can land a moment after the call ends. After a call the
- * rows are read at once and then again after each of these waits, until there are more rows than before the call.
+ * rows are read at once and then again after each of these waits, until the ticket has a row for every call that ended.
  */
 export const reloadBackoffMs = [500, 1000, 2000, 4000];
+
+/** After the last read, how long to wait for it to answer before giving up on the target. */
+const lastReadSettleMs = 500;
+
+/** A model call run ended. `calls` is how many model calls it made, so how many rows it writes (a reply can make several). */
+export interface CostRefresh {
+  readonly calls: number;
+}
 
 /**
  * The ticket's model cost (step 11): tokens and dollars added up from its `ModelCalls` rows, so it covers every
@@ -48,14 +56,14 @@ export const reloadBackoffMs = [500, 1000, 2000, 4000];
 })
 export class TicketCost {
   readonly ticketId = input.required<number>();
-  /** Bump to read the rows again. */
-  readonly refresh = input(0);
+  /** Set a new value whenever a run of model calls ends, to read the rows again. */
+  readonly refresh = input<CostRefresh | undefined>(undefined);
 
   protected readonly rows = inject(ModelCallsService).forTicket(this.ticketId);
   protected readonly totals = computed(() => (this.rows.hasValue() ? totalCalls(this.rows.value()) : undefined));
 
   /**
-   * How many rows the ticket has once every call that has ended is saved. Each ended call adds one, on top of what is
+   * How many rows the ticket has once every call that has ended is saved. Each ended call adds a row, on top of what is
    * already shown, so calls that end while an earlier read is still loading (a reload then does nothing) are counted too.
    */
   private target = 0;
@@ -68,12 +76,13 @@ export class TicketCost {
     });
 
     effect((onCleanup) => {
-      if (this.refresh() === 0) {
+      const refresh = this.refresh();
+      if (!refresh) {
         return;
       }
 
       untracked(() => {
-        this.target = Math.max(this.target, this.totals()?.calls ?? 0) + 1;
+        this.target = Math.max(this.target, this.totals()?.calls ?? 0) + refresh.calls;
       });
       let timer: ReturnType<typeof setTimeout> | undefined;
       const attempt = (index: number): void => {
@@ -85,6 +94,15 @@ export class TicketCost {
               attempt(index + 1);
             }
           }, reloadBackoffMs[index]);
+        } else {
+          // Gave up after the last read. A call that wrote no row (a 404, a refused budget) must not leave the target
+          // too high for the calls after it, or each of them would run every retry. When that read failed or is still
+          // loading, the rows shown are older, so the target stays
+          timer = setTimeout(() => {
+            if (this.rows.status() === 'resolved') {
+              this.target = Math.min(this.target, this.totals()?.calls ?? 0);
+            }
+          }, lastReadSettleMs);
         }
       };
       untracked(() => attempt(0));

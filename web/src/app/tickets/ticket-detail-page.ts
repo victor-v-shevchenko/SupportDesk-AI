@@ -7,7 +7,7 @@ import { TicketsService } from '../api/tickets.service';
 import { ClassificationBadges } from './classification-badges';
 import { FollowUpsList } from './follow-ups';
 import { ReplyPanel } from './reply-panel';
-import { TicketCost } from './ticket-cost';
+import { CostRefresh, TicketCost } from './ticket-cost';
 import { TicketStatusBadge } from './ticket-status';
 import { GeneratedSummary, TicketSummaryBox } from './ticket-summary';
 
@@ -40,11 +40,11 @@ import { GeneratedSummary, TicketSummaryBox } from './ticket-summary';
       <p class="body">{{ t.body }}</p>
 
       <section class="slot summary" aria-labelledby="summary-heading">
-        <app-ticket-summary [ticketId]="t.id" [summary]="t.summary" (generated)="showSummary($event)" (finished)="usageChanged()" />
+        <app-ticket-summary [ticketId]="t.id" [summary]="t.summary" (generated)="showSummary($event)" (finished)="usageChanged(1)" />
       </section>
 
       <section class="slot cost" aria-labelledby="cost-heading">
-        <app-ticket-cost [ticketId]="t.id" [refresh]="usageVersion()" />
+        <app-ticket-cost [ticketId]="t.id" [refresh]="usageRefresh()" />
       </section>
 
       <section class="slot classification" aria-labelledby="classification-heading">
@@ -78,7 +78,7 @@ import { GeneratedSummary, TicketSummaryBox } from './ticket-summary';
 
       <section class="slot reply" aria-labelledby="reply-heading">
         <h2 id="reply-heading">Suggested reply</h2>
-        <app-reply-panel [ticketId]="t.id" (followUpsChanged)="followUps.reload()" (runEnded)="usageChanged()" />
+        <app-reply-panel [ticketId]="t.id" (followUpsChanged)="followUps.reload()" (runEnded)="usageChanged($event)" />
       </section>
 
       <section class="slot follow-ups" aria-labelledby="follow-ups-heading">
@@ -114,10 +114,11 @@ export class TicketDetailPage {
   protected readonly ticket = this.tickets.get(this.id);
 
   /** Changes whenever a model call for this ticket ends, so the cost readout reads its rows again. */
-  protected readonly usageVersion = signal(0);
+  protected readonly usageRefresh = signal<CostRefresh | undefined>(undefined);
 
-  protected usageChanged(): void {
-    this.usageVersion.update((v) => v + 1);
+  /** `calls` is how many model calls ended: a summary or a classification is one, a reply says how many it made. */
+  protected usageChanged(calls: number): void {
+    this.usageRefresh.set({ calls });
   }
 
   protected readonly classifying = signal(false);
@@ -134,11 +135,11 @@ export class TicketDetailPage {
     try {
       const classification = await this.tickets.classify(ticketId);
       this.ticket.update((t) => (t?.id === ticketId ? { ...t, classification } : t));
-      this.usageChanged();
+      this.usageChanged(1);
     } catch (error) {
       this.classifyError.set(errorMessage(error));
       // A failed call writes a usage row too
-      this.usageChanged();
+      this.usageChanged(1);
     } finally {
       this.classifying.set(false);
     }

@@ -40,7 +40,7 @@ describe('RepliesService', () => {
         streamOf([
           'event: token\ndata: {"text":"Ships "}\n\nevent: tok',
           'en\ndata: {"text":"soon [1]."}\n\nevent: citations\ndata: {"citations":[{"marker":1,"articleSlug":"s","articleTitle":"S"}],"removed":[]}\n\n',
-          'event: usage\ndata: {"inputTokens":10,"outputTokens":2,"costUsd":0,"estimated":false}\n\nevent: done\ndata: {"replyRunId":"r1"}\n\n',
+          'event: usage\ndata: {"inputTokens":10,"outputTokens":2,"costUsd":0,"estimated":false,"calls":1}\n\nevent: done\ndata: {"replyRunId":"r1"}\n\n',
         ]),
         { headers: { 'Content-Type': 'text/event-stream' } },
       ),
@@ -54,7 +54,7 @@ describe('RepliesService', () => {
       { type: 'token', text: 'Ships ' },
       { type: 'token', text: 'soon [1].' },
       { type: 'citations', citations: [{ marker: 1, articleSlug: 's', articleTitle: 'S' }], removed: [] },
-      { type: 'usage', inputTokens: 10, outputTokens: 2, costUsd: 0, estimated: false },
+      { type: 'usage', inputTokens: 10, outputTokens: 2, costUsd: 0, estimated: false, calls: 1 },
       { type: 'done', replyRunId: 'r1' },
     ]);
   });

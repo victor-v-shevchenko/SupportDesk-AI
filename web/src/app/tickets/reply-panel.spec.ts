@@ -98,6 +98,41 @@ describe('ReplyPanel', () => {
     expect(el.querySelector('.stop')).toBeNull();
   });
 
+  it('reports how many model calls the run made when it ends or is stopped, and 1 when it ended before its usage', async () => {
+    const fixture = create();
+    const ended: number[] = [];
+    fixture.componentInstance.runEnded.subscribe((calls) => ended.push(calls));
+    click(fixture.nativeElement as HTMLElement, '.suggest');
+    await settle(fixture);
+
+    streams[0].push(
+      { type: 'usage', inputTokens: 10, outputTokens: 2, costUsd: 0, estimated: false, calls: 3 },
+      { type: 'done', replyRunId: 'r1' },
+    );
+    const el = await settle(fixture);
+    expect(ended).toEqual([3]);
+
+    click(el, '.suggest');
+    await settle(fixture);
+    click(el, '.stop');
+    expect(ended).toEqual([3, 1]);
+
+    // Stopped after its usage arrived: the count is known
+    click(el, '.suggest');
+    await settle(fixture);
+    streams[2].push({ type: 'usage', inputTokens: 10, outputTokens: 2, costUsd: 0, estimated: false, calls: 2 });
+    await settle(fixture);
+    click(el, '.stop');
+    expect(ended).toEqual([3, 1, 2]);
+
+    // Failed before any usage: a failed call still writes its row
+    click(el, '.suggest');
+    await settle(fixture);
+    streams[3].push({ type: 'error', code: 'timeout', message: 'server text' });
+    await settle(fixture);
+    expect(ended).toEqual([3, 1, 2, 1]);
+  });
+
   it('shows loading, then the text as it streams, then links citations and shows the cost', async () => {
     const fixture = create();
     let el = fixture.nativeElement as HTMLElement;
@@ -116,7 +151,7 @@ describe('ReplyPanel', () => {
     streams[0].push(
       { type: 'token', text: ', not [7].' },
       { type: 'citations', citations: [{ marker: 1, articleSlug: 'shipping-times', articleTitle: 'Shipping times' }], removed: [7] },
-      { type: 'usage', inputTokens: 1200, outputTokens: 48, costUsd: 0.0012, estimated: false },
+      { type: 'usage', inputTokens: 1200, outputTokens: 48, costUsd: 0.0012, estimated: false, calls: 1 },
       { type: 'done', replyRunId: 'r1' },
     );
     el = await settle(fixture);
@@ -217,7 +252,7 @@ describe('ReplyPanel', () => {
     streams[0].push(
       { type: 'token', text: 'Hi.' },
       { type: 'citations', citations: [], removed: [] },
-      { type: 'usage', inputTokens: 5, outputTokens: 1, costUsd: null, estimated: true },
+      { type: 'usage', inputTokens: 5, outputTokens: 1, costUsd: null, estimated: true, calls: 1 },
       { type: 'done', replyRunId: 'r1' },
     );
     const el = await settle(fixture);
