@@ -3,8 +3,11 @@ import { ChangeDetectionStrategy, Component, computed, effect, inject, input, un
 import { totalCalls } from '../api/model-calls.models';
 import { ModelCallsService } from '../api/model-calls.service';
 
-/** How long after a model call finishes the rows are read again: the usage writer saves them in the background. */
-const settleMs = 1000;
+/**
+ * The usage writer saves rows in the background, so a call's row can land a moment after the call ends. After a call the
+ * rows are read at once and then again after each of these waits, until there are more rows than before the call.
+ */
+export const reloadBackoffMs = [500, 1000, 2000, 4000];
 
 /**
  * The ticket's model cost (step 11): tokens and dollars added up from its `ModelCalls` rows, so it covers every
@@ -57,8 +60,20 @@ export class TicketCost {
         return;
       }
 
-      untracked(() => this.rows.reload());
-      const timer = setTimeout(() => this.rows.reload(), settleMs);
+      const before = untracked(() => this.totals()?.calls ?? 0);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const attempt = (index: number): void => {
+        this.rows.reload();
+        if (index < reloadBackoffMs.length) {
+          timer = setTimeout(() => {
+            // Stop once the new row is in
+            if ((this.totals()?.calls ?? 0) <= before) {
+              attempt(index + 1);
+            }
+          }, reloadBackoffMs[index]);
+        }
+      };
+      untracked(() => attempt(0));
       onCleanup(() => clearTimeout(timer));
     });
   }

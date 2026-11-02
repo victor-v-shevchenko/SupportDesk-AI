@@ -2,7 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { ModelCallRow, totalCalls } from '../api/model-calls.models';
-import { TicketCost } from './ticket-cost';
+import { reloadBackoffMs, TicketCost } from './ticket-cost';
 
 const url = '/api/model-calls?ticketId=2';
 
@@ -98,5 +98,53 @@ describe('TicketCost', () => {
 
     expect((fixture.nativeElement as HTMLElement).querySelector('.totals')?.textContent).toContain('110 tokens');
     fixture.destroy();
+  });
+
+  describe('after a model call, while its row is not saved yet', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    async function flushNext(body: ModelCallRow[]) {
+      TestBed.tick();
+      http.expectOne(url).flush(body);
+      await vi.advanceTimersByTimeAsync(0);
+    }
+
+    it('reads the rows again after each wait of the backoff until a new row shows, then stops', async () => {
+      const fixture = create();
+      await flushNext([row(1, 100, 10, 0.002)]);
+
+      fixture.componentRef.setInput('refresh', 1);
+      TestBed.tick();
+      await flushNext([row(1, 100, 10, 0.002)]); // read at once: the new row is not saved yet
+
+      await vi.advanceTimersByTimeAsync(reloadBackoffMs[0]);
+      await flushNext([row(1, 100, 10, 0.002)]); // still not
+
+      await vi.advanceTimersByTimeAsync(reloadBackoffMs[1]);
+      await flushNext([row(2, 50, 5, 0.001), row(1, 100, 10, 0.002)]); // there
+
+      expect((fixture.nativeElement as HTMLElement).querySelector('.totals')?.textContent).toContain('2 calls');
+      await vi.advanceTimersByTimeAsync(reloadBackoffMs.reduce((a, b) => a + b, 0));
+      http.expectNone(url);
+      fixture.destroy();
+    });
+
+    it('gives up after the last wait of the backoff', async () => {
+      const fixture = create();
+      await flushNext([row(1, 100, 10, 0.002)]);
+
+      fixture.componentRef.setInput('refresh', 1);
+      TestBed.tick();
+      await flushNext([row(1, 100, 10, 0.002)]);
+      for (const wait of reloadBackoffMs) {
+        await vi.advanceTimersByTimeAsync(wait);
+        await flushNext([row(1, 100, 10, 0.002)]);
+      }
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      http.expectNone(url);
+      fixture.destroy();
+    });
   });
 });

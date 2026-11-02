@@ -178,6 +178,8 @@ describe('TicketDetailPage', () => {
       .expectOne('/api/tickets/2/classification')
       .flush({ status: 503, title: 'The model is unavailable', detail: 'Try again in a moment.' }, { status: 503, statusText: 'Service Unavailable' });
     await new Promise((resolve) => setTimeout(resolve));
+    TestBed.tick();
+    flushUsage();
     await fixture.whenStable();
 
     expect(el.querySelector('.classification [role=alert]')?.textContent).toContain("Couldn't classify this ticket: Try again in a moment.");

@@ -122,5 +122,5 @@ Entry format (from CLAUDE.md):
 - Step: 11
 - Found by: test
 - What was wrong: with the list beside the ticket, classifying the open ticket left its row in the list showing "Not classified" (the list was read once and never again).
-- Fix: `TicketsService.classify` bumps `listStale`, and the tickets page reloads the list, keeping its rows on screen meanwhile (step 11 branch).
-- Test: `TicketsPage reads the list again when a ticket was classified, keeping the rows on screen meanwhile`; end-to-end `summarizes and classifies a ticket`
+- Fix: `TicketsService.classify` bumps `listStale`, and the tickets page reloads the list, keeping its rows on screen meanwhile (step 11 branch). The fix was written before its test, which breaks the failing-test-first rule; the unit tests were added afterwards, and the second one was added in review.
+- Test: `TicketsService classify marks the ticket list stale so the list beside the ticket reads itself again`, `TicketsPage reads the list again when a ticket was classified, keeping the rows on screen meanwhile`; end-to-end `summarizes and classifies a ticket`

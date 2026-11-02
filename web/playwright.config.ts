@@ -41,6 +41,11 @@ export default defineConfig({
         AI__Embeddings__Provider: 'Fake',
         // The fake embeddings are hashes, so chunks are barely similar to anything; accept all non-negative ones so replies have citations
         Retrieval__MinSimilarity: '0',
+        // The fake model is free by default; a price makes the cost readout show (and the test check) real dollars.
+        // Index 6 is the free `fake` entry in appsettings.json: AI:Pricing is a list, so its fields are overridden by index (PLAN.md 6.6)
+        AI__Pricing__6__Model: 'fake',
+        AI__Pricing__6__InputPerMTok: '1000',
+        AI__Pricing__6__OutputPerMTok: '2000',
       },
     },
     {

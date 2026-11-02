@@ -74,7 +74,9 @@ test.describe('at 375 px wide', () => {
   test('the proposal and order cards fit', async ({ page }) => {
     await openTicket(page, /T-1008/);
     await page.getByRole('button', { name: 'Suggest reply' }).click();
-    await expect(page.getByRole('button', { name: 'Confirm' }).first()).toBeVisible();
+    const reply = page.getByRole('region', { name: 'Suggested reply' });
+    await expect(reply.getByRole('heading', { name: 'Order KO-208815' })).toBeVisible();
+    await expect(reply.getByRole('button', { name: 'Confirm' })).toBeVisible();
     await expectNoHorizontalScroll(page);
     await page.screenshot({ path: `${shots}/proposal-375.png`, fullPage: true });
   });

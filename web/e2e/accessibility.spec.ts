@@ -1,22 +1,34 @@
+import AxeBuilder from '@axe-core/playwright';
 import { expect, Page, test } from '@playwright/test';
 import { createTicket, openTicket } from './support';
 
 /**
- * Every interactive element has an accessible name, and the keyboard reaches all of them. The names come from Playwright's
- * accessibility (ARIA) snapshot, which is what a screen reader is given; an unnamed control shows up in it without a name.
+ * What the page gives a keyboard and screen reader user:
+ * - every link, button and form control in the ARIA snapshot (what a screen reader is given) has an accessible name;
+ * - the Tab key reaches every visible, enabled control that can take focus (a native control, or an element with a tabindex);
+ * - nothing that looks clickable (`cursor: pointer`) sits outside a focusable control, which would be a mouse-only action;
+ * - axe finds no text below the AA contrast ratio.
+ * Disabled controls are skipped on purpose: they are not meant to take focus.
  */
 async function expectAccessible(page: Page): Promise<void> {
   const snapshot = await page.locator('body').ariaSnapshot();
   const unnamed = snapshot.split('\n').filter((line) => /^\s*- (button|link|textbox|searchbox|combobox|checkbox|radio|switch)(\s+\[[^\]]*\])*:?\s*$/.test(line));
   expect(unnamed, `controls without an accessible name in:\n${snapshot}`).toEqual([]);
 
+  const focusable = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]';
+  const mouseOnly = await page.evaluate((selector) => {
+    return [...document.body.querySelectorAll<HTMLElement>('*')]
+      .filter((el) => el.getClientRects().length > 0 && getComputedStyle(el).cursor === 'pointer' && !el.closest(selector) && !el.closest('label, [disabled]'))
+      .map((el) => el.outerHTML.slice(0, 120));
+  }, focusable);
+  expect(mouseOnly, 'elements that look clickable but cannot take focus').toEqual([]);
+
   // Walk the page with Tab: each enabled, visible control must take focus
-  const controls = await page.evaluate(() => {
-    const selector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]';
+  const controls = await page.evaluate((selector) => {
     const visible = [...document.querySelectorAll<HTMLElement>(selector)].filter((el) => el.getClientRects().length > 0 && el.tabIndex >= 0);
     visible.forEach((el, i) => el.setAttribute('data-e2e-control', String(i)));
     return visible.length;
-  });
+  }, focusable);
   expect(controls).toBeGreaterThan(0);
 
   const reached = new Set<string>();
@@ -34,6 +46,12 @@ async function expectAccessible(page: Page): Promise<void> {
       .map((el) => el.outerHTML.slice(0, 120));
   }, [...reached]);
   expect(missed, 'controls the Tab key did not reach').toEqual([]);
+
+  const contrast = await new AxeBuilder({ page }).withRules(['color-contrast']).analyze();
+  expect(
+    contrast.violations.flatMap((v) => v.nodes.map((n) => `${n.target.join(' ')}: ${n.failureSummary ?? ''}`)),
+    'text below the AA contrast ratio',
+  ).toEqual([]);
 }
 
 test('the ticket list is accessible by keyboard and every control is named', async ({ page }) => {
@@ -117,3 +135,36 @@ test('the focused control has a visible outline', async ({ page }) => {
   expect(outline.style).not.toBe('none');
   expect(outline.width).toBeGreaterThanOrEqual(2);
 });
+
+for (const scheme of ['light', 'dark'] as const) {
+  test(`text and form controls have enough contrast in the ${scheme} theme`, async ({ page, request }) => {
+    await page.emulateMedia({ colorScheme: scheme });
+    const ticket = await createTicket(request);
+    await openTicket(page, ticket.subject);
+    await page.getByRole('button', { name: 'Suggest reply' }).click();
+    await expect(page.getByText('1,200 input + 48 output tokens')).toBeVisible();
+    await page.getByRole('button', { name: 'Classify' }).click();
+    await expect(page.getByRole('button', { name: 'Reclassify' })).toBeVisible();
+
+    const contrast = await new AxeBuilder({ page }).withRules(['color-contrast']).analyze();
+    expect(contrast.violations.flatMap((v) => v.nodes.map((n) => n.target.join(' ')))).toEqual([]);
+
+    // WCAG 1.4.11: the border of a form control against what is behind it is at least 3:1 (axe does not check this)
+    const ratio = await page.evaluate(() => {
+      const parse = (color: string): number[] => (color.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+      const luminance = ([r, g, b]: number[]): number => {
+        const [lr, lg, lb] = [r, g, b].map((c) => {
+          const v = c / 255;
+          return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+        });
+        return 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
+      };
+      const button = document.querySelector('button') as HTMLElement;
+      const border = luminance(parse(getComputedStyle(button).borderTopColor));
+      const page = luminance(parse(getComputedStyle(document.body).backgroundColor));
+      const [light, dark] = border > page ? [border, page] : [page, border];
+      return (light + 0.05) / (dark + 0.05);
+    });
+    expect(ratio).toBeGreaterThanOrEqual(3);
+  });
+}

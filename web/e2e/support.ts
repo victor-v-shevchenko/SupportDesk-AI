@@ -36,10 +36,10 @@ export async function openTicket(page: Page, name: string | RegExp): Promise<voi
 }
 
 /** The numbers in the cost readout: "1,767 tokens (1,400 input + 70 output)". */
-export async function readCost(page: Page): Promise<{ input: number; output: number; calls: number }> {
+export async function readCost(page: Page): Promise<{ input: number; output: number; calls: number; costUsd: number }> {
   const text = (await page.locator('.cost .totals').innerText()).replace(/\s+/g, ' ');
-  const match = /\(([\d,]+) input \+ ([\d,]+) output\).* (\d+) calls?/.exec(text);
+  const match = /\(([\d,]+) input \+ ([\d,]+) output\).*\$([\d,.]+).* (\d+) calls?/.exec(text);
   expect(match, `cost readout: ${text}`).not.toBeNull();
-  const [, input, output, calls] = match!;
-  return { input: Number(input.replaceAll(',', '')), output: Number(output.replaceAll(',', '')), calls: Number(calls) };
+  const [, input, output, cost, calls] = match!;
+  return { input: Number(input.replaceAll(',', '')), output: Number(output.replaceAll(',', '')), calls: Number(calls), costUsd: Number(cost.replaceAll(',', '')) };
 }

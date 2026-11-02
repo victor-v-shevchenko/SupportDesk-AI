@@ -2,7 +2,10 @@ import { expect, test } from '@playwright/test';
 import { createTicket, openTicket, readCost } from './support';
 
 // The full stack: the API with the fake provider (scenarios are keyed by the seeded tickets' numbers, PLAN.md 6.8) and
-// the Angular build. Every test makes its own ticket, or only reads a seeded one, so the tests can run in any order.
+// the Angular app. Tests that need no scenario make their own ticket. The scenario tests share seeded tickets and
+// assert only on what their own run produced (their own proposal, the visible text), so they can run in any order:
+//   T-1002 reply (order card)   T-1008 reply and confirm (proposals, tasks)   T-1019 reply, stopped
+//   T-1021 reply (error)        T-1024 classification (NeedsManual)
 
 test('opens the list, opens a ticket and shows its details', async ({ page }) => {
   await page.goto('/tickets');
@@ -59,13 +62,13 @@ test('the ticket cost readout matches the sum of its model call rows', async ({ 
   }[];
   expect(rows).toHaveLength(2);
   const shown = await readCost(page);
-  expect(shown).toEqual({
-    input: rows.reduce((sum, r) => sum + r.inputTokens, 0),
-    output: rows.reduce((sum, r) => sum + r.outputTokens, 0),
-    calls: 2,
-  });
   const cost = rows.reduce((sum, r) => sum + (r.costUsd ?? 0), 0);
-  await expect(page.locator('.cost .totals')).toContainText(`$${cost.toFixed(4)}`);
+  // The e2e API prices the fake model (web/playwright.config.ts), so the dollars are not 0
+  expect(cost).toBeGreaterThan(0);
+  expect(shown.input).toBe(rows.reduce((sum, r) => sum + r.inputTokens, 0));
+  expect(shown.output).toBe(rows.reduce((sum, r) => sum + r.outputTokens, 0));
+  expect(shown.calls).toBe(2);
+  expect(shown.costUsd).toBeCloseTo(cost, 5);
 });
 
 test('stops a reply mid-stream and starts a new one', async ({ page }) => {
@@ -104,38 +107,44 @@ test('a reply with an order lookup shows the order card', async ({ page }) => {
 
 test('a reply with a proposal: confirming creates one task, confirming again does not add another', async ({ page }) => {
   await openTicket(page, /T-1008/);
+  const ticketId = /\/tickets\/(\d+)$/.exec(page.url())?.[1];
+  expect(ticketId).toBeTruthy();
   const reply = page.getByRole('region', { name: 'Suggested reply' });
-  const followUps = page.getByRole('region', { name: 'Follow-ups' });
   const title = 'Open a carrier trace for KO-208815';
-  const tasksBefore = await followUps.getByRole('listitem').filter({ hasText: title }).count();
 
   await reply.getByRole('button', { name: 'Suggest reply' }).click();
 
+  // This run's proposal is the card in the reply; other tests may have proposed the same title on this ticket
   const card = reply.getByRole('heading', { name: title }).locator('..');
   await expect(card).toBeVisible();
   await expect(reply.getByText(/If the number is right, an agent can check with the carrier/)).toBeVisible();
+  const confirmed = page.waitForResponse((r) => /\/api\/follow-ups\/[^/]+\/confirm$/.test(r.url()) && r.request().method() === 'POST');
   await card.getByRole('button', { name: 'Confirm' }).click();
+  const confirmUrl = (await confirmed).url();
   await expect(card.getByText('Task created.')).toBeVisible();
-  await expect(followUps.getByRole('listitem').filter({ hasText: title })).toHaveCount(tasksBefore + 1);
+
+  const proposalId = /\/follow-ups\/([^/]+)\/confirm$/.exec(confirmUrl)?.[1];
+  const tasksFor = async () => {
+    const body = (await (await page.request.get(`/api/tickets/${ticketId}/follow-ups`)).json()) as { tasks: { proposalId: string }[] };
+    return body.tasks.filter((t) => t.proposalId === proposalId).length;
+  };
+  expect(await tasksFor()).toBe(1);
 
   // A second confirm of the same proposal (here through the API, as a double click or a second tab would) adds nothing
-  const proposals = (await (await page.request.get('/api/tickets/8/follow-ups')).json()) as { proposals: { id: string; title: string }[] };
-  const proposalId = proposals.proposals.find((p) => p.title === title)?.id;
-  expect(proposalId).toBeTruthy();
-  const again = await page.request.post(`/api/follow-ups/${proposalId}/confirm`);
+  const again = await page.request.post(confirmUrl);
   expect(again.ok()).toBe(true);
-  await page.reload();
-  await expect(followUps.getByRole('listitem').filter({ hasText: title })).toHaveCount(tasksBefore + 1);
+  expect(await tasksFor()).toBe(1);
 });
 
 test('a model error before the first item shows the model unavailable message', async ({ page }) => {
+  test.setTimeout(45_000);
   // T-1021 fails with a 503 on every attempt; the pipeline retries before the error reaches the page
   await openTicket(page, /T-1021/);
   const reply = page.getByRole('region', { name: 'Suggested reply' });
 
   await reply.getByRole('button', { name: 'Suggest reply' }).click();
 
-  await expect(reply.getByRole('alert')).toContainText('The model is unavailable right now', { timeout: 60_000 });
+  await expect(reply.getByRole('alert')).toContainText('The model is unavailable right now', { timeout: 25_000 });
   await expect(reply.getByRole('button', { name: 'Suggest again' })).toBeVisible();
 });
 

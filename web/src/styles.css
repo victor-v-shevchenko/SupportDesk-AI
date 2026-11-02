@@ -1,4 +1,5 @@
-/* Theme tokens: light by default, dark when the system asks for it. Pairs of -bg and -fg are checked for WCAG AA (4.5:1). */
+/* Theme tokens: light by default, dark when the system asks for it. Text pairs are meant to meet WCAG AA (4.5:1), checked
+   on each page by axe in the end-to-end tests; --control-border is at least 3:1 (WCAG 1.4.11) against the page and surface. */
 :root {
   color-scheme: light dark;
   --bg: #ffffff;
@@ -6,6 +7,7 @@
   --muted: #4b5563;
   --surface: #f8f9fb;
   --border: #c9ced6;
+  --control-border: #7d8796;
   --link: #1d4ed8;
   --focus: #1d4ed8;
   --danger: #9b1c1c;
@@ -34,6 +36,7 @@
     --muted: #a9b2bf;
     --surface: #182029;
     --border: #3a4452;
+    --control-border: #6b7686;
     --link: #8ab4ff;
     --focus: #8ab4ff;
     --danger: #ff9f9f;
@@ -64,7 +67,7 @@ a { color: var(--link); }
 button, input, select {
   color: var(--fg);
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--control-border);
   border-radius: 6px;
 }
 button { cursor: pointer; }

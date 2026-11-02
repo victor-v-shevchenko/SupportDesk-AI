@@ -57,6 +57,8 @@ export class TicketSummaryBox {
   readonly ticketId = input.required<number>();
   readonly summary = input<TicketSummary | null>(null);
   readonly generated = output<GeneratedSummary>();
+  /** A request ended, successfully or not: either way it wrote a usage row. */
+  readonly finished = output<void>();
 
   private readonly tickets = inject(TicketsService);
   protected readonly pending = signal(false);
@@ -88,10 +90,12 @@ export class TicketSummaryBox {
       next: (summary) => {
         this.pending.set(false);
         this.generated.emit({ ticketId, summary });
+        this.finished.emit();
       },
       error: (error: unknown) => {
         this.pending.set(false);
         this.error.set(messageFor(error));
+        this.finished.emit();
       },
     });
   }

@@ -32,7 +32,7 @@ The UI is clean and consistent across the pages built in steps 2–8, and Playwr
 - The API runs with `Retrieval__MinSimilarity=0`: the fake embeddings are hashes, so with the default 0.5 no chunk is ever similar enough and no reply could have a citation. Failures the fake provider can't produce on demand (each error code, a 404) are played from mocked responses in `errors.spec.ts`
 
 **CI**
-- A second CI job: start PostgreSQL (service container) with its password from the `CI_POSTGRES_PASSWORD` GitHub secret, run the API with the fake provider, build and serve the Angular app, run Playwright with Chromium
+- A second CI job: start PostgreSQL (service container) with its password from the `CI_POSTGRES_PASSWORD` GitHub secret, run the API with the fake provider, serve the Angular app with `ng serve --configuration production` (which builds it), run Playwright with Chromium
   - *Why:* CLAUDE.md keeps every password out of the workflow file, including throwaway ones, so the rule has no exceptions and gitleaks has nothing to allow
 - The job is required for merging
 

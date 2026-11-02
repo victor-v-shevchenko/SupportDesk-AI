@@ -40,7 +40,7 @@ import { GeneratedSummary, TicketSummaryBox } from './ticket-summary';
       <p class="body">{{ t.body }}</p>
 
       <section class="slot summary" aria-labelledby="summary-heading">
-        <app-ticket-summary [ticketId]="t.id" [summary]="t.summary" (generated)="showSummary($event); usageChanged()" />
+        <app-ticket-summary [ticketId]="t.id" [summary]="t.summary" (generated)="showSummary($event)" (finished)="usageChanged()" />
       </section>
 
       <section class="slot cost" aria-labelledby="cost-heading">
@@ -133,10 +133,12 @@ export class TicketDetailPage {
     this.classifyError.set(null);
     try {
       const classification = await this.tickets.classify(ticketId);
-      this.ticket.update((t) => (t?.id === ticketId ?{ ...t, classification } : t));
+      this.ticket.update((t) => (t?.id === ticketId ? { ...t, classification } : t));
       this.usageChanged();
     } catch (error) {
       this.classifyError.set(errorMessage(error));
+      // A failed call writes a usage row too
+      this.usageChanged();
     } finally {
       this.classifying.set(false);
     }

@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 // Failures the fake provider can't produce on demand are played from mocked responses: the page shows a message for
 // each error code the API sends (PLAN.md 7 and 9).
 const detail = {
-  id: 2,
+  id: 0, // set from the seeded T-1002 in beforeEach
   number: 'T-1002',
   subject: 'Tent order stuck as delayed',
   status: 'Open',
@@ -19,11 +19,16 @@ function sse(events: [string, unknown][]): string {
   return events.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join('');
 }
 
-test.beforeEach(async ({ page }) => {
+let id = 0;
+
+test.beforeEach(async ({ page, request }) => {
+  const list = (await (await request.get('/api/tickets')).json()) as { id: number; number: string }[];
+  id = list.find((t) => t.number === 'T-1002')!.id;
+  detail.id = id;
   await page.route('/api/tickets', (route) => route.fulfill({ json: [{ ...detail, category: null, priority: null, classificationStatus: 'NotRun' }] }));
-  await page.route('/api/tickets/2', (route) => route.fulfill({ json: detail }));
-  await page.route('/api/tickets/2/follow-ups', (route) => route.fulfill({ json: { proposals: [], tasks: [] } }));
-  await page.route('/api/model-calls?ticketId=2', (route) => route.fulfill({ json: [] }));
+  await page.route(`/api/tickets/${id}`, (route) => route.fulfill({ json: detail }));
+  await page.route(`/api/tickets/${id}/follow-ups`, (route) => route.fulfill({ json: { proposals: [], tasks: [] } }));
+  await page.route(`/api/model-calls?ticketId=${id}`, (route) => route.fulfill({ json: [] }));
 });
 
 test('shows an error with a retry when the ticket list fails', async ({ page }) => {
@@ -36,9 +41,9 @@ test('shows an error with a retry when the ticket list fails', async ({ page }) 
 });
 
 test('says the ticket was not found on a 404', async ({ page }) => {
-  await page.route('/api/tickets/2', (route) => route.fulfill({ status: 404, contentType: 'application/problem+json', body: '{"status":404}' }));
+  await page.route(`/api/tickets/${id}`, (route) => route.fulfill({ status: 404, contentType: 'application/problem+json', body: '{"status":404}' }));
 
-  await page.goto('/tickets/2');
+  await page.goto(`/tickets/${id}`);
 
   await expect(page.getByRole('alert').filter({ hasText: 'Ticket not found' })).toBeVisible();
 });
@@ -53,11 +58,11 @@ const replyErrors: [string, string][] = [
 
 for (const [code, message] of replyErrors) {
   test(`the reply shows a message for the ${code} error`, async ({ page }) => {
-    await page.route('/api/tickets/2/reply', (route) =>
+    await page.route(`/api/tickets/${id}/reply`, (route) =>
       route.fulfill({ contentType: 'text/event-stream', body: sse([['error', { code, message: 'Fixed text.' }]]) }),
     );
 
-    await page.goto('/tickets/2');
+    await page.goto(`/tickets/${id}`);
     await page.getByRole('button', { name: 'Suggest reply' }).click();
 
     await expect(page.getByRole('alert')).toContainText(message);
@@ -74,10 +79,10 @@ const problems: [number, string, string][] = [
 for (const [status, code, text] of problems) {
   test(`summarize and classify show the ${code} problem`, async ({ page }) => {
     const body = JSON.stringify({ status, title: 'Problem', detail: text, code });
-    await page.route('/api/tickets/2/summary', (route) => route.fulfill({ status, contentType: 'application/problem+json', body }));
-    await page.route('/api/tickets/2/classification', (route) => route.fulfill({ status, contentType: 'application/problem+json', body }));
+    await page.route(`/api/tickets/${id}/summary`, (route) => route.fulfill({ status, contentType: 'application/problem+json', body }));
+    await page.route(`/api/tickets/${id}/classification`, (route) => route.fulfill({ status, contentType: 'application/problem+json', body }));
 
-    await page.goto('/tickets/2');
+    await page.goto(`/tickets/${id}`);
     await page.getByRole('button', { name: 'Summarize' }).click();
     await expect(page.getByRole('alert')).toContainText(text);
 

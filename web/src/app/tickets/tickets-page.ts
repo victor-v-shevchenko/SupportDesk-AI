@@ -16,7 +16,12 @@ import { TicketStatusBadge } from './ticket-status';
   template: `
     <div class="split" [class.detail-open]="detailOpen()">
       <section class="list" aria-labelledby="tickets-heading">
-        <h1 id="tickets-heading">Tickets</h1>
+        <!-- One h1 per page: the open ticket's title takes it -->
+        @if (detailOpen()) {
+          <h2 id="tickets-heading">Tickets</h2>
+        } @else {
+          <h1 id="tickets-heading">Tickets</h1>
+        }
         @if (tickets.isLoading() && !tickets.hasValue()) {
           <p class="loading" role="status">Loading tickets…</p>
         } @else if (tickets.error()) {
@@ -57,7 +62,7 @@ import { TicketStatusBadge } from './ticket-status';
   `,
   styles: `
     .split { display: grid; grid-template-columns: 1fr; gap: 1.5rem; }
-    h1 { margin: 0 0 0.75rem; font-size: 1.5rem; }
+    h1, h2 { margin: 0 0 0.75rem; font-size: 1.5rem; }
     .tickets { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
     .ticket { display: grid; gap: 0.35rem; padding: 0.6rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; color: var(--fg); text-decoration: none; }
     .ticket:hover { background: var(--surface); }
@@ -86,9 +91,11 @@ export class TicketsPage {
   protected readonly detailOpen = signal(false);
 
   constructor() {
-    // The ticket beside the list was classified: read the list again, keeping what it shows meanwhile
+    // The ticket beside the list was classified: read the list again, keeping what it shows meanwhile. A page made after
+    // earlier changes has just read the list, so only changes from now on count
+    const seen = this.service.listStale();
     effect(() => {
-      if (this.service.listStale() > 0) {
+      if (this.service.listStale() > seen) {
         untracked(() => this.tickets.reload());
       }
     });

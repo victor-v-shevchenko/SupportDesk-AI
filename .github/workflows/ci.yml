@@ -119,13 +119,11 @@ jobs:
       - name: Build the API
         run: dotnet build --no-restore src/SupportDesk.Api
 
-      - name: Build the Angular app
-        run: npm --prefix web run build
-
       - name: Install Chromium
         run: npm --prefix web exec playwright -- install --with-deps chromium
 
-      # Playwright starts the API (fake providers) and serves the Angular build (web/playwright.config.ts).
+      # Playwright starts the API (fake providers) and serves the app with `ng serve --configuration production`
+      # (web/playwright.config.ts), which builds it first.
       # The connection string is built here, so the password only exists as a secret
       - name: Playwright
         env:
