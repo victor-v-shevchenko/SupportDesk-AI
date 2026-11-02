@@ -168,7 +168,7 @@ public sealed class ProviderFaultTests
         Assert.Equal("Thanks for your patience. ", string.Concat(events.OfType<ReplyToken>().Select(t => t.Text)));
         Assert.Single(rig.Spy.Calls);
         // GapSeconds (15) after the last text, not the 30 the provider would have taken
-        Assert.InRange(rig.Time.GetUtcNow() - start, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(17));
+        Assert.InRange(rig.Time.GetUtcNow() - start, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15.01));
         Assert.Equal(ModelCallOutcome.Error, Assert.Single(rig.Rows).Outcome);
     }
 

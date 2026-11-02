@@ -1,5 +1,4 @@
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Time.Testing;
 using SupportDesk.Core.AI;
 using SupportDesk.Core.AI.Fake;
 using SupportDesk.Core.AI.Usage;
@@ -108,9 +107,9 @@ public class RetryTimeoutMiddlewareTests
         await Assert.ThrowsAsync<ModelUnavailableException>(() => _time.RunAsync(pipeline.Client.GetResponseAsync("hi", Reply, Ct)));
 
         var times = provider.CallTimes;
-        // Base 500 ms: the first wait is 250–500 ms, the second 500–1000 ms (plus at most one clock step)
-        Assert.InRange((times[1] - times[0]).TotalMilliseconds, 250, 510);
-        Assert.InRange((times[2] - times[1]).TotalMilliseconds, 500, 1010);
+        // Base 500 ms: the first wait is 250–500 ms, the second 500–1000 ms
+        Assert.InRange((times[1] - times[0]).TotalMilliseconds, 250, 500);
+        Assert.InRange((times[2] - times[1]).TotalMilliseconds, 500, 1000);
     }
 
     [Fact]
@@ -121,7 +120,7 @@ public class RetryTimeoutMiddlewareTests
 
         await _time.RunAsync(pipeline.Client.GetResponseAsync("hi", Reply, Ct));
 
-        Assert.InRange((provider.CallTimes[1] - provider.CallTimes[0]).TotalSeconds, 4, 4.05);
+        Assert.InRange((provider.CallTimes[1] - provider.CallTimes[0]).TotalSeconds, 4, 4.01);
     }
 
     [Fact]
@@ -238,7 +237,7 @@ public class RetryTimeoutMiddlewareTests
         var error = await Assert.ThrowsAsync<ModelUnavailableException>(() => _time.RunAsync(pipeline.Client.GetResponseAsync("hi", Reply, Ct)));
 
         Assert.True(error.IsTimeout);
-        Assert.InRange((_time.GetUtcNow() - provider.CallTimes[0]).TotalSeconds, 30, 31);
+        Assert.InRange((_time.GetUtcNow() - provider.CallTimes[0]).TotalSeconds, 30, 30.01);
     }
 
     [Fact]

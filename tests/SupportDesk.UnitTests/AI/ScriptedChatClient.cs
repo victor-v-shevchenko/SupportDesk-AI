@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Net;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Time.Testing;
 using SupportDesk.Core.AI.Fake;
 
 namespace SupportDesk.UnitTests.AI;
@@ -133,6 +132,11 @@ internal sealed class ScriptedChatClient(TimeProvider time, params Func<Cancella
 /// <summary>
 /// Runs a call on a fake clock. Time moves only while the call waits on a timer: once it has gone quiet, the clock jumps
 /// to the next pending timer, so how fast the machine runs changes nothing in fake time.
+/// "Quiet" is a short real-time check, not a proof. The code under test normally reacts to a timer inline, inside
+/// <c>Advance</c>, so its next timer exists before the check starts. A continuation that hops to another thread and is
+/// descheduled for more than a few milliseconds before setting its timer could still be taken for quiet. Queued thread-pool
+/// work only pauses the count rather than resetting it, because the queue is process-wide: under parallel tests it is
+/// rarely empty, and resetting on it kept calls from ever settling. Each round waits about 1 ms (about 15 ms on Windows).
 /// </summary>
 internal static class FakeClock
 {
@@ -145,6 +149,11 @@ internal static class FakeClock
         while (!task.IsCompleted)
         {
             await WaitUntilQuietAsync(time, task);
+            if (time.CallbackFailure is { } failure)
+            {
+                throw new InvalidOperationException("A timer callback threw.", failure);
+            }
+
             if (task.IsCompleted)
             {
                 break;
@@ -158,8 +167,13 @@ internal static class FakeClock
             if (time.NextDue is { } due)
             {
                 var wait = due - time.GetUtcNow();
+                var before = time.Changes;
                 time.Advance(wait > TimeSpan.Zero ? wait : TimeSpan.Zero);
-                sinceProgress.Restart();
+                // Moving the clock, or a timer reacting, is progress; a timer that stays due without firing is not
+                if (wait > TimeSpan.Zero || time.Changes != before)
+                {
+                    sinceProgress.Restart();
+                }
             }
         }
 

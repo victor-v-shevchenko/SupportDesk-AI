@@ -15,6 +15,7 @@ internal sealed class TrackedFakeTime : FakeTimeProvider
     private readonly List<(TimeSpan DueTime, TaskCompletionSource Started)> _watches = [];
     private long _changes;
     private int _inFlight;
+    private Exception? _callbackFailure;
 
     public TrackedFakeTime(DateTimeOffset? start = null, TimeSpan? callbackLatency = null)
         : base(start ?? new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero))
@@ -30,6 +31,9 @@ internal sealed class TrackedFakeTime : FakeTimeProvider
 
     /// <summary>True while a due timer's callback is waiting to run (only with <see cref="CallbackLatency"/>) or running.</summary>
     public bool CallbackPending => Volatile.Read(ref _inFlight) > 0;
+
+    /// <summary>What a late timer callback threw, so the test fails with it instead of waiting for the call to time out.</summary>
+    public Exception? CallbackFailure => Volatile.Read(ref _callbackFailure);
 
     /// <summary>When the earliest pending timer is due, or null when none is.</summary>
     public DateTimeOffset? NextDue
@@ -93,6 +97,7 @@ internal sealed class TrackedFakeTime : FakeTimeProvider
     private sealed class TrackedTimer(TrackedFakeTime owner, TimerCallback callback, TimeSpan period) : ITimer
     {
         private ITimer? _inner;
+        private TimeSpan _period = period;
 
         public DateTimeOffset? Due { get; private set; }
 
@@ -105,6 +110,11 @@ internal sealed class TrackedFakeTime : FakeTimeProvider
 
         public bool Change(TimeSpan dueTime, TimeSpan newPeriod)
         {
+            lock (owner._gate)
+            {
+                _period = newPeriod;
+            }
+
             var changed = _inner!.Change(dueTime, newPeriod);
             SetDue(dueTime);
             owner.Touch();
@@ -113,10 +123,11 @@ internal sealed class TrackedFakeTime : FakeTimeProvider
 
         public void Fire(object? state)
         {
-            // A one-shot timer is spent once it is due, even if its callback runs late
+            // A one-shot timer is spent once it is due, even if its callback runs late; a periodic one is next due a period
+            // from now (also when it fired inside CreateTimer, before it had a due time)
             lock (owner._gate)
             {
-                Due = period == Timeout.InfiniteTimeSpan || period == TimeSpan.Zero ? null : Due + period;
+                Due = _period == Timeout.InfiniteTimeSpan || _period == TimeSpan.Zero ? null : owner.GetUtcNow() + _period;
             }
 
             Interlocked.Increment(ref owner._inFlight);
@@ -128,8 +139,15 @@ internal sealed class TrackedFakeTime : FakeTimeProvider
             {
                 _ = Task.Run(async () =>
                 {
-                    await Task.Delay(owner.CallbackLatency);
-                    RunCallback(state);
+                    try
+                    {
+                        await Task.Delay(owner.CallbackLatency);
+                        RunCallback(state);
+                    }
+                    catch (Exception ex)
+                    {
+                        Interlocked.CompareExchange(ref owner._callbackFailure, ex, null);
+                    }
                 });
             }
         }

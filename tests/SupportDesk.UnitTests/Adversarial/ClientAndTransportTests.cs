@@ -15,7 +15,6 @@ namespace SupportDesk.UnitTests.Adversarial;
 /// </summary>
 public sealed partial class ClientAndTransportTests
 {
-
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [GeneratedRegex(@"(?m)^\[\d+\] Title of ", RegexOptions.CultureInvariant)]
