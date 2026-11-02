@@ -130,6 +130,28 @@ describe('TicketCost', () => {
       fixture.destroy();
     });
 
+    it('keeps reading while a second call ends before the first call read has finished', async () => {
+      const fixture = create();
+      await flushNext([]);
+
+      fixture.componentRef.setInput('refresh', 1);
+      TestBed.tick();
+      fixture.componentRef.setInput('refresh', 2);
+      TestBed.tick();
+      // The first read is still loading, so the second call's read was a no-op; it answers with one row
+      await flushNext([row(1, 100, 10, 0.002)]);
+
+      await vi.advanceTimersByTimeAsync(reloadBackoffMs[0]);
+      await flushNext([row(1, 100, 10, 0.002)]); // still one: the second call's row is not saved yet
+      await vi.advanceTimersByTimeAsync(reloadBackoffMs[1]);
+      await flushNext([row(2, 50, 5, 0.001), row(1, 100, 10, 0.002)]);
+
+      expect((fixture.nativeElement as HTMLElement).querySelector('.totals')?.textContent).toContain('2 calls');
+      await vi.advanceTimersByTimeAsync(60_000);
+      http.expectNone(url);
+      fixture.destroy();
+    });
+
     it('gives up after the last wait of the backoff', async () => {
       const fixture = create();
       await flushNext([row(1, 100, 10, 0.002)]);
