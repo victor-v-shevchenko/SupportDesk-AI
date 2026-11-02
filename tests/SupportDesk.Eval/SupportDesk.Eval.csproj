@@ -9,7 +9,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
     <!-- The VSTest variant of xunit.v3, so dotnet test takes the trait filter -->
     <PackageReference Include="xunit.v3.mtp-off" />
     <PackageReference Include="xunit.runner.visualstudio" />
@@ -17,10 +20,21 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SupportDesk.Api\SupportDesk.Api.csproj" />
+    <!-- The golden set and fixture file types, so the suite reads exactly what the tool writes -->
+    <ProjectReference Include="..\..\tools\EmbedFixtures\EmbedFixtures.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <Using Include="Xunit" />
+  </ItemGroup>
+
+  <!-- The golden set, its query embeddings, the article fixtures they're checked against, the retrieval questions it
+       mustn't copy, and the thresholds -->
+  <ItemGroup>
+    <Content Include="golden\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\fixtures\embeddings\articles.json" Link="fixtures\embeddings\articles.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\fixtures\retrieval-questions.json" Link="fixtures\retrieval-questions.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="eval-thresholds.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- Shows each estimate next to Anthropic's count, passing or not -->

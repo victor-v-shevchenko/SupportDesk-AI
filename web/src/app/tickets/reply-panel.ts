@@ -1,6 +1,7 @@
 import { DecimalPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, output, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { errorMessages } from '../api/api-errors';
 import { Citation, ReplyRequestError, ReplyStreamEndedError, ReplyUsage, ToolCall } from '../api/replies.models';
 import { RepliesService } from '../api/replies.service';
 import { citedArticles, segmentReply } from './citations';
@@ -10,13 +11,7 @@ import { ProposalCard } from './proposal-card';
 type ReplyStatus = 'idle' | 'streaming' | 'done' | 'stopped' | 'error';
 
 /** What the panel says for each `error` code (PLAN.md 7); an unknown code shows the server's message. */
-export const replyErrorMessages: Record<string, string> = {
-  model_unavailable: 'The model is unavailable right now. Try again in a moment.',
-  timeout: 'The model took too long to answer. Try again.',
-  budget_exceeded: 'This ticket is too long for a suggested reply.',
-  model_refused: 'The model declined to write a reply for this ticket.',
-  internal_error: 'Something went wrong while writing the reply. Try again.',
-};
+export const replyErrorMessages = errorMessages;
 
 /**
  * "Suggest reply" on the ticket page: streams the reply as it's written, with a stop button, then links its citations
@@ -74,7 +69,7 @@ export const replyErrorMessages: Record<string, string> = {
           }
         </p>
       } @else if (status() === 'streaming') {
-        <p class="loading">Writing a reply…</p>
+        <p class="loading" role="status">Writing a reply…</p>
       } @else if (status() === 'done') {
         <p class="empty">The model returned an empty reply.</p>
       }
@@ -114,20 +109,22 @@ export const replyErrorMessages: Record<string, string> = {
     .tool-calls { display: grid; gap: 0.5rem; margin-bottom: 0.75rem; max-width: 70ch; }
     button { padding: 0.4rem 0.75rem; font: inherit; }
     .reply-text { white-space: pre-wrap; line-height: 1.5; max-width: 70ch; }
-    .cite a { color: #1d4ed8; }
+    .cite a { color: var(--link); }
     h3 { font-size: 0.875rem; margin: 1rem 0 0.25rem; }
     .citations { padding-left: 1.25rem; margin: 0; }
-    .citations a { color: #1d4ed8; }
-    .markers { color: #6b7280; margin-right: 0.35rem; font-variant-numeric: tabular-nums; }
-    .usage { color: #6b7280; font-size: 0.85rem; }
-    .loading, .empty, .note { color: #6b7280; }
-    .error { color: #9b1c1c; }
+    .citations a { color: var(--link); }
+    .markers { color: var(--muted); margin-right: 0.35rem; font-variant-numeric: tabular-nums; }
+    .usage { color: var(--muted); font-size: 0.85rem; }
+    .loading, .empty, .note { color: var(--muted); }
+    .error { color: var(--danger); }
   `,
 })
 export class ReplyPanel {
   readonly ticketId = input.required<number>();
   /** A reply proposed a follow-up, or one was confirmed here, so the page's follow-ups list is out of date. */
   readonly followUpsChanged = output<void>();
+  /** A reply ended (finished, failed or stopped), so the model calls it made are saved or about to be. */
+  readonly runEnded = output<void>();
 
   private readonly replies = inject(RepliesService);
   private controller: AbortController | undefined;
@@ -192,6 +189,10 @@ export class ReplyPanel {
         this.fail(describe(error));
       }
     }
+
+    if (controller === this.controller && !controller.signal.aborted) {
+      this.runEnded.emit();
+    }
   }
 
   /** Aborts the reply in progress and keeps the text so far. */
@@ -199,6 +200,7 @@ export class ReplyPanel {
     if (this.status() === 'streaming') {
       this.controller?.abort();
       this.status.set('stopped');
+      this.runEnded.emit();
     }
   }
 

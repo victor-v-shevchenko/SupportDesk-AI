@@ -14,7 +14,7 @@ import { ProposalCard } from './proposal-card';
   template: `
     <h2 id="follow-ups-heading">Follow-ups</h2>
     @if (followUps.isLoading() && !followUps.hasValue()) {
-      <p class="loading">Loading follow-ups…</p>
+      <p class="loading" role="status">Loading follow-ups…</p>
     } @else if (followUps.error()) {
       <div class="error" role="alert">
         <p>Couldn't load the follow-ups.</p>
@@ -49,11 +49,11 @@ import { ProposalCard } from './proposal-card';
     .tasks { margin: 0 0 0.75rem; padding-left: 1.25rem; }
     .tasks li { margin-bottom: 0.5rem; }
     .title { font-weight: 600; }
-    .due { margin-left: 0.5rem; color: #6b7280; font-size: 0.85rem; }
+    .due { margin-left: 0.5rem; color: var(--muted); font-size: 0.85rem; }
     .notes { margin: 0.125rem 0 0; max-width: 70ch; }
     app-proposal-card { margin-bottom: 0.5rem; }
-    .loading, .empty { color: #6b7280; }
-    .error { color: #9b1c1c; }
+    .loading, .empty { color: var(--muted); }
+    .error { color: var(--danger); }
   `,
 })
 export class FollowUpsList {

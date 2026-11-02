@@ -40,3 +40,6 @@ web/blob-report/
 # OS
 .DS_Store
 Thumbs.db
+
+# Playwright screenshots for the pull request (web/e2e/layout.spec.ts)
+web/e2e-artifacts/

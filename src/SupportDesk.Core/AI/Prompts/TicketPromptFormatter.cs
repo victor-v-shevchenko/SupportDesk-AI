@@ -11,6 +11,7 @@ namespace SupportDesk.Core.AI.Prompts;
 /// </summary>
 public static partial class TicketPromptFormatter
 {
+    // A new field the customer types freely must also go into FreeText, which the injection guard reads
     public static string Format(Ticket ticket)
     {
         ArgumentNullException.ThrowIfNull(ticket);
@@ -28,6 +29,17 @@ public static partial class TicketPromptFormatter
         text.Append(CultureInfo.InvariantCulture, $"Body:\n{Escape(ticket.Body)}\n");
         text.Append("</ticket>");
         return text.ToString();
+    }
+
+    /// <summary>
+    /// The fields <see cref="Format"/> writes that the customer types freely: the name, the subject and the body. The number is
+    /// ours and the order number is checked against its pattern when the ticket is created. The injection guard reads these.
+    /// </summary>
+    public static IReadOnlyList<string> FreeText(Ticket ticket)
+    {
+        ArgumentNullException.ThrowIfNull(ticket);
+
+        return [ticket.CustomerName, ticket.Subject, ticket.Body];
     }
 
     /// <summary>

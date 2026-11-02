@@ -37,6 +37,8 @@ While writing a reply, the model can look up an order's status and propose a fol
 - Ticket and article text also have `tool_result` tags escaped (PLAN.md 6.3), since the prompt tells the model to trust tool results as data
 - Function approval exists in Microsoft.Extensions.AI 10.11 but isn't used; the reasons are in PLAN.md 10
 - Added after step 9 (`fix/tool-call-cap`): a reply run runs at most 5 tool calls in all (`ReplyTools.MaxCallsPerRun`). Step 9 showed the round limit alone lets one model answer fan out into any number of lookups, upserts and `tool_call` events. Every call past the cap gets an error result, and nothing runs (PLAN.md 10)
+- Added after step 10 (`fix/injection-guard`): when the ticket's free text (customer name, subject and body) carries injection signals (a tool name, a role turn such as "Assistant:", a fake `<system>` or `</ticket>` tag, chat-template tokens, "ignore previous instructions", "system prompt" or "system override"; PLAN.md 10 has the full list), the reply run doesn't offer `propose_follow_up_task`, only the order lookup. The step 10 evaluation showed `qwen2.5:7b` proposing a task because of a fake assistant turn in the ticket (I-06). The guard is deterministic, so it holds whatever the model does; a false positive only costs a proposal, which a person would have had to confirm anyway (PLAN.md 10)
+- Also in `fix/injection-guard`: `reply.v3` adds a rule not to repeat policies, promises, articles or source numbers that the ticket names but the sources don't support. In the same evaluation, `qwen2.5:7b` told a customer about a made-up "Lifetime Refund Promise" from the ticket (I-07)
 
 ## Out of scope
 
@@ -53,6 +55,7 @@ Editing proposals. Other tools.
 - [ ] A retried or repeated proposal call in the same run leaves one proposal
 - [ ] The tool loop stops at 3 iterations and the request cap still applies
 - [ ] A reply run runs at most 5 tool calls; later calls get an error result, run nothing and send no `tool_call` event (added after step 9)
+- [ ] A ticket with injection signals gets a reply run without `propose_follow_up_task`, so no proposal can be saved, and the reason is logged without ticket text; an ordinary ticket still gets both tools (added after step 10)
 - [ ] `tool_call` events arrive in order, and the panel shows the cards
 
 ## Tests
