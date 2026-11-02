@@ -12,8 +12,9 @@ namespace SupportDesk.EmbedFixtures;
 
 /// <summary>
 /// Regenerates <c>tests/fixtures/embeddings/</c> with the configured embedding provider (the API's appsettings.json, user
-/// secrets and <c>AI__…</c> variables), from the repository's <c>seed/articles</c> and retrieval questions. The committed
-/// fixtures are made with Ollama's <c>mxbai-embed-large</c>, the default.
+/// secrets and <c>AI__…</c> variables), from the repository's <c>seed/articles</c> and retrieval questions, and the
+/// evaluation's <c>golden/embeddings.json</c> from its golden tickets. The committed fixtures are made with Ollama's
+/// <c>mxbai-embed-large</c>, the default.
 /// </summary>
 internal static class Program
 {
@@ -52,6 +53,14 @@ internal static class Program
         await EmbeddingFixtures.WriteAsync(Path.Combine(folder, EmbeddingFixtures.ArticlesFile), articleFile, cancel.Token);
         await EmbeddingFixtures.WriteAsync(Path.Combine(folder, EmbeddingFixtures.QuestionsFile), questionFile, cancel.Token);
         Console.WriteLine($"Wrote {articleFile.Items.Count} chunks and {questionFile.Items.Count} questions to {EmbeddingFixtures.FolderPath}.");
+
+        var golden = Path.Combine(root, GoldenSet.FolderPath);
+        var tickets = await GoldenSet.ReadTicketsAsync(Path.Combine(golden, GoldenSet.TicketsFile), cancel.Token);
+        var vectors = await EmbeddingFixtures.EmbedAsync(
+            generator, [.. tickets.Select(GoldenSet.QueryOf)], options.ResolvedModel, options.Dimensions, batchSize, cancel.Token);
+        await EmbeddingFixtures.WriteAsync(
+            Path.Combine(golden, GoldenSet.EmbeddingsFile), GoldenSet.ToFixture(tickets, vectors, options.ResolvedModel, options.Dimensions), cancel.Token);
+        Console.WriteLine($"Wrote {tickets.Count} golden ticket queries to {GoldenSet.FolderPath}.");
         return 0;
     }
 
