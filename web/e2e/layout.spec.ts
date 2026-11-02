@@ -81,3 +81,30 @@ test.describe('at 375 px wide', () => {
     await page.screenshot({ path: `${shots}/proposal-375.png`, fullPage: true });
   });
 });
+
+for (const width of [1440, 375]) {
+  for (const scheme of ['light', 'dark'] as const) {
+    test.describe(`the action buttons at ${width} px in the ${scheme} theme`, () => {
+      test.use({ viewport: { width, height: 900 }, colorScheme: scheme });
+
+      test('Summarize, Reclassify and Suggest reply share one size and style', async ({ page }) => {
+        await openTicket(page, /T-1002/);
+        const names: (string | RegExp)[] = ['Summarize', /^(Re)?[Cc]lassify$/, 'Suggest reply'];
+        const styles = [];
+        for (const name of names) {
+          const button = page.getByRole('button', { name });
+          await expect(button).toBeVisible();
+          styles.push(
+            await button.evaluate((el) => {
+              const s = getComputedStyle(el);
+              const box = el.getBoundingClientRect();
+              return { height: Math.round(box.height), font: s.fontSize, family: s.fontFamily, padding: s.padding, radius: s.borderRadius, border: s.borderTopWidth };
+            }),
+          );
+        }
+        expect(styles[1]).toEqual(styles[0]);
+        expect(styles[2]).toEqual(styles[0]);
+      });
+    });
+  }
+}

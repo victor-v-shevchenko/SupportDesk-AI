@@ -47,7 +47,6 @@ import { ProposalPayload } from '../api/replies.models';
     .title { margin: 0.25rem 0; font-size: 0.95rem; }
     .notes { margin: 0.25rem 0; white-space: pre-wrap; max-width: 70ch; }
     .due { margin: 0.25rem 0 0.5rem; font-size: 0.85rem; color: var(--muted); }
-    button { padding: 0.35rem 0.75rem; font: inherit; }
     .confirmed { margin: 0; color: var(--ok-fg); font-weight: 600; }
     .expired { margin: 0; color: var(--muted); }
     .error { margin: 0.5rem 0 0; color: var(--danger); }
