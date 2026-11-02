@@ -38,7 +38,10 @@ public sealed class ReplyTools
     internal ReplyTools(IOrderStatusService orders, IFollowUpRepository followUps, int ticketId, Guid replyRunId, IReadOnlyList<string> injectionSignals)
     {
         InjectionSignals = injectionSignals;
-        Tools = [new LookupOrderStatusFunction(orders, this), new ProposeFollowUpTaskFunction(followUps, ticketId, replyRunId, this)];
+        // A ticket that tries to steer the model gets no proposal tool; the lookup only reads, so it stays
+        Tools = injectionSignals.Count > 0
+            ? [new LookupOrderStatusFunction(orders, this)]
+            : [new LookupOrderStatusFunction(orders, this), new ProposeFollowUpTaskFunction(followUps, ticketId, replyRunId, this)];
     }
 
     /// <summary>The injection signals found in the ticket (PLAN.md 10); empty for an ordinary ticket.</summary>
