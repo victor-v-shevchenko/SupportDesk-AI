@@ -47,7 +47,7 @@ public sealed class ReplyServiceTests : IDisposable
         Assert.Equal([new Citation(1, "shipping-times", "Shipping times"), new Citation(2, "returns-policy", "Returns policy")], citations.Citations);
         Assert.Empty(citations.Removed);
         // claude-opus-5-5 at 4 / 20 USD per million tokens
-        Assert.Equal(new ReplyUsage(100, 20, 0.0008m, Estimated: false), events[3]);
+        Assert.Equal(new ReplyUsage(100, 20, 0.0008m, Estimated: false, Calls: 1), events[3]);
 
         var done = Assert.IsType<ReplyDone>(events[4]);
         var context = AiCallContext.From(provider.LastOptions);
@@ -308,7 +308,7 @@ public sealed class ReplyServiceTests : IDisposable
         Assert.Equal(new OrderLookupArguments("KO-205002"), lookup.Arguments);
         Assert.Equal(new OrderFound("KO-205002", "Delayed", "FedEx", new DateTimeOffset(2026, 10, 11, 7, 30, 0, TimeSpan.Zero), "Weather delay"), lookup.Result);
         // The usage of both calls in the loop
-        Assert.Equal(new ReplyUsage(250, 30, 0.0016m, Estimated: false), events[3]);
+        Assert.Equal(new ReplyUsage(250, 30, 0.0016m, Estimated: false, Calls: 2), events[3]);
 
         // The model got the result as data in a tool message
         var result = ToolResultSentIn(provider.Messages[1], "call-1");
@@ -380,6 +380,10 @@ public sealed class ReplyServiceTests : IDisposable
         Assert.All(followUps.Upserts, u => Assert.Equal((7, runId), (u.TicketId, u.ReplyRunId)));
         Assert.Equal(1, followUps.Count);
         Assert.Equal(0, followUps.Confirms);
+
+        // Three model calls (two rounds of tool calls), and exactly that many rows
+        Assert.Equal(3, events.OfType<ReplyUsage>().Single().Calls);
+        Assert.Equal(3, _pipeline!.Rows.All.Count);
     }
 
     [Fact]
@@ -396,6 +400,8 @@ public sealed class ReplyServiceTests : IDisposable
         Assert.Equal(AiPipeline.MaxToolIterations, orders.Lookups.Count);
         Assert.Equal(AiPipeline.MaxToolIterations + 1, provider.Calls);
         Assert.Equal(AiPipeline.MaxToolIterations, events.OfType<ReplyOrderLookup>().Count());
+        Assert.Equal(AiPipeline.MaxToolIterations + 1, events.OfType<ReplyUsage>().Single().Calls);
+        Assert.Equal(AiPipeline.MaxToolIterations + 1, _pipeline!.Rows.All.Count);
         Assert.IsType<ReplyDone>(events[^1]);
     }
 

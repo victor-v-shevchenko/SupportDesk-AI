@@ -15,6 +15,8 @@ export interface ReplyUsage {
   outputTokens: number;
   costUsd: number | null;
   estimated: boolean;
+  /** How many model calls the run made, which is how many usage rows it writes. */
+  calls: number;
 }
 
 /** What `lookup_order_status` returned: the order's status, or `{ found: false }`. */

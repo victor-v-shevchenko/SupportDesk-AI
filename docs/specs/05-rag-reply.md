@@ -18,7 +18,7 @@ On the ticket page, "Suggest reply" streams a reply grounded in the knowledge ba
 
 **Endpoint**
 - `POST /api/tickets/{id}/reply` returns SSE through `TypedResults.ServerSentEvents` with the events in PLAN.md 7
-- After the last token: parse markers, check them against `1…N`, send `citations` (with `removed`), then `usage`, then `done`
+- After the last token: parse markers, check them against `1…N`, send `citations` (with `removed`), then `usage` (with `calls`, how many model calls the run made, which is how many `ModelCalls` rows it writes), then `done`
 - Typed exceptions map to `error` events with the codes in PLAN.md 7; an unknown ticket returns `404` before the stream starts
 - Any other exception ends the stream with an `internal_error` event, so it still ends with one `error` (added in this step; PLAN.md 7)
 

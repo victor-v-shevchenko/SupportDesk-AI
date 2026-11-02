@@ -34,7 +34,7 @@ public class ReplyErrorsTests
         [
             new ReplyToken("Hi"),
             new ReplyCitations([], []),
-            new ReplyUsage(1, 2, 0m, Estimated: false),
+            new ReplyUsage(1, 2, 0m, Estimated: false, Calls: 1),
             new ReplyDone(Guid.NewGuid()),
             new ReplyError(ReplyErrorCodes.Timeout, "slow"),
         ];

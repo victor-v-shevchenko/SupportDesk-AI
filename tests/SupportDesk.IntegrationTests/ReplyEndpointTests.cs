@@ -61,6 +61,7 @@ public class ReplyEndpointTests(PostgresFixture postgres)
         Assert.Equal(48, usage.GetProperty("outputTokens").GetInt64());
         Assert.Equal(0m, usage.GetProperty("costUsd").GetDecimal());
         Assert.False(usage.GetProperty("estimated").GetBoolean());
+        Assert.Equal(1, usage.GetProperty("calls").GetInt32());
 
         var replyRunId = events.Single(e => e.Event == "done").Data.GetProperty("replyRunId").GetGuid();
         var row = Assert.Single(await PollAsync(api, ticketId, r => r.Count >= 1));
@@ -128,7 +129,9 @@ public class ReplyEndpointTests(PostgresFixture postgres)
 
         // Two calls in the tool loop, one usage row each, and the usage event adds them up
         Assert.Equal(2700, events.Single(e => e.Event == "usage").Data.GetProperty("inputTokens").GetInt64());
-        Assert.Equal(2, (await PollAsync(api, ticketId, r => r.Count >= 2)).Count);
+        var calls = events.Single(e => e.Event == "usage").Data.GetProperty("calls").GetInt32();
+        Assert.Equal(2, calls);
+        Assert.Equal(calls, (await PollAsync(api, ticketId, r => r.Count >= calls)).Count);
     }
 
     [Fact]

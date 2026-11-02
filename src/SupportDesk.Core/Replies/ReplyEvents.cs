@@ -44,8 +44,12 @@ public sealed record ReplyCitations(IReadOnlyList<Citation> Citations, IReadOnly
 /// <summary>A valid marker <c>[n]</c> and the article of source <c>n</c>.</summary>
 public sealed record Citation(int Marker, string ArticleSlug, string ArticleTitle);
 
-/// <summary>The request's tokens and cost; <see cref="Estimated"/> when the provider didn't report usage.</summary>
-public sealed record ReplyUsage(long InputTokens, long OutputTokens, decimal? CostUsd, bool Estimated) : ReplyEvent;
+/// <summary>
+/// The request's tokens and cost; <see cref="Estimated"/> when the provider didn't report usage. <see cref="Calls"/> is how
+/// many model calls the run made, which is how many <c>ModelCalls</c> rows it writes: one for the first call and one more
+/// for each round of tool calls (a retried call is still one row, PLAN.md 6.2).
+/// </summary>
+public sealed record ReplyUsage(long InputTokens, long OutputTokens, decimal? CostUsd, bool Estimated, int Calls) : ReplyEvent;
 
 /// <summary>Why the reply stopped: one of the <see cref="ReplyErrorCodes"/>, and a message that's safe to show.</summary>
 public sealed record ReplyError(string Code, string Message) : ReplyEvent;

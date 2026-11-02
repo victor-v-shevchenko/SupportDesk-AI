@@ -14,7 +14,7 @@ The UI is clean and consistent across the pages built in steps 2–8, and Playwr
 - One consistent layout: ticket list on the left, ticket detail on the right on wide screens; stacked on narrow screens (one pane at a time: the list, or the open ticket with a link back to the list, so a long list never pushes the ticket off screen)
 - Consistent loading, empty and error states; error messages for each API error code
 - Keyboard access for every action; visible focus; labels on icon buttons; color contrast at WCAG AA
-- Cost readout on the ticket page from `GET /api/model-calls?ticketId=` (total tokens and cost for this ticket)
+- Cost readout on the ticket page from `GET /api/model-calls?ticketId=` (total tokens and cost for this ticket). The rows are saved in the background, so the readout reads again until it has a row for every call that ended: 1 for a summary or classification, and the `calls` of the reply's `usage` event (PLAN.md 7) for a reply
 - Light and dark theme following the system setting
 
 **End-to-end tests** (`web/e2e/`, `@playwright/test`)

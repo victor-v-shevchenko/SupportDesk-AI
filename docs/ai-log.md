@@ -192,5 +192,5 @@ Entry format (from CLAUDE.md):
 - Step: 11
 - Found by: review subagent
 - What was wrong: a call that wrote no row (a 404, a failed request) left the readout's target one too high, so every later call ran all 5 retries; and a reply with several model calls wrote several rows but counted as one call, so the readout stopped at the first new row and could show too few calls.
-- Fix: when the last retry ends below the target, the target drops to what is shown; the reads also continue until a read shows the target and the row count has stopped growing (web only, `fix/cost-readout-count`, this PR).
-- Test: `TicketCost after a model call, while its row is not saved yet stops early for a later call after an earlier call wrote no row` and `keeps reading while a reply with several model calls writes more rows than one` (committed failing first)
+- Fix: the reply's `usage` event carries `calls`, the number of model calls the run made, and the readout adds that many to its target; when the last read ends below the target and succeeded, the target drops to the rows shown (branch `fix/cost-readout-count`).
+- Test: `TicketCost after a model call, while its row is not saved yet stops early for a later call after an earlier call wrote no row`, `keeps the target when the last read failed, so a later call still waits for its row`, `waits for as many rows as a reply with several model calls made, even when the last one lands late`; `ReplyServiceTests.Tool_call_events_arrive_in_call_order_and_a_repeated_proposal_in_the_run_leaves_one` (calls equals the rows written)

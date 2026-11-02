@@ -125,6 +125,8 @@ public sealed partial class ReplyService(
 
         var tokens = new StreamTokens();
         var text = new StringBuilder();
+        // The first model call, plus one more after each round of tool calls (the tool loop sends the results back)
+        var calls = 1;
         await foreach (var update in chat.GetStreamingResponseAsync(prompt.Messages, options, cancellationToken).WithCancellation(cancellationToken))
         {
             tokens.Observe(update);
@@ -137,6 +139,11 @@ public sealed partial class ReplyService(
             }
 
             // The tool loop passes each result on after running the tool, so the event follows the tool, in call order
+            if (update.Contents.OfType<FunctionResultContent>().Any())
+            {
+                calls++;
+            }
+
             foreach (var result in update.Contents.OfType<FunctionResultContent>())
             {
                 if (tools.Take(result.CallId) is { } call)
@@ -156,7 +163,7 @@ public sealed partial class ReplyService(
 
         var used = tokens.Resolve(prompt.Messages, options);
         var model = options.ModelId ?? chat.GetService<ChatClientMetadata>()?.DefaultModelId ?? "unknown";
-        yield return new ReplyUsage(used.Input, used.Output, prices.Cost(model, used.Input, used.Output), used.IsEstimated);
+        yield return new ReplyUsage(used.Input, used.Output, prices.Cost(model, used.Input, used.Output), used.IsEstimated, calls);
         yield return new ReplyDone(replyRunId);
     }
 

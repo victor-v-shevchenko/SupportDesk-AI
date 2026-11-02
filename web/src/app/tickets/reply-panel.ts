@@ -123,7 +123,8 @@ export class ReplyPanel {
   /** A reply proposed a follow-up, or one was confirmed here, so the page's follow-ups list is out of date. */
   readonly followUpsChanged = output<void>();
   /** A reply ended (finished, failed or stopped), so the model calls it made are saved or about to be. */
-  readonly runEnded = output<void>();
+  /** The run ended; the value is how many model calls it made (the `usage` event says; 1 when the run had no `usage`). */
+  readonly runEnded = output<number>();
 
   private readonly replies = inject(RepliesService);
   private controller: AbortController | undefined;
@@ -154,6 +155,7 @@ export class ReplyPanel {
     this.citations.set(undefined);
     this.usage.set(undefined);
     this.errorMessage.set('');
+    let calls = 1;
 
     try {
       for await (const event of this.replies.stream(this.ticketId(), controller.signal)) {
@@ -172,7 +174,8 @@ export class ReplyPanel {
             this.citations.set(event.citations);
             break;
           case 'usage':
-            this.usage.set({ inputTokens: event.inputTokens, outputTokens: event.outputTokens, costUsd: event.costUsd, estimated: event.estimated });
+            this.usage.set({ inputTokens: event.inputTokens, outputTokens: event.outputTokens, costUsd: event.costUsd, estimated: event.estimated, calls: event.calls });
+            calls = event.calls;
             break;
           case 'error':
             this.fail(replyErrorMessages[event.code] ?? event.message);
@@ -190,7 +193,7 @@ export class ReplyPanel {
     }
 
     if (controller === this.controller && !controller.signal.aborted) {
-      this.runEnded.emit();
+      this.runEnded.emit(calls);
     }
   }
 
@@ -199,7 +202,7 @@ export class ReplyPanel {
     if (this.status() === 'streaming') {
       this.controller?.abort();
       this.status.set('stopped');
-      this.runEnded.emit();
+      this.runEnded.emit(1);
     }
   }
 
