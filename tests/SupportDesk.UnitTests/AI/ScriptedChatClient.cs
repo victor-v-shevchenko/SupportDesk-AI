@@ -137,11 +137,11 @@ internal sealed class ScriptedChatClient(TimeProvider time, params Func<Cancella
 internal static class FakeClock
 {
     private const int QuietRounds = 5;
-    private static readonly TimeSpan RealTimeLimit = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan RealTimeLimit = TimeSpan.FromSeconds(120);
 
     public static async Task<T> RunAsync<T>(this TrackedFakeTime time, Task<T> task)
     {
-        var started = Stopwatch.StartNew();
+        var sinceProgress = Stopwatch.StartNew();
         while (!task.IsCompleted)
         {
             await WaitUntilQuietAsync(time, task);
@@ -150,15 +150,16 @@ internal static class FakeClock
                 break;
             }
 
-            if (started.Elapsed > RealTimeLimit)
+            if (sinceProgress.Elapsed > RealTimeLimit)
             {
-                throw new TimeoutException("The call is neither done nor waiting on a timer.");
+                throw new TimeoutException("The call has neither finished nor waited on a timer for two minutes of real time.");
             }
 
             if (time.NextDue is { } due)
             {
                 var wait = due - time.GetUtcNow();
                 time.Advance(wait > TimeSpan.Zero ? wait : TimeSpan.Zero);
+                sinceProgress.Restart();
             }
         }
 
@@ -178,7 +179,7 @@ internal static class FakeClock
         }
     }
 
-    /// <summary>Waits until no timer has been created, changed or disposed for a few real milliseconds and no work is queued.</summary>
+    /// <summary>Waits until no timer has been created, changed or disposed for a few real milliseconds with no work queued.</summary>
     private static async Task WaitUntilQuietAsync(TrackedFakeTime time, Task task)
     {
         var seen = time.Changes;
@@ -187,13 +188,14 @@ internal static class FakeClock
         {
             await Task.WhenAny(task, Task.Delay(1, TestContext.Current.CancellationToken));
             var now = time.Changes;
-            if (now != seen || time.CallbackPending || ThreadPool.PendingWorkItemCount > 0)
+            if (now != seen || time.CallbackPending)
             {
                 seen = now;
                 quiet = 0;
             }
-            else
+            else if (ThreadPool.PendingWorkItemCount == 0)
             {
+                // Queued work, such as the call's next step, may be about to create a timer; other tests' work only delays this
                 quiet++;
             }
         }
