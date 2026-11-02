@@ -14,7 +14,7 @@ public sealed class ReplyToolFactory(IOrderStatusService orders, IFollowUpReposi
     {
         ArgumentNullException.ThrowIfNull(ticket);
 
-        return new ReplyTools(orders, followUps, ticket.Id, replyRunId);
+        return new ReplyTools(orders, followUps, ticket.Id, replyRunId, InjectionSignals.Find(ticket));
     }
 }
 
@@ -35,10 +35,17 @@ public sealed class ReplyTools
     private readonly ConcurrentDictionary<string, ReplyToolCall> _events = new(StringComparer.Ordinal);
     private int _calls;
 
-    internal ReplyTools(IOrderStatusService orders, IFollowUpRepository followUps, int ticketId, Guid replyRunId)
+    internal ReplyTools(IOrderStatusService orders, IFollowUpRepository followUps, int ticketId, Guid replyRunId, IReadOnlyList<string> injectionSignals)
     {
-        Tools = [new LookupOrderStatusFunction(orders, this), new ProposeFollowUpTaskFunction(followUps, ticketId, replyRunId, this)];
+        InjectionSignals = injectionSignals;
+        // A ticket that tries to steer the model gets no proposal tool; the lookup only reads, so it stays
+        Tools = injectionSignals.Count > 0
+            ? [new LookupOrderStatusFunction(orders, this)]
+            : [new LookupOrderStatusFunction(orders, this), new ProposeFollowUpTaskFunction(followUps, ticketId, replyRunId, this)];
     }
+
+    /// <summary>The injection signals found in the ticket (PLAN.md 10); empty for an ordinary ticket.</summary>
+    public IReadOnlyList<string> InjectionSignals { get; }
 
     /// <summary>Only these run: the tool loop answers a call to any other name with an error result.</summary>
     public IReadOnlyList<AITool> Tools { get; }

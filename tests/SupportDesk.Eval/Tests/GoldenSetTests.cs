@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Configuration;
+using SupportDesk.Core.Replies.Tools;
 using SupportDesk.Core.Retrieval;
+using SupportDesk.Core.Tickets;
 using SupportDesk.Data.Seeding;
 using SupportDesk.EmbedFixtures;
 using SupportDesk.Eval.Suite;
@@ -55,6 +57,23 @@ public class GoldenSetTests
         var copies = tickets.SelectMany(t => Runs(t.Subject).Concat(Runs(t.Body)).Where(copied.Contains).Select(run => $"{t.Id}: \"{run}\"")).ToList();
 
         Assert.True(copies.Count == 0, "Golden tickets repeat the seed data or articles word for word:\n" + string.Join('\n', copies));
+    }
+
+    [Fact]
+    public async Task The_injection_guard_flags_no_ordinary_golden_ticket()
+    {
+        // So a guard change can't quietly change what the ordinary tickets measure. The injection cases are flagged on
+        // purpose: its patterns were written from them (docs/eval/README.md), all but I-07, which asks for no tool
+        var tickets = await GoldenSet.ReadTicketsAsync(Path.Combine(GoldenData.Folder, GoldenSet.TicketsFile), Ct);
+        var flagged = tickets.Where(t => InjectionSignals.Find(new Ticket
+        {
+            Number = t.Id,
+            Subject = t.Subject,
+            Body = t.Body,
+            CustomerName = t.CustomerName,
+        }).Count > 0).Select(t => t.Id).ToList();
+
+        Assert.Equal(["I-01", "I-02", "I-03", "I-04", "I-05", "I-06"], flagged);
     }
 
     [Fact]

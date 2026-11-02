@@ -107,6 +107,11 @@ public sealed partial class ReplyService(
     {
         var template = prompts.GetPrompt(PromptName);
         var tools = toolFactory.Create(ticket, replyRunId);
+        if (tools.InjectionSignals.Count > 0)
+        {
+            LogInjectionSignals(replyRunId, ticket.Id, string.Join(", ", tools.InjectionSignals));
+        }
+
         // Only the reply offers tools, so no other feature can run one
         var options = new AiCallContext(AiFeature.Reply, template.Version, ticket.Id, ticket.Number, replyRunId)
             .ApplyTo(new ChatOptions { Tools = [.. tools.Tools] });
@@ -176,6 +181,10 @@ public sealed partial class ReplyService(
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Reply {ReplyRunId} for ticket {TicketId} cited markers outside 1…{SourceCount}: {Removed}")]
     private partial void LogRemoved(Guid replyRunId, int ticketId, string removed, int sourceCount);
+
+    // The signal names only: the matched text is ticket text
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Reply {ReplyRunId} for ticket {TicketId} doesn't offer propose_follow_up_task: the ticket has injection signals ({Signals})")]
+    private partial void LogInjectionSignals(Guid replyRunId, int ticketId, string signals);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Reply {ReplyRunId} for ticket {TicketId} was cancelled")]
     private partial void LogCancelled(Guid replyRunId, int ticketId);

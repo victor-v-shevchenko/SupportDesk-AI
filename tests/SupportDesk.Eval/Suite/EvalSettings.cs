@@ -6,9 +6,10 @@ namespace SupportDesk.Eval.Suite;
 /// <summary>
 /// The chat provider and model the run measures, read the way the API reads them in Development (appsettings, user
 /// secrets, then <c>AI__…</c> variables), the optional <c>Eval:Limit</c> for a dry run on the first few tickets, and
-/// <c>Eval:SaveReplies</c>, which keeps each reply next to the test assembly so the approximate metrics can be checked.
+/// <c>Eval:SaveReplies</c>, which keeps each reply next to the test assembly so the approximate metrics can be checked, and
+/// <c>Eval:Label</c>, which goes into the report's file name so a second run on the same day doesn't replace the first.
 /// </summary>
-public sealed record EvalSettings(ChatProvider Provider, string Model, IReadOnlyDictionary<string, string> Prompts, int? Limit, bool SaveReplies = false)
+public sealed record EvalSettings(ChatProvider Provider, string Model, IReadOnlyDictionary<string, string> Prompts, int? Limit, bool SaveReplies = false, string? Label = null)
 {
     public static EvalSettings Load()
     {
@@ -46,6 +47,6 @@ public sealed record EvalSettings(ChatProvider Provider, string Model, IReadOnly
             throw new InvalidOperationException("Eval:Limit must be a positive number of tickets.");
         }
 
-        return new EvalSettings(ai.Chat.Provider, model, prompts, limit, configuration.GetValue<bool>("Eval:SaveReplies"));
+        return new EvalSettings(ai.Chat.Provider, model, prompts, limit, configuration.GetValue<bool>("Eval:SaveReplies"), configuration["Eval:Label"]);
     }
 }
