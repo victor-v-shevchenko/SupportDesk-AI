@@ -95,11 +95,11 @@ export class TicketCost {
             }
           }, reloadBackoffMs[index]);
         } else {
-          // Gave up after the last read. A call that wrote no row (a 404, a failed request) must not leave the target
-          // too high for the calls after it, or each of them would run every retry. When that read failed, the rows shown
-          // are older, so the target stays
+          // Gave up after the last read. A call that wrote no row (a 404, a refused budget) must not leave the target
+          // too high for the calls after it, or each of them would run every retry. When that read failed or is still
+          // loading, the rows shown are older, so the target stays
           timer = setTimeout(() => {
-            if (this.rows.hasValue()) {
+            if (this.rows.status() === 'resolved') {
               this.target = Math.min(this.target, this.totals()?.calls ?? 0);
             }
           }, lastReadSettleMs);

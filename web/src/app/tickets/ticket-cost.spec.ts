@@ -223,6 +223,41 @@ describe('TicketCost', () => {
       fixture.destroy();
     });
 
+    it('keeps the target when the last read is still loading as it gives up', async () => {
+      const fixture = create();
+      await flushNext(one);
+
+      // A reply's row is late: every read shows the rows from before, and the last one is slow, then fails
+      fixture.componentRef.setInput('refresh', { calls: 1 });
+      TestBed.tick();
+      await flushNext(one);
+      let last: ReturnType<typeof http.expectOne> | undefined;
+      for (const wait of reloadBackoffMs) {
+        await vi.advanceTimersByTimeAsync(wait);
+        TestBed.tick();
+        const request = http.expectOne(url);
+        if (wait === reloadBackoffMs.at(-1)) {
+          last = request;
+        } else {
+          request.flush(one);
+          await vi.advanceTimersByTimeAsync(0);
+        }
+      }
+      await vi.advanceTimersByTimeAsync(5_000); // gives up while that read is still loading
+      last?.flush(null, { status: 500, statusText: 'Server Error' });
+      await vi.advanceTimersByTimeAsync(0);
+
+      // A summary ends: the late reply row is in, but not the summary's, so the readout must read again
+      fixture.componentRef.setInput('refresh', { calls: 1 });
+      TestBed.tick();
+      await flushNext(two);
+      await vi.advanceTimersByTimeAsync(reloadBackoffMs[0]);
+      await flushNext(three);
+
+      expect((fixture.nativeElement as HTMLElement).querySelector('.totals')?.textContent).toContain('3 calls');
+      fixture.destroy();
+    });
+
     it('waits for as many rows as a reply with several model calls made, even when the last one lands late', async () => {
       const fixture = create();
       await flushNext([]);

@@ -317,6 +317,25 @@ public sealed class ReplyServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_round_with_two_tool_calls_counts_one_model_call()
+    {
+        var provider = new ScriptedChatClient(
+            TimeProvider.System,
+            Steps(
+                ToolCall("call-1", ReplyTools.LookupOrderStatus, Json("""{ "orderNumber": "KO-205002" }""")),
+                ToolCall("call-2", "create_follow_up_task", Json("""{ "title": "Refund" }"""))),
+            Steps(Text("Your order is on its way.")));
+        var service = Service(provider, new StubRetrieval(), tools: new ReplyToolFactory(new StubOrders(), new RecordingFollowUps()));
+
+        var events = await ReadAllAsync(service.StreamAsync(Ticket(), Ct));
+
+        // Both results, including the one for a tool that isn't offered, go back in one follow-up call
+        Assert.Equal(2, provider.Calls);
+        Assert.Equal(2, events.OfType<ReplyUsage>().Single().Calls);
+        Assert.Equal(2, _pipeline!.Rows.All.Count);
+    }
+
+    [Fact]
     public async Task A_call_to_any_other_tool_gets_an_error_result_and_no_event()
     {
         var followUps = new RecordingFollowUps();
