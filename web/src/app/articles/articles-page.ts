@@ -94,7 +94,7 @@ const maxQueryLength = 500;
     h2 { font-size: 1rem; margin: 1.5rem 0 0.75rem; }
     form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
     input[type='search'] { flex: 1 1 20rem; padding: 0.4rem 0.5rem; font: inherit; }
-    select, button { padding: 0.4rem 0.6rem; font: inherit; }
+    select { padding: 0.4rem 0.6rem; font: inherit; }
     label { font-size: 0.875rem; color: var(--muted); }
     .results { padding-left: 1.25rem; }
     .results li { margin: 0.75rem 0; }

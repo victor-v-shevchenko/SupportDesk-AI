@@ -173,3 +173,10 @@ Entry format (from CLAUDE.md):
 - What was wrong: `FakeClock.RunAsync` and `ReadAllAsync` (and so `ReplyRig.RunAsync`) moved the fake clock 100 ms to 1 s for each millisecond of real time while waiting. When the code under test was slow to react after a timer fired, the clock ran on past the wait it should have stopped at, so a retry came 23.5 s after the last attempt instead of 20.2 to 21 s, and a stall timed out past 17 s. CI caught it on the retry-backoff PR.
 - Fix: the helpers now move the clock only once the call has gone quiet, and then straight to the next pending timer, so how fast the machine runs changes nothing in fake time (fix/fake-clock-timing-tests). The step argument is gone from the helpers.
 - Test: `SlowMachineTimingTests.A_first_item_timeout_is_retried_after_exactly_the_backoff_however_late_the_timers_fire`, `A_gap_timeout_after_some_text_is_exactly_GapSeconds_however_late_the_timers_fire` and `A_reply_stall_after_some_text_ends_at_GapSeconds_however_late_the_timers_fire`, with timers that fire 30 ms late in real time; the first two failed on the old helpers (22.1 s and 15.9 s) before the fix. The ranges that allowed for a clock step are now exact
+
+## 2026-11-02 — Action buttons had different sizes
+- Step: 11
+- Found by: browser check
+- What was wrong: the global styles gave buttons no padding or font, so Summarize and Classify used the browser defaults (19px tall) next to Suggest reply (36px), which got its padding from the reply panel's own styles.
+- Fix: the padding and font are set once for every button in `styles.css`, and the per-component and articles-page button rules are removed (fix/action-button-sizes).
+- Test: e2e `the action buttons at 1440 px in the light theme Summarize, Classify and Suggest reply share one size and style` (and the dark and 375 px cases)
