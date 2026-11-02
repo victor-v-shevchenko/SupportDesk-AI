@@ -64,13 +64,19 @@ public sealed partial class ClientAndTransportTests
     [Fact]
     public async Task A_disconnect_while_waiting_to_retry_stops_the_retries_within_one_second()
     {
-        using var rig = Create(Turn(Error(503)), configure: o => o.Retry.BaseDelayMs = 4000);
+        // The provider asks for a wait no other timer in the call has, so a timer with that wait is the backoff
+        var backoff = TimeSpan.FromSeconds(3.7);
+        using var rig = Create(Turn(Error(503, retryAfterSeconds: backoff.TotalSeconds)));
         using var client = CancellationTokenSource.CreateLinkedTokenSource(Ct);
         var events = new List<ReplyEvent>();
         var read = rig.ReadAsync(Ticket(), events, client.Token);
-        await WaitForAsync(() => rig.Spy.Calls.Count == 1);
-        // The first attempt failed at once; the call is now waiting out its backoff
-        await Task.Delay(100, Ct);
+        // Cancel only once the call has started waiting out its backoff; a read that ends first shows its own failure
+        await Task.WhenAny(rig.Time.TimerStartedAsync(backoff), read).WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        if (read.IsCompleted)
+        {
+            await read;
+            Assert.Fail("The read ended before its backoff started");
+        }
 
         await client.CancelAsync();
         await WaitForCancelledReadAsync(read);
