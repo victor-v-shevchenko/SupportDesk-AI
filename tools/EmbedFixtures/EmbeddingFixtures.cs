@@ -71,7 +71,8 @@ public static class EmbeddingFixtures
         await File.WriteAllTextAsync(path, text.ToString(), cancellationToken);
     }
 
-    private static async Task<List<float[]>> EmbedAsync(
+    /// <summary>Embeds <paramref name="texts"/> in batches, checking each vector's model and size.</summary>
+    public static async Task<List<float[]>> EmbedAsync(
         IEmbeddingGenerator<string, Embedding<float>> generator, List<string> texts, string model, int dimensions, int batchSize, CancellationToken cancellationToken)
     {
         var vectors = new List<float[]>(texts.Count);

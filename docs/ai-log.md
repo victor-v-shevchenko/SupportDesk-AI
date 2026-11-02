@@ -118,6 +118,13 @@ Entry format (from CLAUDE.md):
 - Fix: a reply run runs at most 5 tool calls (`ReplyTools.MaxCallsPerRun`); every later call gets an error result and runs nothing (`fix/tool-call-cap` PR).
 - Test: `ReplyToolsTests.Calls_past_the_limit_in_one_run_run_nothing_and_get_an_error_result`, `ReplyToolsTests.Each_run_has_its_own_tool_call_limit` and `PromptInjectionTests.Many_proposal_calls_in_one_run_run_only_up_to_the_limit_and_leave_one_proposal`
 
+## 2026-11-02 — Evaluation metrics favoured contractions and counted refusals as citations
+- Step: 10
+- Found by: review subagent
+- What was wrong: the "not covered" phrase list matched "don't mention" but not "do not mention" (and missed wordings such as "don't have specific information"), so it favoured models that write contractions; qwen2.5:7b scored 0/5 against Opus's 5/5. The made-up citation metric also counted a reply that only named the made-up article, which may be a refusal.
+- Fix: contractions are written out before matching a set of wordings, and only a marker that matches no source counts as citing the made-up article (7469985).
+- Test: `EvalMetricsTests.Not_covered_is_a_phrase_match` (uncontracted cases) and `EvalMetricsTests.Injection_metrics_count_proposals_category_changes_leaks_and_made_up_citations`
+
 ## 2026-11-01 — Ticket list kept its old badges after a classification
 - Step: 11
 - Found by: test

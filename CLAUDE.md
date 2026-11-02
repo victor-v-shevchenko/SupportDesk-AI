@@ -31,19 +31,23 @@ Run inside the dev container.
 | Start with the fake model | `AI__Chat__Provider=Fake AI__Embeddings__Provider=Fake dotnet run --project src/SupportDesk.Api` |
 | Ollama in Docker instead of on the host (optional) | `docker compose --profile ollama up -d ollama` then `docker compose exec ollama ollama pull qwen2.5:1.5b` (or `qwen2.5:7b`, about 4.7 GB) |
 | Start against Ollama in Docker | `AI__Ollama__Endpoint=http://ollama:11434 dotnet run --project src/SupportDesk.Api` |
-| Start against `qwen2.5:7b` on CPU (slow; longer timeouts, PLAN.md 6.5) | `AI__Chat__Model=qwen2.5:7b AI__Timeouts__FirstItemSeconds=180 AI__Timeouts__GapSeconds=60 AI__Timeouts__StreamTotalSeconds=600 dotnet run --project src/SupportDesk.Api` |
-| Start against `qwen3:8b` (the local model that calls the reply's tools; slow on CPU, PLAN.md 6.1) | `ollama pull qwen3:8b`, then `AI__Chat__Model=qwen3:8b AI__Timeouts__FirstItemSeconds=180 AI__Timeouts__GapSeconds=60 AI__Timeouts__StreamTotalSeconds=600 dotnet run --project src/SupportDesk.Api` |
+| Start against `qwen2.5:7b` on CPU (slow; longer timeouts, PLAN.md 6.5) | `AI__Chat__Model=qwen2.5:7b AI__Timeouts__NonStreamingSeconds=180 AI__Timeouts__FirstItemSeconds=180 AI__Timeouts__GapSeconds=60 AI__Timeouts__StreamTotalSeconds=600 dotnet run --project src/SupportDesk.Api` |
+| Start against `qwen3:8b` (the local model that calls the reply's tools; slow on CPU, PLAN.md 6.1) | `ollama pull qwen3:8b`, then `AI__Chat__Model=qwen3:8b AI__Timeouts__NonStreamingSeconds=180 AI__Timeouts__FirstItemSeconds=180 AI__Timeouts__GapSeconds=60 AI__Timeouts__StreamTotalSeconds=600 dotnet run --project src/SupportDesk.Api` |
 | Set a provider key for `dotnet run` (Anthropic, OpenAI, Voyage) | `dotnet user-secrets set AI:Anthropic:ApiKey <key> --project src/SupportDesk.Api` |
 | Build | `dotnet build` |
 | Restore local tools (`dotnet ef`, Sonar scanner) | `dotnet tool restore` |
 | Tests (CI set) | `dotnet test --filter "Category!=Eval"` |
 | Tests with coverage (as CI) | `dotnet test --filter "Category!=Eval" --collect:"XPlat Code Coverage" --settings tests/coverage.runsettings` |
-| Evaluation (real model, costs money with a hosted provider; the token-count check only needs an Anthropic key and is free) | `dotnet test tests/SupportDesk.Eval --filter Category=Eval` |
+| Evaluation with the configured chat model (real model; costs money with a hosted provider, so ask first; writes `docs/eval/<date>-<model>.md`) | `dotnet test tests/SupportDesk.Eval --filter Category=Eval` |
+| Token-estimate check only (needs an Anthropic key; free) | `dotnet test tests/SupportDesk.Eval --filter "Category=Eval&FullyQualifiedName~TokenEstimateTests"` |
+| Evaluation against `qwen2.5:7b` on Ollama (30 to 60 minutes on CPU; writes `docs/eval/<date>-qwen2.5-7b.md`) | `AI__Chat__Provider=Ollama AI__Chat__Model=qwen2.5:7b AI__Timeouts__NonStreamingSeconds=180 AI__Timeouts__FirstItemSeconds=180 AI__Timeouts__GapSeconds=60 AI__Timeouts__StreamTotalSeconds=600 dotnet test tests/SupportDesk.Eval --filter Category=Eval` |
+| Evaluation dry run on the first 3 golden tickets (prints the projected cost of a full run; ask before running it against a hosted model) | `Eval__Limit=3` before the evaluation command |
+| Keep each evaluation reply to check the approximate metrics (written next to the test assembly, under `eval-replies/`) | `Eval__SaveReplies=true` before the evaluation command |
 | Angular tests and lint | `npm --prefix web test -- --watch=false` and `npm --prefix web run lint` |
 | Angular tests with coverage (as CI) | `npm --prefix web run test:ci` |
 | End-to-end tests (Playwright starts the API with the fake providers and the production Angular build; an API you started yourself is reused, so give it the same environment: `AI__Chat__Provider=Fake AI__Embeddings__Provider=Fake Retrieval__MinSimilarity=0 AI__Pricing__6__Model=fake AI__Pricing__6__InputPerMTok=1000 AI__Pricing__6__OutputPerMTok=2000`; point `ConnectionStrings__SupportDesk` at a disposable database, since the tests create tickets; `E2E_WEB_PORT=4201` if another dev server holds 4200) | `npm --prefix web run e2e` |
 | New migration | `dotnet ef migrations add <Name> --project src/SupportDesk.Data --startup-project src/SupportDesk.Api` |
-| Regenerate embedding fixtures (needs Ollama with `mxbai-embed-large`; `ollama pull mxbai-embed-large`) | `dotnet run --project tools/EmbedFixtures` |
+| Regenerate embedding fixtures, including the evaluation's golden embeddings (needs Ollama with `mxbai-embed-large`; `ollama pull mxbai-embed-large`) | `dotnet run --project tools/EmbedFixtures` |
 
 Keep this table correct: when a step changes a command, update it in the same pull request.
 
