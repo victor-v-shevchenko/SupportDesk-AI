@@ -2,6 +2,9 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, Page, test } from '@playwright/test';
 import { createTicket, openTicket } from './support';
 
+// The Tab walk presses a key per control and the ticket list grows with every run, so these tests need more than 30 s on a busy machine
+test.describe.configure({ timeout: 120_000 });
+
 /**
  * What the page gives a keyboard and screen reader user:
  * - every link, button and form control in the ARIA snapshot (what a screen reader is given) has an accessible name;
