@@ -11,6 +11,7 @@ namespace SupportDesk.Core.AI.Prompts;
 /// </summary>
 public static partial class TicketPromptFormatter
 {
+    // A new field the customer types freely must also go into FreeText, which the injection guard reads
     public static string Format(Ticket ticket)
     {
         ArgumentNullException.ThrowIfNull(ticket);

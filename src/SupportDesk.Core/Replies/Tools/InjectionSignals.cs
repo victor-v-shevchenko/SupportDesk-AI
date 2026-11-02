@@ -36,28 +36,37 @@ public static partial class InjectionSignals
         return [.. Signals.Where(s => s.Pattern.IsMatch(text)).Select(s => s.Name)];
     }
 
-    /// <summary>Fullwidth and other compatibility forms become plain ones, and invisible format characters (zero-width spaces) go.</summary>
+    /// <summary>
+    /// Fullwidth and other compatibility forms become plain ones, invisible format characters go (zero-width spaces, and the
+    /// tag characters outside the basic plane), and every line break the model reads as one becomes <c>\n</c>.
+    /// </summary>
     private static string Normalize(string text)
     {
         var normalized = text.Normalize(NormalizationForm.FormKC);
         var plain = new StringBuilder(normalized.Length);
-        foreach (var c in normalized)
+        foreach (var rune in normalized.EnumerateRunes())
         {
-            if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.Format)
+            if (rune.Value is '\r' or '\u0085' or '\u2028' or '\u2029')
             {
-                plain.Append(c);
+                plain.Append('\n');
+            }
+            else if (Rune.GetUnicodeCategory(rune) != UnicodeCategory.Format)
+            {
+                plain.Append(rune.ToString());
             }
         }
 
         return plain.ToString();
     }
 
-    // Underscores, spaces, hyphens or nothing between the words, so propose-follow-up-task and proposeFollowUpTask count too
-    [GeneratedRegex(@"propose[\s_-]*follow[\s_-]*up[\s_-]*task|lookup[\s_-]*order[\s_-]*status", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 1000)]
+    // Variants of the names: propose-follow-up-task and proposeFollowUpTask count. For the lookup, spaces don't, since
+    // "lookup order status" is plain English
+    [GeneratedRegex(@"\bpropose[\s_-]*follow[\s_-]*up[\s_-]*task\b|\blookup[_-]?order[_-]?status\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 1000)]
     private static partial Regex ToolName();
 
-    // A line that starts a turn of a conversation, also behind Markdown or quote marks (**Assistant:**, > System:)
-    [GeneratedRegex(@"^[\s>*#-]*(assistant|system|user|human|ai|agent|developer|tool)[\s*]*:", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Multiline, 1000)]
+    // A line that starts a turn of a conversation, also behind Markdown or quote marks (**Assistant:**, > System:). Not
+    // agent, tool, AI or developer: pasted chats with a human agent and parts lists use those, and they need follow-ups
+    [GeneratedRegex(@"^[\s>*#-]*(assistant|system|user|human)[\s*]*:", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Multiline, 1000)]
     private static partial Regex RoleTurn();
 
     [GeneratedRegex(@"<\s*/?\s*(system|system_prompt|instructions)\s*>|<\s*/\s*ticket\s*>", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 1000)]
@@ -67,7 +76,8 @@ public static partial class InjectionSignals
     [GeneratedRegex(@"<\|im_(start|end)\|>|\[/?INST\]", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 1000)]
     private static partial Regex ChatTemplate();
 
-    [GeneratedRegex(@"\b(ignore|disregard|forget)\s+(all\s+)?(the\s+|your\s+|any\s+)?(previous|prior|above|earlier)\s+instructions?\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 1000)]
+    // Not after "don't", "do not" or "never": "don't forget the earlier instruction" is a customer repeating a request
+    [GeneratedRegex(@"(?<!(n['’]t|\bnot|\bnever)\s+)\b(ignore|disregard|forget)\s+(all\s+)?(the\s+|your\s+|any\s+)?(previous|prior|above|earlier)\s+instructions?\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 1000)]
     private static partial Regex IgnoreInstructions();
 
     [GeneratedRegex(@"\bsystem\s+prompt\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 1000)]
