@@ -138,3 +138,10 @@ Entry format (from CLAUDE.md):
 - What was wrong: each refresh compared the row count with the count at that moment, and a reload does nothing while a read is loading. When a second call ended during the first call's read, its refresh was dropped and the first read's one row ended the retries, so the readout stayed at "1 call".
 - Fix: the readout keeps a running target (one more than the larger of the target and the rows shown, per ended call) and retries until the rows reach it; a new ticket resets it (step 11 branch).
 - Test: `TicketCost after a model call, while its row is not saved yet keeps reading while a second call ends before the first call read has finished` (committed failing first)
+
+## 2026-11-02 — Disconnect tests could fail on a busy machine
+- Step: 9
+- Found by: test
+- What was wrong: the three "cancels the provider call within one second" tests moved the fake clock 100 ms for each millisecond of real time while waiting for the cancelled read. When the machine was busy, the cancellation took more real time to land, the fake clock passed one second, and the test failed (seen once in a full run alongside the integration tests).
+- Fix: the tests wait for the cancelled read in real time, with a 10-second limit, without moving the fake clock, and assert that no fake time passed (fix/disconnect-test-clock).
+- Test: `ClientAndTransportTests.A_disconnect_mid_stream_cancels_the_provider_call_within_one_second_and_sends_no_error` and the two other disconnect tests; a flaky failure can't be committed as a failing test first, so 20 isolated runs and 5 full runs under load are the evidence

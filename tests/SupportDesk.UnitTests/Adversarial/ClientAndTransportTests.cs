@@ -35,9 +35,11 @@ public sealed partial class ClientAndTransportTests
 
         var left = rig.Time.GetUtcNow();
         await client.CancelAsync();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => rig.Time.RunAsync(read, Step));
+        // Cancelling needs no time to pass, so wait in real time with the fake clock stopped: moving it while waiting would
+        // let a slow machine push it past the limit, and a call that needed the clock to notice would hang and time out here
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read.WaitAsync(TimeSpan.FromSeconds(10), Ct));
 
-        Assert.True(rig.Time.GetUtcNow() - left <= TimeSpan.FromSeconds(1), "The provider call was still running a second after the client left.");
+        Assert.Equal(left, rig.Time.GetUtcNow());
         Assert.Equal(1, rig.Spy.CancelledCalls);
         Assert.All(events, e => Assert.IsType<ReplyToken>(e));
         var row = Assert.Single(rig.Rows);
@@ -57,9 +59,11 @@ public sealed partial class ClientAndTransportTests
 
         var left = rig.Time.GetUtcNow();
         await client.CancelAsync();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => rig.Time.RunAsync(read, Step));
+        // Cancelling needs no time to pass, so wait in real time with the fake clock stopped: moving it while waiting would
+        // let a slow machine push it past the limit, and a call that needed the clock to notice would hang and time out here
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read.WaitAsync(TimeSpan.FromSeconds(10), Ct));
 
-        Assert.True(rig.Time.GetUtcNow() - left <= TimeSpan.FromSeconds(1));
+        Assert.Equal(left, rig.Time.GetUtcNow());
         Assert.Equal(1, rig.Spy.CancelledCalls);
         Assert.Empty(events);
         Assert.Equal(ModelCallOutcome.Cancelled, Assert.Single(rig.Rows).Outcome);
@@ -78,9 +82,11 @@ public sealed partial class ClientAndTransportTests
 
         var left = rig.Time.GetUtcNow();
         await client.CancelAsync();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => rig.Time.RunAsync(read, Step));
+        // Cancelling needs no time to pass, so wait in real time with the fake clock stopped: moving it while waiting would
+        // let a slow machine push it past the limit, and a call that needed the clock to notice would hang and time out here
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read.WaitAsync(TimeSpan.FromSeconds(10), Ct));
 
-        Assert.True(rig.Time.GetUtcNow() - left <= TimeSpan.FromSeconds(1));
+        Assert.Equal(left, rig.Time.GetUtcNow());
         Assert.Single(rig.Spy.Calls);
         Assert.Empty(events);
         Assert.Equal(ModelCallOutcome.Cancelled, Assert.Single(rig.Rows).Outcome);
