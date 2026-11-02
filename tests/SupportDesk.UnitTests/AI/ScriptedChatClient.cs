@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
@@ -129,30 +130,72 @@ internal sealed class ScriptedChatClient(TimeProvider time, params Func<Cancella
     }
 }
 
-/// <summary>Runs a call on a fake clock: moves time on in small steps until the call is done.</summary>
+/// <summary>
+/// Runs a call on a fake clock. Time moves only while the call waits on a timer: once it has gone quiet, the clock jumps
+/// to the next pending timer, so how fast the machine runs changes nothing in fake time.
+/// </summary>
 internal static class FakeClock
 {
-    public static async Task<T> RunAsync<T>(this FakeTimeProvider time, Task<T> task, TimeSpan? step = null)
+    private const int QuietRounds = 5;
+    private static readonly TimeSpan RealTimeLimit = TimeSpan.FromSeconds(60);
+
+    public static async Task<T> RunAsync<T>(this TrackedFakeTime time, Task<T> task)
     {
+        var started = Stopwatch.StartNew();
         while (!task.IsCompleted)
         {
-            time.Advance(step ?? TimeSpan.FromMilliseconds(100));
-            await Task.WhenAny(task, Task.Delay(1, TestContext.Current.CancellationToken));
+            await WaitUntilQuietAsync(time, task);
+            if (task.IsCompleted)
+            {
+                break;
+            }
+
+            if (started.Elapsed > RealTimeLimit)
+            {
+                throw new TimeoutException("The call is neither done nor waiting on a timer.");
+            }
+
+            if (time.NextDue is { } due)
+            {
+                var wait = due - time.GetUtcNow();
+                time.Advance(wait > TimeSpan.Zero ? wait : TimeSpan.Zero);
+            }
         }
 
         return await task;
     }
 
-    public static async Task RunAsync(this FakeTimeProvider time, Task task, TimeSpan? step = null) =>
-        await time.RunAsync(task.ContinueWith(t => t, TaskScheduler.Default), step).Unwrap();
+    public static async Task RunAsync(this TrackedFakeTime time, Task task) =>
+        await time.RunAsync(task.ContinueWith(t => t, TaskScheduler.Default)).Unwrap();
 
     /// <summary>Reads the stream to the end on the fake clock; <paramref name="received"/> gets every update, even when it fails.</summary>
-    public static async Task ReadAllAsync(this FakeTimeProvider time, IAsyncEnumerable<ChatResponseUpdate> stream, List<ChatResponseUpdate> received, TimeSpan? step = null)
+    public static async Task ReadAllAsync(this TrackedFakeTime time, IAsyncEnumerable<ChatResponseUpdate> stream, List<ChatResponseUpdate> received)
     {
         await using var updates = stream.GetAsyncEnumerator(TestContext.Current.CancellationToken);
-        while (await time.RunAsync(updates.MoveNextAsync().AsTask(), step))
+        while (await time.RunAsync(updates.MoveNextAsync().AsTask()))
         {
             received.Add(updates.Current);
+        }
+    }
+
+    /// <summary>Waits until no timer has been created, changed or disposed for a few real milliseconds and no work is queued.</summary>
+    private static async Task WaitUntilQuietAsync(TrackedFakeTime time, Task task)
+    {
+        var seen = time.Changes;
+        var quiet = 0;
+        while (quiet < QuietRounds && !task.IsCompleted)
+        {
+            await Task.WhenAny(task, Task.Delay(1, TestContext.Current.CancellationToken));
+            var now = time.Changes;
+            if (now != seen || time.CallbackPending || ThreadPool.PendingWorkItemCount > 0)
+            {
+                seen = now;
+                quiet = 0;
+            }
+            else
+            {
+                quiet++;
+            }
         }
     }
 }

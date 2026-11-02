@@ -166,3 +166,10 @@ Entry format (from CLAUDE.md):
 - What was wrong: `A_disconnect_while_waiting_to_retry_stops_the_retries_within_one_second` slept a real 100 ms and assumed the call was waiting out its backoff. A cancellation that landed earlier still passed, through the error path, so the test might not check "while waiting to retry" (issue #29).
 - Fix: the rig's fake clock reports when a timer is created for a given wait; the provider asks for a 3.7 s retry wait, no other timer in the call has that wait, and the test cancels only after that timer exists (fix/retry-backoff-test).
 - Test: `ClientAndTransportTests.A_disconnect_while_waiting_to_retry_stops_the_retries_within_one_second`; with the retry wait made to ignore the token, it now fails (timeout after 10 s), checked by hand
+
+## 2026-11-02 — Fake-clock timing tests could fail on a busy machine
+- Step: 9
+- Found by: test
+- What was wrong: `FakeClock.RunAsync` and `ReadAllAsync` (and so `ReplyRig.RunAsync`) moved the fake clock 100 ms to 1 s for each millisecond of real time while waiting. When the code under test was slow to react after a timer fired, the clock ran on past the wait it should have stopped at, so a retry came 23.5 s after the last attempt instead of 20.2 to 21 s, and a stall timed out past 17 s. CI caught it on the retry-backoff PR.
+- Fix: the helpers now move the clock only once the call has gone quiet, and then straight to the next pending timer, so how fast the machine runs changes nothing in fake time (fix/fake-clock-timing-tests). The step argument is gone from the helpers.
+- Test: `SlowMachineTimingTests.A_first_item_timeout_is_retried_after_exactly_the_backoff_however_late_the_timers_fire` and two others, with timers that fire 30 ms late in real time; they failed on the old helpers (22.1 s and 15.9 s) before the fix

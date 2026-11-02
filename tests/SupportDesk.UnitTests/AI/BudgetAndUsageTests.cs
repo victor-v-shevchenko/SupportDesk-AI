@@ -15,7 +15,7 @@ public class BudgetAndUsageTests
 {
     private const string TicketText = "SECRET-TICKET-TEXT-7f3a";
 
-    private readonly FakeTimeProvider _time = new();
+    private readonly TrackedFakeTime _time = new();
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 

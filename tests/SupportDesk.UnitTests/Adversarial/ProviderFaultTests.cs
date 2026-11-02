@@ -92,7 +92,7 @@ public sealed class ProviderFaultTests
     public async Task A_429_with_retry_after_that_then_succeeds_is_one_row_and_a_normal_reply()
     {
         // The fake provider is stateless, so "fail once, then answer" is a scripted client (PLAN.md 6.8)
-        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(new DateTimeOffset(2026, 11, 1, 9, 0, 0, TimeSpan.Zero));
+        var time = new TrackedFakeTime(new DateTimeOffset(2026, 11, 1, 9, 0, 0, TimeSpan.Zero));
         var provider = new ScriptedChatClient(
             time,
             ScriptedChatClient.Steps(ScriptedChatClient.Fail(429, retryAfterSeconds: 2)),
@@ -100,7 +100,7 @@ public sealed class ProviderFaultTests
         using var pipeline = TestPipeline.Create(provider, time, new SupportDesk.Core.AI.Fake.FakeErrorClassifier());
         var updates = new List<ChatResponseUpdate>();
 
-        await time.ReadAllAsync(pipeline.Client.GetStreamingResponseAsync([new ChatMessage(ChatRole.User, "Hi")], new SupportDesk.Core.AI.AiCallContext(SupportDesk.Core.AI.AiFeature.Reply, "reply.v2", 1, "T-1", Guid.NewGuid()).ApplyTo(new ChatOptions()), Ct), updates, TimeSpan.FromMilliseconds(250));
+        await time.ReadAllAsync(pipeline.Client.GetStreamingResponseAsync([new ChatMessage(ChatRole.User, "Hi")], new SupportDesk.Core.AI.AiCallContext(SupportDesk.Core.AI.AiFeature.Reply, "reply.v2", 1, "T-1", Guid.NewGuid()).ApplyTo(new ChatOptions()), Ct), updates);
 
         Assert.Equal("Sorry for the wait.", string.Concat(updates.Select(u => u.Text)));
         Assert.Equal(2, provider.Calls);
@@ -145,7 +145,7 @@ public sealed class ProviderFaultTests
         using var rig = Create(Turn(Stall(60), Text("too late")));
         var start = rig.Time.GetUtcNow();
 
-        var events = await rig.RunAsync(Ticket(), TimeSpan.FromSeconds(1), Ct);
+        var events = await rig.RunAsync(Ticket(), Ct);
 
         Assert.Equal([ReplyErrorCodes.Timeout], events.OfType<ReplyError>().Select(e => e.Code));
         StreamAssert.Error(events, ReplyErrorCodes.Timeout);
@@ -162,7 +162,7 @@ public sealed class ProviderFaultTests
         using var rig = Create(Turn(Text("Thanks for your patience. "), Stall(30), Text("never seen")));
         var start = rig.Time.GetUtcNow();
 
-        var events = await rig.RunAsync(Ticket(), TimeSpan.FromSeconds(1), Ct);
+        var events = await rig.RunAsync(Ticket(), Ct);
 
         StreamAssert.Error(events, ReplyErrorCodes.Timeout);
         Assert.Equal("Thanks for your patience. ", string.Concat(events.OfType<ReplyToken>().Select(t => t.Text)));
@@ -177,7 +177,7 @@ public sealed class ProviderFaultTests
     {
         using var rig = Create(Turn(Text("Thanks for your patience. "), Stall(10), Text("Here is the answer [1]."), Usage()));
 
-        var events = await rig.RunAsync(Ticket(), TimeSpan.FromSeconds(1), Ct);
+        var events = await rig.RunAsync(Ticket(), Ct);
 
         StreamAssert.EndsOnce(events);
         Assert.IsType<ReplyDone>(events[^1]);
@@ -190,7 +190,7 @@ public sealed class ProviderFaultTests
         // 25 chunks, 5 seconds apart: each gap is fine, the whole is over StreamTotalSeconds (120)
         using var rig = Create(Turn(Text(new string('x', 12 * 25), delayMs: 5000)));
 
-        var events = await rig.RunAsync(Ticket(), TimeSpan.FromSeconds(1), Ct);
+        var events = await rig.RunAsync(Ticket(), Ct);
 
         StreamAssert.Error(events, ReplyErrorCodes.Timeout);
         Assert.InRange(events.OfType<ReplyToken>().Count(), 20, 24);
