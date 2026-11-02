@@ -50,7 +50,7 @@ New features. Visual regression testing.
 - [ ] All eight flows pass locally in the dev container and in CI
 - [ ] Tests wait on visible state (text, roles), never on fixed sleeps
 - [ ] The end-to-end job is required in branch protection
-- [ ] Every interactive element is reachable by keyboard and has an accessible name (checked with Playwright's accessibility snapshot on each page)
+- [ ] Every interactive element is reachable by keyboard and has an accessible name (checked with Playwright's accessibility snapshot on each page; the Tab walk covers the first rows and the last row of a long list and checks that every row is in the Tab order, so it takes the same time on a database with many tickets)
 - [ ] Layout works at 375 px and 1440 px wide (screenshots in the PR)
 - [ ] The cost readout matches the sum of the ticket's `ModelCalls` rows
 

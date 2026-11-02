@@ -2,13 +2,10 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, Page, test } from '@playwright/test';
 import { createTicket, openTicket } from './support';
 
-// The Tab walk presses a key per control and the ticket list grows with every run, so these tests need more than 30 s on a busy machine
-test.describe.configure({ timeout: 120_000 });
-
 /**
  * What the page gives a keyboard and screen reader user:
  * - every link, button and form control in the ARIA snapshot (what a screen reader is given) has an accessible name;
- * - the Tab key reaches every visible, enabled control that can take focus (a native control, or an element with a tabindex);
+ * - the Tab key reaches every visible, enabled control that can take focus (a native control, or an element with a tabindex); in a long list only the first rows and the last row are walked, so the time doesn't grow with the data, and every row is checked to be in the Tab order;
  * - nothing that looks clickable (`cursor: pointer`) sits outside a focusable control, which would be a mouse-only action;
  * - axe finds no text below the AA contrast ratio.
  * Disabled controls are skipped on purpose: they are not meant to take focus.
@@ -26,19 +23,52 @@ async function expectAccessible(page: Page): Promise<void> {
   }, focusable);
   expect(mouseOnly, 'elements that look clickable but cannot take focus').toEqual([]);
 
-  // Walk the page with Tab: each enabled, visible control must take focus
-  const controls = await page.evaluate((selector) => {
-    const visible = [...document.querySelectorAll<HTMLElement>(selector)].filter((el) => el.getClientRects().length > 0 && el.tabIndex >= 0);
-    visible.forEach((el, i) => el.setAttribute('data-e2e-control', String(i)));
-    return visible.length;
+  // Walk the page with Tab: each enabled, visible control must take focus. The walk is bounded: in a list of
+  // controls (such as the ticket list, which grows with every run) only the first rows and the last row are
+  // walked, and the walk jumps over the rest; every row must still be tabbable (tabIndex >= 0), checked directly.
+  const walk = await page.evaluate((selector) => {
+    const native = 'a[href], button, input, select, textarea, summary';
+    const visible = [...document.querySelectorAll<HTMLElement>(selector)].filter(
+      (el) => el.getClientRects().length > 0 && (el.matches(native) || el.tabIndex >= 0),
+    );
+    const notTabbable = visible.filter((el) => el.tabIndex < 0).map((el) => el.outerHTML.slice(0, 120));
+    const groups = new Map<Element, HTMLElement[]>();
+    for (const el of visible) {
+      const list = el.closest('ul, ol');
+      if (list) {
+        groups.set(list, [...(groups.get(list) ?? []), el]);
+      }
+    }
+    const rowsWalked = 3;
+    const skipped = new Set<HTMLElement>();
+    for (const members of groups.values()) {
+      if (members.length > rowsWalked + 1) {
+        members.slice(rowsWalked, -1).forEach((el) => skipped.add(el));
+        // After the last walked row, focus the one before the last row so the next Tab reaches the last row
+        members[rowsWalked - 1].setAttribute('data-e2e-jump', 'true');
+        members[rowsWalked - 1].dataset['e2eJumpTo'] = String(visible.indexOf(members[members.length - 2]));
+      }
+    }
+    const walked = visible.filter((el) => !skipped.has(el));
+    visible.forEach((el, i) => el.setAttribute('data-e2e-index', String(i)));
+    walked.forEach((el) => el.setAttribute('data-e2e-control', el.getAttribute('data-e2e-index') ?? ''));
+    return { count: walked.length, notTabbable };
   }, focusable);
-  expect(controls).toBeGreaterThan(0);
+  expect(walk.count).toBeGreaterThan(0);
+  expect(walk.notTabbable, 'controls that are taken out of the Tab order').toEqual([]);
 
   const reached = new Set<string>();
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  for (let i = 0; i < controls * 2 + 10 && reached.size < controls; i++) {
+  for (let i = 0; i < walk.count * 2 + 10 && reached.size < walk.count; i++) {
     await page.keyboard.press('Tab');
-    const id = await page.evaluate(() => document.activeElement?.getAttribute('data-e2e-control') ?? null);
+    const id = await page.evaluate(() => {
+      const active = document.activeElement as HTMLElement | null;
+      const jumpTo = active?.dataset['e2eJumpTo'];
+      if (jumpTo !== undefined) {
+        document.querySelector<HTMLElement>(`[data-e2e-index="${jumpTo}"]`)?.focus();
+      }
+      return active?.getAttribute('data-e2e-control') ?? null;
+    });
     if (id !== null) {
       reached.add(id);
     }
