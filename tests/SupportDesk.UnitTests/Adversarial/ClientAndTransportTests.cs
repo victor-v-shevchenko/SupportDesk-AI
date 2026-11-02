@@ -33,13 +33,9 @@ public sealed partial class ClientAndTransportTests
         var read = rig.ReadAsync(Ticket(), events, client.Token);
         await WaitForAsync(() => events.Count >= 1);
 
-        var left = rig.Time.GetUtcNow();
         await client.CancelAsync();
-        // Cancelling needs no time to pass, so wait in real time with the fake clock stopped: moving it while waiting would
-        // let a slow machine push it past the limit, and a call that needed the clock to notice would hang and time out here
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read.WaitAsync(TimeSpan.FromSeconds(10), Ct));
+        await WaitForCancelledReadAsync(read);
 
-        Assert.Equal(left, rig.Time.GetUtcNow());
         Assert.Equal(1, rig.Spy.CancelledCalls);
         Assert.All(events, e => Assert.IsType<ReplyToken>(e));
         var row = Assert.Single(rig.Rows);
@@ -57,13 +53,9 @@ public sealed partial class ClientAndTransportTests
         var read = rig.ReadAsync(Ticket(), events, client.Token);
         await WaitForAsync(() => rig.Spy.Calls.Count == 1);
 
-        var left = rig.Time.GetUtcNow();
         await client.CancelAsync();
-        // Cancelling needs no time to pass, so wait in real time with the fake clock stopped: moving it while waiting would
-        // let a slow machine push it past the limit, and a call that needed the clock to notice would hang and time out here
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read.WaitAsync(TimeSpan.FromSeconds(10), Ct));
+        await WaitForCancelledReadAsync(read);
 
-        Assert.Equal(left, rig.Time.GetUtcNow());
         Assert.Equal(1, rig.Spy.CancelledCalls);
         Assert.Empty(events);
         Assert.Equal(ModelCallOutcome.Cancelled, Assert.Single(rig.Rows).Outcome);
@@ -80,13 +72,9 @@ public sealed partial class ClientAndTransportTests
         // The first attempt failed at once; the call is now waiting out its backoff
         await Task.Delay(100, Ct);
 
-        var left = rig.Time.GetUtcNow();
         await client.CancelAsync();
-        // Cancelling needs no time to pass, so wait in real time with the fake clock stopped: moving it while waiting would
-        // let a slow machine push it past the limit, and a call that needed the clock to notice would hang and time out here
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read.WaitAsync(TimeSpan.FromSeconds(10), Ct));
+        await WaitForCancelledReadAsync(read);
 
-        Assert.Equal(left, rig.Time.GetUtcNow());
         Assert.Single(rig.Spy.Calls);
         Assert.Empty(events);
         Assert.Equal(ModelCallOutcome.Cancelled, Assert.Single(rig.Rows).Outcome);
@@ -136,7 +124,7 @@ public sealed partial class ClientAndTransportTests
         await first.CancelAsync();
         var secondRead = rig.ReadAsync(Ticket(id: 7), secondEvents, Ct);
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => rig.Time.RunAsync(firstRead, Step));
+        await WaitForCancelledReadAsync(firstRead);
         await rig.Time.RunAsync(secondRead, Step);
 
         // The aborted run has no terminal event; the new one finishes normally
@@ -240,6 +228,14 @@ public sealed partial class ClientAndTransportTests
         Assert.InRange(Assert.Single(retrieval.Calls).Query.Length, 1, ReplyPromptBuilder.QueryMaxLength);
         Assert.Equal(ModelCallOutcome.Success, Assert.Single(rig.Rows).Outcome);
     }
+
+    /// <summary>
+    /// Waits for a read the client cancelled, in real time with the fake clock stopped. Cancelling needs no time to pass:
+    /// moving the clock while waiting would let a slow machine push it past a limit or fire a timer the test didn't mean to,
+    /// and a call that needed the clock to notice the cancellation would never finish, so it times out here and fails.
+    /// </summary>
+    private static async Task WaitForCancelledReadAsync(Task read) =>
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read.WaitAsync(TimeSpan.FromSeconds(10), Ct));
 
     private static async Task WaitForAsync(Func<bool> condition)
     {

@@ -143,5 +143,5 @@ Entry format (from CLAUDE.md):
 - Step: 9
 - Found by: test
 - What was wrong: the three "cancels the provider call within one second" tests moved the fake clock 100 ms for each millisecond of real time while waiting for the cancelled read. When the machine was busy, the cancellation took more real time to land, the fake clock passed one second, and the test failed (seen once in a full run alongside the integration tests).
-- Fix: the tests wait for the cancelled read in real time, with a 10-second limit, without moving the fake clock, and assert that no fake time passed (fix/disconnect-test-clock).
+- Fix: the tests wait for the cancelled read in real time, with a 10-second limit, while the fake clock stays where it is, so the read must finish without any fake time passing; a call that needed the clock to notice would time out and fail (fix/disconnect-test-clock). The abort-and-restart test waits for its cancelled first read the same way.
 - Test: `ClientAndTransportTests.A_disconnect_mid_stream_cancels_the_provider_call_within_one_second_and_sends_no_error` and the two other disconnect tests; a flaky failure can't be committed as a failing test first, so 20 isolated runs and 5 full runs under load are the evidence
