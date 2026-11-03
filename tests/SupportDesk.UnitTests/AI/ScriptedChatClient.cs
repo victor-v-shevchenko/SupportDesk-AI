@@ -139,7 +139,9 @@ internal sealed class ScriptedChatClient(TimeProvider time, params Func<Cancella
 /// process-wide and other tests' work would hide or fake that progress. The check polls on a dedicated thread, so its own
 /// waits don't move the counters. What remains is a single pool work item that runs for more than the whole window (about
 /// 20 ms) without finishing before it sets a timer, such as a thread descheduled on a heavily loaded machine; the call then
-/// ends early, which fails visibly (fewer attempts than expected), never as a wrong pass.
+/// ends early, which usually fails visibly (fewer attempts than expected). If the pool never goes quiet, or no timer is ever
+/// due, the call fails after two minutes of real time. Each round waits about 1 ms (about 15 ms on Windows, where a wait is
+/// about 300 ms).
 /// </summary>
 internal static class FakeClock
 {
@@ -148,10 +150,18 @@ internal static class FakeClock
 
     public static async Task<T> RunAsync<T>(this TrackedFakeTime time, Task<T> task)
     {
+        // Other tests' pool work would reset the quiet window or hide the call's own progress
+        if (TestContext.Current.TestCollection is { } collection && collection.TestCollectionDisplayName != FakeClockGroup.Name)
+        {
+            throw new InvalidOperationException(
+                $"A test that runs a call on the fake clock must be in [Collection(FakeClockGroup.Name)], not \"{collection.TestCollectionDisplayName}\".");
+        }
+
         var sinceProgress = Stopwatch.StartNew();
         while (!task.IsCompleted)
         {
-            await WaitUntilQuietAsync(time, task);
+            // This usually continues on the waiting thread, so Advance and the callbacks it runs inline happen off the pool
+            await WaitUntilQuietAsync(time, task, sinceProgress);
             if (time.CallbackFailure is { } failure)
             {
                 throw new InvalidOperationException("A timer callback threw.", failure);
@@ -164,7 +174,8 @@ internal static class FakeClock
 
             if (sinceProgress.Elapsed > RealTimeLimit)
             {
-                throw new TimeoutException("The call has neither finished nor waited on a timer for two minutes of real time.");
+                throw new TimeoutException(
+                    "The call has neither finished nor waited quietly on a timer for two minutes of real time (no timer was due, or the clock or the thread pool kept changing).");
             }
 
             if (time.NextDue is { } due)
@@ -197,17 +208,26 @@ internal static class FakeClock
     }
 
     /// <summary>Waits until nothing has changed on the clock or in the thread pool for the whole quiet window.</summary>
-    private static Task WaitUntilQuietAsync(TrackedFakeTime time, Task task) =>
+    private static Task WaitUntilQuietAsync(TrackedFakeTime time, Task task, Stopwatch sinceProgress)
+    {
+        var token = TestContext.Current.CancellationToken;
         // A dedicated thread: awaiting Task.Delay here would complete pool work items itself and move the counter we read
-        Task.Factory.StartNew(() => WaitUntilQuiet(time, task), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        return Task.Factory.StartNew(
+            () => WaitUntilQuiet(time, task, sinceProgress, token), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+    }
 
-    private static void WaitUntilQuiet(TrackedFakeTime time, Task task)
+    /// <summary>Returns when the window is quiet, the call has finished, or the two-minute limit has passed (the caller fails then).</summary>
+    private static void WaitUntilQuiet(TrackedFakeTime time, Task task, Stopwatch sinceProgress, CancellationToken token)
     {
         var seen = Snapshot(time);
         var quiet = 0;
-        while (quiet < QuietRounds && !task.IsCompleted)
+        while (quiet < QuietRounds && !task.IsCompleted && sinceProgress.Elapsed <= RealTimeLimit)
         {
-            Thread.Sleep(1);
+            if (token.WaitHandle.WaitOne(1))
+            {
+                token.ThrowIfCancellationRequested();
+            }
+
             var now = Snapshot(time);
             if (now == seen && !time.CallbackPending && ThreadPool.PendingWorkItemCount == 0)
             {

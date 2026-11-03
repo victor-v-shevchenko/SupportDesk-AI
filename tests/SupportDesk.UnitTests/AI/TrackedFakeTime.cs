@@ -17,11 +17,17 @@ internal sealed class TrackedFakeTime : FakeTimeProvider
     private int _inFlight;
     private Exception? _callbackFailure;
 
-    public TrackedFakeTime(DateTimeOffset? start = null, TimeSpan? callbackLatency = null, TimeSpan? followOnDelay = null)
+    public TrackedFakeTime(
+        DateTimeOffset? start = null, TimeSpan? callbackLatency = null, TimeSpan? followOnDelay = null, TimeSpan? followOnBlock = null)
         : base(start ?? new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero))
     {
         CallbackLatency = callbackLatency ?? TimeSpan.Zero;
         FollowOnDelay = followOnDelay ?? TimeSpan.Zero;
+        FollowOnBlock = followOnBlock ?? TimeSpan.Zero;
+        if (new[] { CallbackLatency, FollowOnDelay, FollowOnBlock }.Count(d => d > TimeSpan.Zero) > 1)
+        {
+            throw new ArgumentException("Use only one of callbackLatency, followOnDelay and followOnBlock.");
+        }
     }
 
     /// <summary>
@@ -31,7 +37,15 @@ internal sealed class TrackedFakeTime : FakeTimeProvider
     /// </summary>
     public TimeSpan FollowOnDelay { get; }
 
-    private static readonly TimeSpan HopLength = TimeSpan.FromMilliseconds(4);
+    /// <summary>
+    /// Real time one thread-pool work item spends blocked, without finishing, before it runs the callback: a continuation
+    /// that is running, or descheduled, before it reaches the code under test. Nothing is queued and nothing completes
+    /// meanwhile, so only <see cref="FakeClock"/>'s quiet window covers it.
+    /// </summary>
+    public TimeSpan FollowOnBlock { get; }
+
+    // Short next to the quiet window (about 20 ms), so each hop completes a pool item well inside it
+    private static readonly TimeSpan HopLength = TimeSpan.FromMilliseconds(2);
 
     /// <summary>Real time between a timer coming due and its callback running.</summary>
     public TimeSpan CallbackLatency { get; }
@@ -138,6 +152,23 @@ internal sealed class TrackedFakeTime : FakeTimeProvider
             lock (owner._gate)
             {
                 Due = _period == Timeout.InfiniteTimeSpan || _period == TimeSpan.Zero ? null : owner.GetUtcNow() + _period;
+            }
+
+            if (owner.FollowOnBlock > TimeSpan.Zero)
+            {
+                _ = Task.Run(() =>
+                {
+                    try
+                    {
+                        Thread.Sleep(owner.FollowOnBlock);
+                        callback(state);
+                    }
+                    catch (Exception ex)
+                    {
+                        Interlocked.CompareExchange(ref owner._callbackFailure, ex, null);
+                    }
+                });
+                return;
             }
 
             if (owner.FollowOnDelay > TimeSpan.Zero)

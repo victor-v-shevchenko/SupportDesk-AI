@@ -40,10 +40,29 @@ public class SlowMachineTimingTests
     [Fact]
     public async Task A_retry_is_not_cut_short_when_the_pool_continuation_after_a_timeout_is_held_up()
     {
-        // The work after the 20 s timeout fires reaches the code under test 60 ms late, in 4 ms thread-pool hops, with no
+        // The work after the 20 s timeout fires reaches the code under test 60 ms late, in 2 ms thread-pool hops, with no
         // timer or callback in flight and nothing queued for most of that time. The clock must wait for it, not jump on to the
         // 120 s stream total.
         var time = new TrackedFakeTime(followOnDelay: TimeSpan.FromMilliseconds(60));
+        var provider = new ScriptedChatClient(time, Steps(Empty(), Wait(time, TimeSpan.FromSeconds(25)), Text("late")));
+        using var pipeline = TestPipeline.Create(provider, time, new FakeErrorClassifier());
+        var received = new List<ChatResponseUpdate>();
+
+        var error = await Assert.ThrowsAsync<ModelUnavailableException>(() =>
+            time.ReadAllAsync(pipeline.Client.GetStreamingResponseAsync("hi", Reply, Ct), received));
+
+        Assert.True(error.IsTimeout);
+        Assert.Equal(3, provider.Calls);
+        Assert.InRange((provider.CallTimes[1] - provider.CallTimes[0]).TotalSeconds, 20.2, 21);
+    }
+
+    [Fact]
+    public async Task A_retry_is_not_cut_short_when_one_pool_continuation_after_a_timeout_is_blocked()
+    {
+        // The work after the 20 s timeout fires is one pool item that stays blocked for 8 ms before it reaches the code under
+        // test: nothing is queued or completes meanwhile (the failure CI saw). The quiet window (about 20 ms) must outlast it;
+        // the old 5-round window didn't
+        var time = new TrackedFakeTime(followOnBlock: TimeSpan.FromMilliseconds(8));
         var provider = new ScriptedChatClient(time, Steps(Empty(), Wait(time, TimeSpan.FromSeconds(25)), Text("late")));
         using var pipeline = TestPipeline.Create(provider, time, new FakeErrorClassifier());
         var received = new List<ChatResponseUpdate>();
