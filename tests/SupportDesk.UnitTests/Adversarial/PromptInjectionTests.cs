@@ -75,9 +75,13 @@ public sealed partial class PromptInjectionTests
         var call = calls[1];
         // Two messages, as for any ticket: the template's system message, untouched, and the user message
         Assert.Equal([ChatRole.System, ChatRole.User], call.Messages.Select(m => m.Role));
-        // The same system message, except that a guarded run (no proposal tool) leaves out the proposal tool's line
-        var withoutProposalLine = string.Join('\n', calls[0].System.Text!.Split('\n').Where(l => !l.StartsWith("- propose_follow_up_task:", StringComparison.Ordinal)));
-        Assert.True(call.System.Text == calls[0].System.Text || call.System.Text == withoutProposalLine, "the system message changed beyond the proposal tool's line");
+        // The same system message, except that a guarded run (the ticket has injection signals, so no proposal tool) leaves
+        // out the proposal tool's line
+        var guarded = InjectionSignals.Find(hostile).Count > 0;
+        var expected = guarded
+            ? string.Join('\n', calls[0].System.Text!.Split('\n').Where(l => !l.StartsWith("- propose_follow_up_task:", StringComparison.Ordinal)))
+            : calls[0].System.Text;
+        Assert.Equal(expected, call.System.Text);
         Assert.DoesNotContain(Marker, call.System.Text, StringComparison.Ordinal);
 
         // However it's written, nothing opens or closes a block of ours: one <ticket>…</ticket>, one <sources>…</sources>, no tool_result

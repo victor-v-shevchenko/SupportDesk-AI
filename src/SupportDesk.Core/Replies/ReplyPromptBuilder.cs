@@ -118,7 +118,7 @@ public static partial class ReplyPromptBuilder
     internal static string SystemFor(PromptTemplate template, ChatOptions? options)
     {
         var offered = (options?.Tools ?? []).Select(t => t.Name).ToHashSet(StringComparer.Ordinal);
-        var withheld = new[] { ReplyTools.LookupOrderStatus, ReplyTools.ProposeFollowUpTask }
+        var withheld = ReplyTools.Names
             .Where(name => !offered.Contains(name))
             .Select(name => $"- {name}:")
             .ToList();
