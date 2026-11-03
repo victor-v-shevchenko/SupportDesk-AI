@@ -10,9 +10,6 @@ import { ProposalCard } from './proposal-card';
 
 type ReplyStatus = 'idle' | 'streaming' | 'done' | 'stopped' | 'error';
 
-/** What the panel says for each `error` code (PLAN.md 7); an unknown code shows the server's message. */
-export const replyErrorMessages = errorMessages;
-
 /**
  * "Suggest reply" on the ticket page: streams the reply as it's written, with a stop button, then links its citations
  * and shows the cost. One reply at a time: a second click aborts the first request, and so does leaving the page.
@@ -185,7 +182,7 @@ export class ReplyPanel {
             this.calls = event.calls;
             break;
           case 'error':
-            this.fail(replyErrorMessages[event.code] ?? event.message);
+            this.fail(errorMessages[event.code] ?? event.message);
             break;
           case 'done':
             this.status.set('done');

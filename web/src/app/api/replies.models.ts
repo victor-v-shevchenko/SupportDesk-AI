@@ -2,6 +2,7 @@
 
 import { ProposalStatus } from './follow-ups.models';
 
+/** The codes the server sends today; an `error` event's `code` is typed `string` because a newer server may send another, which shows its own message. */
 export type ReplyErrorCode = 'model_unavailable' | 'budget_exceeded' | 'model_refused' | 'timeout' | 'internal_error';
 
 export interface Citation {
@@ -44,7 +45,7 @@ export type ReplyEvent =
   | ({ type: 'tool_call' } & ToolCall)
   | { type: 'citations'; citations: Citation[]; removed: number[] }
   | ({ type: 'usage' } & ReplyUsage)
-  | { type: 'error'; code: ReplyErrorCode | string; message: string }
+  | { type: 'error'; code: string; message: string }
   | { type: 'done'; replyRunId: string };
 
 /** The reply request failed before its stream started (an unknown ticket, a server error). */

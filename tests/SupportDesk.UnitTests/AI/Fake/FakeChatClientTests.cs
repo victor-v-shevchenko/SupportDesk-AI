@@ -240,10 +240,10 @@ public class FakeChatClientTests
 
     [Theory]
     [InlineData("""{ "scenarios": [] }""", "there is no 'default' scenario")]
-    [InlineData("""{ "scenarios": [ { "name": "default", "ticketNumber": null, "turns": { "*": [ { "steps": [ { "type": "sing" } ] } ] } } ] }""", "")]
+    [InlineData("""{ "scenarios": [ { "name": "default", "ticketNumber": null, "turns": { "*": [ { "steps": [ { "type": "sing" } ] } ] } } ] }""", "unrecognized type discriminator id 'sing'")]
     [InlineData("""{ "scenarios": [ { "name": "default", "ticketNumber": null, "turns": { "*": [ { "steps": [ { "type": "error", "statusCode": 200 } ] } ] } } ] }""", "statusCode must be 400–599")]
     [InlineData("""{ "scenarios": [ { "name": "default", "ticketNumber": null, "turns": { "Replies": [ { "steps": [] } ] } } ] }""", "unknown feature")]
-    [InlineData("""{ "scenarios": [ { "name": "default", "ticketNumber": null, "turns": { "*": [ { "steps": [], "delay": 1 } ] } } ] }""", "")]
+    [InlineData("""{ "scenarios": [ { "name": "default", "ticketNumber": null, "turns": { "*": [ { "steps": [], "delay": 1 } ] } } ] }""", "'delay' could not be mapped")]
     [InlineData("""{ "scenarios": [ { "name": "default", "ticketNumber": null, "turns": { "*": [ { "steps": [] } ] } }, { "name": "x", "ticketNumber": null, "turns": { "*": [ { "steps": [] } ] } } ] }""", "scenario 'x' has no ticket number")]
     public void A_broken_scenario_file_is_rejected(string json, string expected)
     {

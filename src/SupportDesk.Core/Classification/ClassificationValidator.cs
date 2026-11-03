@@ -58,14 +58,10 @@ public static class ClassificationValidator
             }
 
             var errors = new List<string>();
-            foreach (var property in root.EnumerateObject())
+            if (root.EnumerateObject().Any(property => !Properties.Contains(property.Name, StringComparer.Ordinal)))
             {
-                if (!Properties.Contains(property.Name, StringComparer.Ordinal))
-                {
-                    // Not named: the errors go back to the model, and nothing it wrote is repeated (it can echo the ticket)
-                    errors.Add($"The answer has a property other than {CategoryProperty}, {PriorityProperty} and {ReasonProperty}; no others are allowed.");
-                    break;
-                }
+                // Not named: the errors go back to the model, and nothing it wrote is repeated (it can echo the ticket)
+                errors.Add($"The answer has a property other than {CategoryProperty}, {PriorityProperty} and {ReasonProperty}; no others are allowed.");
             }
 
             var category = ReadEnum<Category>(root, CategoryProperty, errors);

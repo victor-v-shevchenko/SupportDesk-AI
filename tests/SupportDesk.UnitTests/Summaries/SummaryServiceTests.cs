@@ -119,7 +119,7 @@ public class SummaryServiceTests
         Assert.Equal(0, chat.NonStreamingCalls);
     }
 
-    private static PromptTemplate Prompt() => PromptStore.Load(PromptsFolder, SummaryService.PromptName, "summary.v2");
+    private static PromptTemplate Prompt() => PromptStore.Load(PromptsFolder, PromptNames.Summary, "summary.v2");
 
     private static SummaryService Service(IChatClient chat, ITicketRepository tickets, int maxOutputTokens = 200, ILogger<SummaryService>? logger = null)
     {

@@ -287,7 +287,7 @@ describe('TicketDetailPage', () => {
     await new Promise((resolve) => setTimeout(resolve, 700));
     TestBed.tick();
 
-    http.expectNone((r) => r.url.startsWith('/api/model-calls'));
+    expect(http.match((r) => r.url.startsWith('/api/model-calls'))).toEqual([]);
   });
 
   it('shows the cost readout from the ticket model calls, and reads them again after a summary', async () => {

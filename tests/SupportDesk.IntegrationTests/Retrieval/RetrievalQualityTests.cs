@@ -47,7 +47,7 @@ public class RetrievalQualityTests(PostgresFixture postgres)
         }
 
         Assert.True(misses.Count == 0, "Not in the top 3:\n" + string.Join('\n', misses));
-        Assert.True(first >= 12, $"First for {first} of {questions.Count} questions; at least 12 expected.");
+        Assert.True(first >= 13, $"First for {first} of {questions.Count} questions; at least 13 expected.");
     }
 
     [Fact]

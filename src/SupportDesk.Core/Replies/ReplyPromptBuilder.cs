@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Text;
-using System.Text.RegularExpressions;
 using Microsoft.Extensions.AI;
 using SupportDesk.Core.AI;
 using SupportDesk.Core.AI.Prompts;
@@ -14,7 +13,7 @@ namespace SupportDesk.Core.Replies;
 public sealed record ReplyPrompt(IReadOnlyList<ChatMessage> Messages, IReadOnlyList<RetrievedChunk> Sources, int Dropped);
 
 /// <summary>The prompt builder of PLAN.md 6.4: the retrieval query, the numbered sources and the trim to the token budget.</summary>
-public static partial class ReplyPromptBuilder
+public static class ReplyPromptBuilder
 {
     /// <summary>The longest retrieval query; embedding models only read so much (<c>mxbai-embed-large</c>: 512 tokens).</summary>
     public const int QueryMaxLength = 1000;
@@ -104,12 +103,7 @@ public static partial class ReplyPromptBuilder
     }
 
     /// <summary>Replaces the <c>&lt;</c> of anything that reads as a <c>ticket</c>, <c>sources</c> or <c>tool_result</c> tag with <c>&amp;lt;</c>.</summary>
-    public static string Escape(string text)
-    {
-        ArgumentNullException.ThrowIfNull(text);
-
-        return PromptTagRegex().Replace(text, "&lt;");
-    }
+    public static string Escape(string text) => TicketPromptFormatter.Escape(text);
 
     /// <summary>
     /// The system prompt without the instruction line (<c>- &lt;tool&gt;: …</c>) of every reply tool that <paramref name="options"/>
@@ -141,7 +135,4 @@ public static partial class ReplyPromptBuilder
         });
         return [new ChatMessage(ChatRole.System, system), messages[1]];
     }
-
-    [GeneratedRegex(@"<(?=\s*/?\s*(?:ticket|sources|tool_result))", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex PromptTagRegex();
 }

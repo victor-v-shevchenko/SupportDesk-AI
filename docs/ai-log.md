@@ -299,3 +299,24 @@ Entry format (from CLAUDE.md):
 - What was wrong: when the 5-second drain deadline cut a save short, the writer logged only that batch's row count; rows still queued behind it were lost unlogged, and if the deadline passed between batches the loop ended with no log at all.
 - Fix: while draining, the cancelled-save log counts the batch plus what is left in the queue, and a drain that ends with rows queued logs how many were dropped (PR #60).
 - Test: `ModelCallWriterTests.A_drain_cut_off_mid_save_counts_the_rows_still_queued_behind_it_as_lost` and `ModelCallWriterTests.A_drain_whose_deadline_passes_between_batches_logs_the_rows_it_left_behind` (both failed before the fix)
+
+## 2026-11-03 — Docker Compose couldn't set a chat model, so OpenAI chat failed at startup
+- Step: 3a (found in the step 12 whole-project review)
+- Found by: review subagent
+- What was wrong: `.env.example` offered OpenAI as a Compose chat provider, but `docker-compose.yml` passed no `AI__Chat__Model`, and OpenAI has no default model, so startup stopped with "AI:Chat:Model is required". Compose users also couldn't pick any other model.
+- Fix: Compose passes `AI_CHAT_MODEL` and `AI_EMBEDDINGS_MODEL` (empty means the provider's default), listed in `.env.example` (step 12 PR).
+- Test: none (Compose configuration); the step 12 fresh-clone run of `docker compose up --build` checked the variables reach the API.
+
+## 2026-11-03 — With the fake model, the Compose path dropped every retrieved chunk
+- Step: 4 (found in the step 12 whole-project review)
+- Found by: review subagent
+- What was wrong: the fake embeddings are hashes, so they fall below the default minimum similarity of 0.5, and Compose had no way to change it: every reply on the Compose fake path said no articles matched and cited nothing.
+- Fix: Compose passes `RETRIEVAL_MIN_SIMILARITY` (empty means 0.5), and `.env.example` and the README say to use 0 with the fake embeddings (step 12 PR).
+- Test: none (Compose configuration); the step 12 fresh-clone run got a reply citing `shipping-times` with it set to 0.
+
+## 2026-11-03 — The web image's dev server couldn't write its cache
+- Step: 1 (found in the step 12 whole-project review)
+- Found by: review subagent
+- What was wrong: `web/Dockerfile` created `/app` and installed packages as root, then ran `ng serve` as `node`, which writes its cache under `.angular/` in the workspace.
+- Fix: `/app` belongs to `node` before `npm ci`, and every copy uses `--chown=node:node` (step 12 PR).
+- Test: none (image configuration); the step 12 fresh-clone run served the app from the rebuilt image.

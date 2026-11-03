@@ -89,7 +89,7 @@ public class TokenEstimateTests
 
         if (prompt.Placeholders.Contains("sources"))
         {
-            // Five sources, as retrieval returns (k = 5): whole seeded articles stand in for chunks until step 4
+            // Five sources, as retrieval returns (k = 5): whole seeded articles stand in for chunks
             var articles = await SeedFiles.ReadArticlesAsync(seed, cancellationToken);
             values["sources"] = string.Join("\n\n", articles.Take(5).Select((a, i) => $"[{i + 1}] {a.Title}\n{a.BodyMarkdown}"));
         }

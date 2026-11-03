@@ -28,8 +28,9 @@ Run inside the dev container.
 | --- | --- |
 | Start everything (dev container; startup embeds the articles, so Ollama needs `mxbai-embed-large` pulled) | `docker compose up -d db` then `dotnet run --project src/SupportDesk.Api` and `npm --prefix web start` |
 | Start everything (Docker only) | `docker compose up --build` |
-| Start with the fake model | `AI__Chat__Provider=Fake AI__Embeddings__Provider=Fake dotnet run --project src/SupportDesk.Api` |
-| Ollama in Docker instead of on the host (optional) | `docker compose --profile ollama up -d ollama` then `docker compose exec ollama ollama pull qwen2.5:1.5b` (or `qwen2.5:7b`, about 4.7 GB) |
+| Start with Docker only and the fake model (no key, no Ollama) | In `.env`: `AI_CHAT_PROVIDER=Fake`, `AI_EMBEDDINGS_PROVIDER=Fake`, `RETRIEVAL_MIN_SIMILARITY=0`; then `docker compose up --build` |
+| Start with the fake model (`Retrieval__MinSimilarity=0` because the fake embeddings are hashes, so 0.5 drops every chunk) | `AI__Chat__Provider=Fake AI__Embeddings__Provider=Fake Retrieval__MinSimilarity=0 dotnet run --project src/SupportDesk.Api` |
+| Ollama in Docker instead of on the host (optional) | `docker compose --profile ollama up -d ollama` then `docker compose exec ollama ollama pull qwen2.5:1.5b` (or `qwen2.5:7b`, about 4.7 GB) and `docker compose exec ollama ollama pull mxbai-embed-large` (startup embeds the articles) |
 | Start against Ollama in Docker | `AI__Ollama__Endpoint=http://ollama:11434 dotnet run --project src/SupportDesk.Api` |
 | Start against `qwen2.5:7b` on CPU (slow; longer timeouts, PLAN.md 6.5) | `AI__Chat__Model=qwen2.5:7b AI__Timeouts__NonStreamingSeconds=180 AI__Timeouts__FirstItemSeconds=180 AI__Timeouts__GapSeconds=60 AI__Timeouts__StreamTotalSeconds=600 dotnet run --project src/SupportDesk.Api` |
 | Start against `qwen3:8b` (the local model that calls the reply's tools; slow on CPU, PLAN.md 6.1) | `ollama pull qwen3:8b`, then `AI__Chat__Model=qwen3:8b AI__Timeouts__NonStreamingSeconds=180 AI__Timeouts__FirstItemSeconds=180 AI__Timeouts__GapSeconds=60 AI__Timeouts__StreamTotalSeconds=600 dotnet run --project src/SupportDesk.Api` |

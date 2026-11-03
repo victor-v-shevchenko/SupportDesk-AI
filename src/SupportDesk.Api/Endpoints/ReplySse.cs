@@ -15,10 +15,15 @@ public static class ReplySse
     public const string Done = "done";
 
     /// <summary>Typed as <see cref="object"/> so each payload is serialized as its own record type, not as the empty base type.</summary>
-    public static async IAsyncEnumerable<SseItem<object>> ToSse(IAsyncEnumerable<ReplyEvent> events, [EnumeratorCancellation] CancellationToken cancellationToken)
+    public static IAsyncEnumerable<SseItem<object>> ToSse(IAsyncEnumerable<ReplyEvent> events, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(events);
 
+        return ToSseItems(events, cancellationToken);
+    }
+
+    private static async IAsyncEnumerable<SseItem<object>> ToSseItems(IAsyncEnumerable<ReplyEvent> events, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
         await foreach (var reply in events.WithCancellation(cancellationToken))
         {
             yield return new SseItem<object>(reply, EventName(reply));

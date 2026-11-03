@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.AI;
 using SupportDesk.Core.FollowUps;
 using SupportDesk.Core.Orders;
@@ -298,7 +299,7 @@ internal sealed class ToolArguments(AIFunctionArguments arguments)
 /// <summary>
 /// How a tool result reaches the model: JSON inside <c>&lt;tool_result&gt;…&lt;/tool_result&gt;</c>, which the reply prompt
 /// says is data from the store's systems, not instructions. The serializer's default encoder writes <c>&lt;</c> and
-/// <c>&gt;</c> as <c><</c> and <c>></c>, so nothing in a value can close the tag.
+/// <c>&gt;</c> as <c>\u003C</c> and <c>\u003E</c>, so nothing in a value can close the tag.
 /// </summary>
 public static class ToolResult
 {
@@ -309,7 +310,7 @@ public static class ToolResult
     public static string Error(IReadOnlyList<string> errors) =>
         Wrap(new ToolError(errors.Count > 0 ? string.Join(" ", errors) : "The arguments are invalid."));
 
-    private sealed record ToolError(string Error);
+    private sealed record ToolError([property: JsonPropertyName("error")] string Message);
 }
 
 /// <summary>What <c>propose_follow_up_task</c> tells the model.</summary>

@@ -33,6 +33,30 @@ public class RetrievalServiceTests
         Assert.DoesNotContain(failure.Message, exception.Message, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized, false)]
+    [InlineData(HttpStatusCode.NotFound, false)]
+    [InlineData(HttpStatusCode.TooManyRequests, true)]
+    [InlineData(HttpStatusCode.BadGateway, true)]
+    public async Task An_embedding_http_error_is_transient_by_the_retry_rules_of_its_status(HttpStatusCode status, bool transient)
+    {
+        var service = Service(new ThrowingGenerator(new HttpRequestException("failed", null, status)));
+
+        var exception = await Assert.ThrowsAsync<ModelUnavailableException>(() => service.SearchAsync("refund", 5, Ct));
+
+        Assert.Equal(transient, exception.IsTransient);
+    }
+
+    [Fact]
+    public async Task An_embedding_connection_error_is_transient()
+    {
+        var service = Service(new ThrowingGenerator(new HttpRequestException("Connection refused", null, null)));
+
+        var exception = await Assert.ThrowsAsync<ModelUnavailableException>(() => service.SearchAsync("refund", 5, Ct));
+
+        Assert.True(exception.IsTransient);
+    }
+
     [Fact]
     public async Task A_vector_of_the_wrong_size_stays_a_configuration_error()
     {

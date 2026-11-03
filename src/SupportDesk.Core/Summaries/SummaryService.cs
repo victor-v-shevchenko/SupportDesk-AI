@@ -26,8 +26,6 @@ public sealed partial class SummaryService(
     IOptions<AiOptions> options,
     ILogger<SummaryService> logger) : ISummaryService
 {
-    public const string PromptName = "summary";
-
     public async Task<TicketSummary?> GenerateAsync(int ticketId, CancellationToken cancellationToken)
     {
         var ticket = await tickets.FindAsync(ticketId, cancellationToken);
@@ -36,7 +34,7 @@ public sealed partial class SummaryService(
             return null;
         }
 
-        var prompt = prompts.GetPrompt(PromptName);
+        var prompt = prompts.GetPrompt(PromptNames.Summary);
         var messages = BuildMessages(prompt, ticket);
         var chatOptions = new ChatOptions();
         if (options.Value.Budget.MaxOutputTokens.TryGetValue(AiFeature.Summary, out var maxOutput))

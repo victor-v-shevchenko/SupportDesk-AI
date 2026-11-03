@@ -29,8 +29,6 @@ public sealed partial class ClassificationService(
     TimeProvider time,
     ILogger<ClassificationService> logger) : IClassificationService
 {
-    public const string PromptName = "classify";
-
     /// <summary>The first answer and one retry; never more (PLAN.md 9).</summary>
     public const int MaxAttempts = 2;
 
@@ -55,7 +53,7 @@ public sealed partial class ClassificationService(
             return null;
         }
 
-        var prompt = prompts.GetPrompt(PromptName);
+        var prompt = prompts.GetPrompt(PromptNames.Classify);
 
         // A ticket that tries to steer the model gets no model call: there's nothing for an injected category to steer
         // (PLAN.md 9), and a person checks it. Only the strong signals hold it: the role turn has documented false positives

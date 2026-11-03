@@ -32,9 +32,6 @@ public static class TokenEstimator
         return FromCharacters(characters) + ((long)TokensPerMessage * list.Count);
     }
 
-    /// <summary>What came back, for a call whose provider sent no usage.</summary>
-    public static long EstimateOutput(IEnumerable<AIContent> contents) => FromCharacters(Characters(contents));
-
     /// <summary>The characters in <paramref name="contents"/> that count toward tokens: text, thinking, tool calls and results.</summary>
     public static long Characters(IEnumerable<AIContent> contents)
     {

@@ -22,7 +22,7 @@ public sealed partial class PromptTemplate
         User = user;
         Placeholders = FindPlaceholders(user);
         Retry = retry;
-        RetryPlaceholders = retry is null ? new HashSet<string>() : FindPlaceholders(retry);
+        RetryPlaceholders = retry is null ? [] : FindPlaceholders(retry);
     }
 
     /// <summary>The file name without <c>.md</c>, for example <c>reply.v1</c>; stored with every result and model call.</summary>
