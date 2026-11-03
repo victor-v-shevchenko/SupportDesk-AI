@@ -6,12 +6,10 @@ namespace SupportDesk.Api.AI;
 
 /// <summary>
 /// Voyage AI embeddings over HTTP (<c>POST /v1/embeddings</c>), since there's no official .NET package (PLAN.md 6.1).
-/// <see cref="EmbeddingGenerationOptions.AdditionalProperties"/> can set <c>input_type</c> (<c>query</c> or <c>document</c>).
 /// </summary>
 public sealed class VoyageEmbeddingGenerator : IEmbeddingGenerator<string, Embedding<float>>
 {
     public const string ProviderName = "voyage";
-    public const string InputTypeKey = "input_type";
 
     private static readonly Uri DefaultEndpoint = new("https://api.voyageai.com/v1/");
 
@@ -40,8 +38,7 @@ public sealed class VoyageEmbeddingGenerator : IEmbeddingGenerator<string, Embed
         var request = new VoyageRequest(
             [.. values],
             options?.ModelId ?? _model,
-            options?.Dimensions ?? _dimensions,
-            options?.AdditionalProperties?.TryGetValue(InputTypeKey, out string? inputType) == true ? inputType : null);
+            options?.Dimensions ?? _dimensions);
 
         using var response = await _httpClient.PostAsJsonAsync("embeddings", request, cancellationToken);
         response.EnsureSuccessStatusCode();
@@ -77,8 +74,7 @@ public sealed class VoyageEmbeddingGenerator : IEmbeddingGenerator<string, Embed
     private sealed record VoyageRequest(
         [property: JsonPropertyName("input")] IReadOnlyList<string> Input,
         [property: JsonPropertyName("model")] string Model,
-        [property: JsonPropertyName("output_dimension")] int OutputDimension,
-        [property: JsonPropertyName("input_type"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? InputType);
+        [property: JsonPropertyName("output_dimension")] int OutputDimension);
 
     private sealed record VoyageResponse(
         [property: JsonPropertyName("data")] IReadOnlyList<VoyageEmbedding> Data,
