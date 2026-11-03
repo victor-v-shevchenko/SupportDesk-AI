@@ -32,6 +32,11 @@ services:
       # Provider choice and keys come from .env; empty keys are fine for Ollama and Fake
       AI__Chat__Provider: "${AI_CHAT_PROVIDER:-Ollama}"
       AI__Embeddings__Provider: "${AI_EMBEDDINGS_PROVIDER:-Ollama}"
+      # Empty means the provider's default model (OpenAI chat has none, so set AI_CHAT_MODEL for it)
+      AI__Chat__Model: "${AI_CHAT_MODEL:-}"
+      AI__Embeddings__Model: "${AI_EMBEDDINGS_MODEL:-}"
+      # The fake embeddings are hashes, so with them use 0, or every retrieved chunk is dropped
+      Retrieval__MinSimilarity: "${RETRIEVAL_MIN_SIMILARITY:-0.5}"
       AI__Anthropic__ApiKey: "${ANTHROPIC_API_KEY:-}"
       AI__OpenAI__ApiKey: "${OPENAI_API_KEY:-}"
       AI__Voyage__ApiKey: "${VOYAGE_API_KEY:-}"
