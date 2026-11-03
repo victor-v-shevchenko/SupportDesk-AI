@@ -173,6 +173,36 @@ public class RetryTimeoutMiddlewareTests
     }
 
     [Fact]
+    public async Task Thinking_ends_the_first_item_wait_so_text_after_FirstItemSeconds_is_not_a_timeout()
+    {
+        // 28 s before the first text, past FirstItemSeconds (20 s), but no gap reaches GapSeconds (15 s)
+        var provider = new ScriptedChatClient(_time, Steps(
+            Thinking("Let me check."), Wait(_time, TimeSpan.FromSeconds(14)), Thinking("The order shipped."), Wait(_time, TimeSpan.FromSeconds(14)), Text("Hello")));
+        using var pipeline = Pipeline(provider);
+        var received = new List<ChatResponseUpdate>();
+
+        await _time.ReadAllAsync(pipeline.Client.GetStreamingResponseAsync("hi", Reply, Ct), received);
+
+        Assert.Equal(1, provider.Calls);
+        Assert.Equal("Hello", string.Concat(received.Select(u => u.Text)));
+    }
+
+    [Fact]
+    public async Task A_503_after_thinking_but_before_any_text_is_still_retried()
+    {
+        var provider = new ScriptedChatClient(_time, Steps(Thinking("Let me check."), Fail(503)), Steps(Text("Hello")));
+        using var pipeline = Pipeline(provider);
+        var received = new List<ChatResponseUpdate>();
+
+        await _time.ReadAllAsync(pipeline.Client.GetStreamingResponseAsync("hi", Reply, Ct), received);
+
+        Assert.Equal(2, provider.Calls);
+        Assert.Equal("Hello", string.Concat(received.Select(u => u.Text)));
+        // The failed attempt's thinking was held back with it
+        Assert.DoesNotContain(received.SelectMany(u => u.Contents), c => c is TextReasoningContent);
+    }
+
+    [Fact]
     public async Task A_gap_longer_than_GapSeconds_ends_the_call_without_a_retry()
     {
         var provider = new ScriptedChatClient(_time, Steps(Text("Hel"), Wait(_time, TimeSpan.FromSeconds(16)), Text("lo")));

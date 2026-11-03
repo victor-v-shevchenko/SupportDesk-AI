@@ -92,6 +92,43 @@ public class ModelCallTests(PostgresFixture postgres)
         Assert.Contains("\"outcome\":\"Success\"", json, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task The_endpoint_returns_at_most_200_rows_keeping_the_newest()
+    {
+        await using var api = await SeededApi.StartAsync(postgres, Ct, FakeProvider);
+        var start = new DateTimeOffset(2026, 11, 1, 12, 0, 0, TimeSpan.Zero);
+        await using (var db = api.CreateDbContext())
+        {
+            db.ModelCalls.AddRange(Enumerable.Range(0, ModelCallEndpoints.MaxRows + 5).Select(i => Row(start.AddMinutes(i), ticketId: 9, AiFeature.Reply)));
+            await db.SaveChangesAsync(Ct);
+        }
+
+        var rows = await api.Client.GetFromJsonAsync<List<ModelCallResponse>>(new Uri("/api/model-calls?ticketId=9", UriKind.Relative), JsonDefaults.Options, Ct);
+
+        Assert.Equal(200, ModelCallEndpoints.MaxRows);
+        Assert.Equal(200, rows!.Count);
+        Assert.Equal(start.AddMinutes(204), rows[0].Timestamp);
+        Assert.Equal(start.AddMinutes(5), rows[^1].Timestamp);
+    }
+
+    [Fact]
+    public async Task Rows_that_started_in_the_same_instant_come_back_highest_ID_first()
+    {
+        await using var api = await SeededApi.StartAsync(postgres, Ct, FakeProvider);
+        var at = new DateTimeOffset(2026, 11, 1, 12, 0, 0, TimeSpan.Zero);
+        await using (var db = api.CreateDbContext())
+        {
+            db.ModelCalls.AddRange(Enumerable.Range(0, 60).Select(_ => Row(at, ticketId: 8, AiFeature.Reply)));
+            await db.SaveChangesAsync(Ct);
+        }
+
+        var rows = await api.Client.GetFromJsonAsync<List<ModelCallResponse>>(new Uri("/api/model-calls", UriKind.Relative), JsonDefaults.Options, Ct);
+
+        var ids = rows!.Select(r => r.Id).ToList();
+        Assert.Equal(60, ids.Count);
+        Assert.Equal(ids.OrderDescending(), ids);
+    }
+
     /// <summary>The writer is asynchronous, so the row shows up shortly after the call.</summary>
     private static async Task<List<ModelCallResponse>> PollAsync(SeededApi api, int ticketId, int expected)
     {

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SupportDesk.Api.AI;
 using SupportDesk.Core.AI;
@@ -207,4 +208,32 @@ public class ProviderRegistrationTests
             File.Delete(path);
         }
     }
+
+    /// <summary>
+    /// PLAN.md 6.7: the Anthropic effort per feature is set in the file the app ships. The raw keys are read, since binding onto
+    /// <see cref="AiOptions"/> would fall back to code defaults that happen to be the same and pass without the block.
+    /// </summary>
+    [Fact]
+    public void Anthropic_effort_in_appsettings_json_is_Medium_for_replies_and_Low_for_summaries_and_classification()
+    {
+        var configuration = AppSettings();
+
+        Assert.Equal("Medium", configuration["AI:Anthropic:Effort:Reply"]);
+        Assert.Equal("Low", configuration["AI:Anthropic:Effort:Summary"]);
+        Assert.Equal("Low", configuration["AI:Anthropic:Effort:Classification"]);
+    }
+
+    [Fact]
+    public void The_prompt_versions_the_tests_start_from_are_the_ones_appsettings_json_configures()
+    {
+        var configuration = AppSettings();
+
+        foreach (var name in new[] { "reply", "summary", "classify" })
+        {
+            Assert.Equal(configuration[$"AI:Prompts:{name}"], AiTestServices.BaseSettings[$"AI:Prompts:{name}"]);
+        }
+    }
+
+    private static IConfigurationRoot AppSettings() =>
+        new ConfigurationBuilder().AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json")).Build();
 }

@@ -4,7 +4,7 @@ using System.Text;
 namespace SupportDesk.UnitTests.AI;
 
 /// <summary>Answers every request with one canned response and keeps the request bodies, so the real SDK adapters run without a network.</summary>
-internal sealed class StubHttpHandler(HttpStatusCode status, string body, string contentType = "application/json") : HttpMessageHandler
+internal sealed class StubHttpHandler(HttpStatusCode status, string body, string contentType = "application/json", IReadOnlyDictionary<string, string>? headers = null) : HttpMessageHandler
 {
     private readonly List<string> _requests = [];
 
@@ -13,6 +13,12 @@ internal sealed class StubHttpHandler(HttpStatusCode status, string body, string
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         _requests.Add(request.Content is null ? "" : await request.Content.ReadAsStringAsync(cancellationToken));
-        return new HttpResponseMessage(status) { Content = new StringContent(body, Encoding.UTF8, contentType) };
+        var response = new HttpResponseMessage(status) { Content = new StringContent(body, Encoding.UTF8, contentType) };
+        foreach (var (name, value) in headers ?? new Dictionary<string, string>())
+        {
+            response.Headers.Add(name, value);
+        }
+
+        return response;
     }
 }
