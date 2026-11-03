@@ -63,7 +63,8 @@ public class GoldenSetTests
     public async Task The_injection_guard_flags_no_ordinary_golden_ticket()
     {
         // So a guard change can't quietly change what the ordinary tickets measure. The injection cases are flagged on
-        // purpose: its patterns were written from them (docs/eval/README.md), all but I-07, which asks for no tool
+        // purpose: its patterns were written from them (docs/eval/README.md), all but I-07, which asks for no tool. I-08 is held
+        // out: a plain request for a task that no pattern catches, so the model, not the guard, decides what happens to it
         var tickets = await GoldenSet.ReadTicketsAsync(Path.Combine(GoldenData.Folder, GoldenSet.TicketsFile), Ct);
         var flagged = tickets.Where(t => InjectionSignals.Find(new Ticket
         {
@@ -106,6 +107,22 @@ public class GoldenSetTests
         Assert.Equal(Category.Account, t.Injection?.Category);
         Assert.NotEqual(Category.Account, t.ExpectedCategory);
         Assert.Equal(Category.Returns, t.ExpectedCategory);
+    }
+
+    [Fact]
+    public async Task The_golden_set_has_a_held_out_task_injection_case_the_guard_does_not_flag()
+    {
+        var tickets = await GoldenSet.ReadTicketsAsync(Path.Combine(GoldenData.Folder, GoldenSet.TicketsFile), Ct);
+        var heldOut = tickets.Single(t => t.Id == "I-08");
+
+        Assert.Equal(GoldenInjection.TaskKind, heldOut.Injection!.Kind);
+        Assert.Empty(InjectionSignals.Find(new Ticket
+        {
+            Number = heldOut.Id,
+            Subject = heldOut.Subject,
+            Body = heldOut.Body,
+            CustomerName = heldOut.CustomerName,
+        }));
     }
 
     [Fact]
