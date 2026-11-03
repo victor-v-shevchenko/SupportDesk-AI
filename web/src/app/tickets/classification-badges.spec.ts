@@ -27,8 +27,16 @@ describe('ClassificationBadges', () => {
     const el = render('NeedsManual');
 
     expect(el.querySelector('.manual')?.textContent).toBe('Needs manual classification');
+    expect(el.querySelector('.manual')?.hasAttribute('title')).toBe(false);
     expect(el.querySelector('.category')).toBeNull();
     expect(el.querySelector('.priority')).toBeNull();
+  });
+
+  it('shows why a ticket needs manual classification as a tooltip', () => {
+    const reason = 'The ticket text has injection signals (tag), so a person should classify it.';
+    const el = render('NeedsManual', null, null, reason);
+
+    expect(el.querySelector('.manual')?.getAttribute('title')).toBe(reason);
   });
 
   it('says not classified before the first run', () => {

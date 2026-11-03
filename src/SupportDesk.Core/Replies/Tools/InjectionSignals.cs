@@ -19,19 +19,19 @@ public static partial class InjectionSignals
     /// <summary>The one signal that is not strong: ordinary tickets paste lines that start with <c>System:</c> or <c>User:</c>.</summary>
     public const string RoleTurnName = "role turn";
 
-    private static readonly (string Name, Regex Pattern)[] Signals =
+    private static readonly (string Name, Regex Pattern, bool Strong)[] Signals =
     [
-        ("tool name", ToolName()),
-        (RoleTurnName, RoleTurn()),
-        ("tag", Tag()),
-        ("chat template", ChatTemplate()),
-        ("ignore instructions", IgnoreInstructions()),
-        ("system prompt", SystemPrompt()),
-        ("system override", SystemOverride()),
+        ("tool name", ToolName(), true),
+        (RoleTurnName, RoleTurn(), false),
+        ("tag", Tag(), true),
+        ("chat template", ChatTemplate(), true),
+        ("ignore instructions", IgnoreInstructions(), true),
+        ("system prompt", SystemPrompt(), true),
+        ("system override", SystemOverride(), true),
     ];
 
     /// <summary>The names of the strong signals, in the order <see cref="Find"/> reports them.</summary>
-    public static IReadOnlyList<string> StrongNames { get; } = [.. Signals.Select(s => s.Name).Where(n => n != RoleTurnName)];
+    public static IReadOnlyList<string> StrongNames { get; } = [.. Signals.Where(s => s.Strong).Select(s => s.Name)];
 
     /// <summary>
     /// The names of the signals found in every field the prompt shows as free text (<see cref="TicketPromptFormatter.FreeText"/>),
@@ -46,7 +46,7 @@ public static partial class InjectionSignals
     }
 
     /// <summary>The strong signals among those <see cref="Find"/> reports: everything but the role turn.</summary>
-    public static IReadOnlyList<string> FindStrong(Ticket ticket) => [.. Find(ticket).Where(n => n != RoleTurnName)];
+    public static IReadOnlyList<string> FindStrong(Ticket ticket) => [.. Find(ticket).Where(StrongNames.Contains)];
 
     /// <summary>
     /// Fullwidth and other compatibility forms become plain ones, invisible format characters go (zero-width spaces, and the

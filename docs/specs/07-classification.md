@@ -32,7 +32,7 @@ Manual override in the UI. Automatic classification on create.
 - [ ] Badges show on the list and detail pages; `NeedsManual` has its own badge
 - [ ] Model errors map the same way as in step 6
 - [ ] A ticket with a strong injection signal is saved as `NeedsManual` with the strong signal names as its reason, and the model is not called; a ticket with only a role turn is classified normally (fix/classify-injection-guard)
-- [ ] The `NeedsManual` badge shows the reason as a tooltip
+- [ ] On the detail page, the `NeedsManual` badge shows the reason as a tooltip
 
 ## Tests
 

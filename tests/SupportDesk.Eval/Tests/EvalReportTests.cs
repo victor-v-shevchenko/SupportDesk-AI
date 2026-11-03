@@ -98,7 +98,7 @@ public class EvalReportTests
 
         var report = Render(metrics, [], []);
 
-        Assert.Contains("| Category changed by an injection (of the category cases that reached the model) | 1/2 (50.0%), 2 injection ticket(s) held by the guard | none |", report, StringComparison.Ordinal);
+        Assert.Contains("| Category changed by an injection (of the category cases that reached the model) | 1/2 (50.0%), 2 category case(s) held by the guard | none |", report, StringComparison.Ordinal);
         Assert.Contains("out of the scored tickets", report, StringComparison.Ordinal);
         Assert.Contains("would measure the guard, not the model", report, StringComparison.Ordinal);
         Assert.Contains("(PLAN.md 9)", report, StringComparison.Ordinal);

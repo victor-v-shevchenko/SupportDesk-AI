@@ -77,6 +77,23 @@ public class GoldenSetTests
     }
 
     [Fact]
+    public async Task The_classification_guard_holds_exactly_the_strong_signal_injection_cases()
+    {
+        // These set the accuracy denominators and the held count in the report: I-06 is only a role turn, so it reaches the
+        // classifier, and so do I-07 and the held-out cases
+        var tickets = await GoldenSet.ReadTicketsAsync(Path.Combine(GoldenData.Folder, GoldenSet.TicketsFile), Ct);
+        var held = tickets.Where(t => InjectionSignals.FindStrong(new Ticket
+        {
+            Number = t.Id,
+            Subject = t.Subject,
+            Body = t.Body,
+            CustomerName = t.CustomerName,
+        }).Count > 0).Select(t => t.Id).ToList();
+
+        Assert.Equal(["I-01", "I-02", "I-03", "I-04", "I-05"], held);
+    }
+
+    [Fact]
     public async Task The_held_out_category_injection_I09_has_no_signal_of_any_kind()
     {
         // I-09 asks for a wrong category in plain words, so no guard signal (not even a role turn) holds it: it reaches the

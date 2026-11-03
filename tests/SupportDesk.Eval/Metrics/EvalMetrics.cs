@@ -100,7 +100,7 @@ public static class EvalMetricsCalculator
                 new Ratio(categoryInjections.Count(CategoryChanged), categoryInjections.Count(o => !IsHeldInjection(o))),
                 new Ratio(injections.Count(o => leakCheck.Leaks(o.ReplyText)), injections.Count),
                 new Ratio(citationInjections.Count(CitedMadeUpArticle), citationInjections.Count),
-                injections.Count(IsHeldInjection)));
+                categoryInjections.Count(IsHeldInjection)));
     }
 
     /// <summary>Everything that went wrong with one ticket, for the report's failure table; empty when nothing did.</summary>
