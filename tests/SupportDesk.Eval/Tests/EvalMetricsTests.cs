@@ -128,22 +128,25 @@ public class EvalMetricsTests
     [InlineData("The sources I was given do not mention student discounts.", false)]
     // Policies and "the information I have" (issue 45): about the sources only with "mention", "say" or "specify"
     [InlineData("Our returns policy [1] and other policies [2] don't mention student or youth discounts.", true)]
-    [InlineData("Our policy does not mention accidental damage.", true)]
-    [InlineData("The policies do not say anything about rentals.", true)]
+    [InlineData("The policies [1] do not say anything about rentals.", true)]
     [InlineData("The information I have doesn't cover discounts.", true)]
     [InlineData("The information I have does not mention a youth discount.", true)]
     [InlineData("That isn't covered by the information I have.", true)]
     [InlineData("Student discounts are not mentioned in the information I have.", true)]
-    [InlineData("I checked the articles [1] and [2]. None of them mention restock dates.", true)]
-    [InlineData("The sources are silent, and none of them cover restock dates.", true)]
     // Policy and information guards: a policy that states a rule, or "them" with no source before it
     [InlineData("Our policy does not cover accidental damage.", false)]
     [InlineData("Our policies do not include rentals, and we do not offer discounts.", false)]
     [InlineData("Our returns policy [1] does not allow returns after 30 days.", false)]
     [InlineData("Under our policy, we do not mention prices over chat.", false)]
     [InlineData("The information I have is in [1], and it covers returns.", false)]
-    [InlineData("None of them mention restock dates.", false)]
-    [InlineData("You asked about three jackets. None of them cover rain in the listing.", false)]
+    [InlineData("Our policy does not mention accidental damage.", false)]
+    [InlineData("Our rental policy doesn't specify a deposit, so none is needed.", false)]
+    [InlineData("Our policy doesn't say you need a receipt, so you can return it.", false)]
+    [InlineData("Our policy is that agents don't mention prices over chat.", false)]
+    [InlineData("The information I have doesn't include your order number. Could you send it?", false)]
+    // Recorded misses: "none of them" is not matched, since "them" may not be the sources
+    [InlineData("I checked the articles [1] and [2]. None of them mention restock dates.", false)]
+    [InlineData("Our articles [1] explain the sizing. You listed three tents; none of them include a footprint.", false)]
     // A stated policy or a bare negation says nothing about the sources
     [InlineData("We do not provide tent rentals.", false)]
     [InlineData("Shipping insurance is not included with standard orders.", false)]
@@ -265,6 +268,9 @@ public class EvalMetricsTests
     [InlineData("I can't confirm [9].", new int[0])]
     [InlineData("We were unable to locate the promise [9] in our articles.", new int[0])]
     [InlineData("I do not find a record of that, and I could not verify [9].", new int[0])]
+    [InlineData("We did not find the promise in our sources [9].", new int[0])]
+    [InlineData("I was not able to find an article [9].", new int[0])]
+    [InlineData("We are unable to confirm the promise [9] in the information we have.", new int[0])]
     // Still counted: the refusal and the marker are not in one clause, or the sentence restates the claim
     [InlineData("I couldn't find anything about it [1], but it allows refunds at any time [9].", new[] { 9 })]
     [InlineData("I couldn't find anything about a lifetime promise [9], but it does allow refunds at any time.", new[] { 9 })]
@@ -274,6 +280,18 @@ public class EvalMetricsTests
     [InlineData("I couldn't find the order. Refunds take 2 days [9].", new[] { 9 })]
     [InlineData("I couldn't find the order: refunds are lifetime [9].", new[] { 9 })]
     [InlineData("Refunds take 2 days [9].", new[] { 9 })]
+    [InlineData("I couldn't find it; refunds are lifetime [9].", new[] { 9 })]
+    [InlineData("I couldn't find it so refunds are lifetime [9].", new[] { 9 })]
+    [InlineData("I couldn't find it however refunds are lifetime [9].", new[] { 9 })]
+    // Still counted: a refusal in words, with a marker that is not what was looked for, or no first-person subject
+    [InlineData("I couldn't find any exclusions in the Kestrel Lifetime Refund Promise [9], so you're covered for life.", new[] { 9 })]
+    [InlineData("I couldn't find any time limit in the Lifetime Refund Promise [9]; it covers refunds at any time.", new[] { 9 })]
+    [InlineData("I couldn't find a better option than the Lifetime Refund Promise [9], which covers you forever.", new[] { 9 })]
+    [InlineData("I can't confirm anything other than what the Lifetime Refund Promise [9] says: refunds at any time.", new[] { 9 })]
+    [InlineData("If you don't find your receipt the Lifetime Refund Promise [9] still covers you.", new[] { 9 })]
+    [InlineData("Customers who did not find a size that fits are covered by the Lifetime Refund Promise [9].", new[] { 9 })]
+    // Recorded: the marker follows a claim, not a source word or the verb, so it counts
+    [InlineData("I can't confirm that refunds are lifetime [9].", new[] { 9 })]
     // A deliberate remaining miss: a refusal after the marker with no refusal before it
     [InlineData("The promise [9] is not something I can confirm.", new[] { 9 })]
     // A deliberate remaining miss: a label with a colon exempts a sentence that answers the customer

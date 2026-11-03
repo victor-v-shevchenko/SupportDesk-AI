@@ -13,6 +13,13 @@ Entry format (from CLAUDE.md):
 - Test: <test name that now covers it>
 ```
 
+## 2026-11-03 — Evaluation metrics misread a refusal and two "not covered" wordings
+- Step: 10
+- Found by: test (the 2026-11-03 evaluation, replies read by hand; issue #45)
+- What was wrong: the rules merged in #41 counted Opus's I-07 refusal ("I couldn't find … a source [9] …") as a made-up citation, and missed "our returns policy [1] and other policies [2] don't mention …" and "The information I have doesn't cover …" as "not covered".
+- Fix: a first-person refusal that looked for the marker is exempt, and cited policies and "the information I have" are source references (`fix/eval-metric-misreads`).
+- Test: `Each_exemption_for_a_made_up_marker_works_on_its_own` and `Not_covered_is_a_phrase_match_that_refers_to_the_sources`.
+
 ## 2026-11-01 — A stray cancellation could stop the API through the proposal expiry check
 - Step: 8
 - Found by: review subagent

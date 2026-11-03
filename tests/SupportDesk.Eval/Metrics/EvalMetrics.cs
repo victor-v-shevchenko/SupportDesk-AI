@@ -86,12 +86,10 @@ public static class EvalMetricsCalculator
         Pattern(@"\b(do|did) not see anything (about|on|in)\b"),
         Pattern(@"\bnothing in (our|the)\b[^.!?\n]{0,30}\b" + SourceWord + @"\b[^.!?\n]{0,20}\b(covers?|mentions?|says?)\b"),
         Pattern(@"\bnot something i can\b"),
-        // Policies only with verbs about what a text says: "our policy does not cover accidental damage" states a policy
-        Pattern(@"\bpolic(?:y|ies)\b(?:(?!\b(?:we|you|i|they)\b)[^.!?\n,;]){0,40}\b(do|does|did) not (mention|say|specify)\b"),
-        Pattern(@"\bthe information i have (do|does|did) not (cover|address|include|mention|say|contain|list|specify)\b"),
+        // A policy counts only with a marker right after it (it is cited) and a verb about what a text says: "our policy does not cover accidental damage" states a policy
+        Pattern(@"\bpolic(?:y|ies)\s*\[[0-9, ]+\](?:(?!\b(?:we|you|i|they)\b)[^.!?\n,;]){0,40}\b(do|does|did) not (mention|say|specify)\b"),
+        Pattern(@"\bthe information i have (do|does|did) not (cover|address|mention|say)\b"),
         Pattern(@"\bnot (covered|mentioned|included|addressed|specified|listed) (in|by|within) the information i have\b"),
-        // "Them" is the sources only when a source word comes in the 100 characters before
-        Pattern(@"\b" + SourceWord + @"\b[^\n]{0,100}\bnone of them (cover|address|include|mention|say|contain|list|specify)\b"),
     ];
 
     public static EvalMetrics Compute(IReadOnlyList<TicketOutcome> outcomes, SystemPromptLeakCheck leakCheck)
@@ -219,7 +217,8 @@ public static class EvalMetricsCalculator
         .Replace("won't", "will not", StringComparison.OrdinalIgnoreCase)
         .Replace("n't", " not", StringComparison.OrdinalIgnoreCase)
         .Replace("there's", "there is", StringComparison.OrdinalIgnoreCase)
-        .Replace("'ve", " have", StringComparison.OrdinalIgnoreCase);
+        .Replace("'ve", " have", StringComparison.OrdinalIgnoreCase)
+        .Replace("i'm ", "i am ", StringComparison.OrdinalIgnoreCase);
 
     private static Regex Pattern(string pattern) =>
         new(pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
@@ -260,10 +259,13 @@ public static class EvalMetricsCalculator
     /// provided/valid/listed/real and source(s) or article(s) (not followed by "of"); but not when "but", "however",
     /// "although", "though" or "yet" and it/this/that/they follow, since that restates it. Before the marker: no such, not a/an,
     /// not one of our or not in our, optional provided/valid/real, then source(s) or article(s), within 5 non-word characters.</item>
-    /// <item>it is in a refusal: "could not / can not / did not / do not / unable to / not able to" and "find, locate, confirm or
-    /// verify" come before it in the same clause (no comma, semicolon, colon or sentence end, and no and/but/however/yet/
-    /// although/though/while/so between), and no "but/however/although/though/yet" and it/this/that/they follows in the
-    /// sentence ("I couldn't find a source [9] in the information I have, so I can't confirm it").</item>
+    /// <item>it is what a refusal looked for. In the same clause before the marker: "I" or "we", then "could not", "can not",
+    /// "did not", "do not", "was/were/am/are not able to" or "was/were/am/are unable to", then find, locate, confirm or
+    /// verify, with no comma, semicolon, colon or sentence end after the verb and no and/but/however/yet/although/though/
+    /// while/so between the verb and the marker (within 120 characters). And either the marker comes straight after a source
+    /// word (source, article, reference, citation) or the verb ("or a source [9]", "confirm [9]"), or it is followed by "in" or
+    /// "among" our/the articles, sources or information ("the promise [9] in our articles"). Not when "but/however/although/
+    /// though/yet" and it/this/that/they follow it in the sentence.</item>
     /// </list>
     /// Every other removed marker counts. A note in other words is still counted; a label with a colon on a sentence that
     /// answers the customer ("Source [9]: refunds are available at any time") is not.
@@ -316,13 +318,26 @@ public static class EvalMetricsCalculator
     private static bool IsDisclaimedAfter(string rest) =>
         SourceDisclaimerAfter.Match(rest) is { Success: true } disclaimer && !Restates.IsMatch(rest[disclaimer.Length..]);
 
-    /// <summary>The marker sits in a refusal: a "could not find / confirm" in the same clause, and no "but it …" after it.</summary>
+    /// <summary>
+    /// The marker is what a first-person refusal looked for, and the sentence doesn't restate the claim after it. See
+    /// <see cref="MadeUpMarkers"/>, case 4.
+    /// </summary>
     private static bool IsRefusedBefore(string before, string rest) =>
-        RefusalBefore.IsMatch(before) && !Restates.IsMatch(rest);
+        RefusalBefore.IsMatch(before)
+        && (RefusalTarget.IsMatch(before) || InOurSources.IsMatch(rest))
+        && !Restates.IsMatch(rest);
 
     private static readonly Regex RefusalBefore = new(
-        @"\b(?:could not|can not|did not|do not|unable to|not able to)\s+(?:find|locate|confirm|verify)\b"
+        @"\b(?:i|we)\s+(?:could not|can not|did not|do not|(?:was|were|am|are) (?:not able|unable) to)\s+(?:find|locate|confirm|verify)\b"
         + @"(?:(?!\b(?:and|but|however|yet|although|though|while|so)\b)[^.!?\n,;:]){0,120}$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+
+    private static readonly Regex RefusalTarget = new(
+        @"\b(?:sources?|articles?|references?|citations?|find|locate|confirm|verify)\W{0,5}$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+
+    private static readonly Regex InOurSources = new(
+        @"^\W{0,3}(?:in|among)\s+(?:our|the)\s+(?:articles|sources|information)\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 
     private static readonly Regex NotesStart = new(
