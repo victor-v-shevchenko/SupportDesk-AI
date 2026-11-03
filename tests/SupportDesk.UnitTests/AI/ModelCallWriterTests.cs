@@ -43,7 +43,7 @@ public sealed class ModelCallWriterTests : IDisposable
         Enqueue(250);
 
         await _writer.StartAsync(Ct);
-        await _repository.WaitForRowsAsync(250);
+        await _repository.RowsSaved(250);
         await _writer.StopAsync(Ct);
 
         Assert.Equal([100, 100, 50], _repository.BatchSizes);
@@ -56,7 +56,7 @@ public sealed class ModelCallWriterTests : IDisposable
         Enqueue(150);
 
         await _writer.StartAsync(Ct);
-        await _repository.WaitForRowsAsync(50);
+        await _repository.RowsSaved(50);
         await _writer.StopAsync(Ct);
 
         Assert.Equal([50], _repository.SavedBatchSizes);
@@ -98,6 +98,44 @@ public sealed class ModelCallWriterTests : IDisposable
         Assert.Equal(100, _repository.SavedRows);
     }
 
+    [Fact]
+    public async Task A_drain_cut_off_mid_save_counts_the_rows_still_queued_behind_it_as_lost()
+    {
+        _repository.HoldFirstSave = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _repository.HangSecondSave = true;
+        Enqueue(250);
+        await _writer.StartAsync(Ct);
+        await _repository.FirstSaveStarted;
+
+        var stopping = _writer.StopAsync(Ct);
+        _repository.HoldFirstSave.SetResult();
+        await _repository.SecondSaveStarted;
+        _time.Advance(TimeSpan.FromSeconds(5));
+        await stopping.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+
+        // The batch in flight (100) and the 50 behind it; the 100 saved first are not lost
+        Assert.Contains(_logs.Messages, m => m.Contains("Shutdown interrupted saving 150 model call rows", StringComparison.Ordinal));
+        Assert.Equal(100, _repository.SavedRows);
+    }
+
+    [Fact]
+    public async Task A_drain_whose_deadline_passes_between_batches_logs_the_rows_it_left_behind()
+    {
+        _repository.HoldFirstSave = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        // The second batch saves, but the deadline passes while it does, so the loop ends with 50 rows queued
+        _repository.DuringSecondSave = () => _time.Advance(TimeSpan.FromSeconds(5));
+        Enqueue(250);
+        await _writer.StartAsync(Ct);
+        await _repository.FirstSaveStarted;
+
+        var stopping = _writer.StopAsync(Ct);
+        _repository.HoldFirstSave.SetResult();
+        await stopping.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+
+        Assert.Equal(200, _repository.SavedRows);
+        Assert.Contains(_logs.Messages, m => m.Contains("50 model call rows", StringComparison.Ordinal) && m.Contains("dropped", StringComparison.Ordinal));
+    }
+
     private void Enqueue(int count)
     {
         for (var i = 0; i < count; i++)
@@ -113,6 +151,7 @@ public sealed class ModelCallWriterTests : IDisposable
         private readonly List<int> _saved = [];
         private readonly TaskCompletionSource _firstStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource _secondStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly List<(int Rows, TaskCompletionSource Reached)> _waiters = [];
         private int _calls;
 
         public bool FailNext { get; set; }
@@ -120,6 +159,9 @@ public sealed class ModelCallWriterTests : IDisposable
         public TaskCompletionSource? HoldFirstSave { get; set; }
 
         public bool HangSecondSave { get; set; }
+
+        /// <summary>Runs inside the second save, before it completes.</summary>
+        public Action? DuringSecondSave { get; set; }
 
         public Task FirstSaveStarted => _firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
 
@@ -150,12 +192,19 @@ public sealed class ModelCallWriterTests : IDisposable
 
         public int SavedRows => SavedBatchSizes.Sum();
 
-        public async Task WaitForRowsAsync(int rows)
+        /// <summary>Completes when at least <paramref name="rows"/> rows have been saved.</summary>
+        public Task RowsSaved(int rows)
         {
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            while (SavedRows < rows)
+            lock (_gate)
             {
-                await Task.Delay(10, timeout.Token);
+                if (_saved.Sum() >= rows)
+                {
+                    return Task.CompletedTask;
+                }
+
+                var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                _waiters.Add((rows, reached));
+                return reached.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
             }
         }
 
@@ -184,6 +233,7 @@ public sealed class ModelCallWriterTests : IDisposable
             else if (call == 2)
             {
                 _secondStarted.TrySetResult();
+                DuringSecondSave?.Invoke();
                 if (HangSecondSave)
                 {
                     await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
@@ -193,6 +243,11 @@ public sealed class ModelCallWriterTests : IDisposable
             lock (_gate)
             {
                 _saved.Add(calls.Count);
+                var total = _saved.Sum();
+                foreach (var waiter in _waiters.Where(w => total >= w.Rows))
+                {
+                    waiter.Reached.TrySetResult();
+                }
             }
         }
 

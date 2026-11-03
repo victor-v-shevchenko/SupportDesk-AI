@@ -11,8 +11,11 @@ namespace SupportDesk.UnitTests.AI;
 /// <summary>The API's AI registrations on their own, with in-memory settings and no web host.</summary>
 internal static class AiTestServices
 {
-    /// <summary>What appsettings.json sets for prompts and the Ollama endpoint; everything else uses the code defaults unless a test overrides it.</summary>
-    private static readonly Dictionary<string, string?> BaseSettings = new()
+    /// <summary>
+    /// The prompt versions mirror appsettings.json's <c>AI:Prompts</c> (a test checks they still do). The Ollama endpoint is a
+    /// test host, not the app's. Everything else uses the code defaults unless a test overrides it.
+    /// </summary>
+    internal static readonly Dictionary<string, string?> BaseSettings = new()
     {
         ["AI:Prompts:reply"] = "reply.v4",
         ["AI:Prompts:summary"] = "summary.v2",

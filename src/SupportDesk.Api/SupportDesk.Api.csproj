@@ -12,6 +12,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="SupportDesk.UnitTests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\SupportDesk.Core\SupportDesk.Core.csproj" />
     <ProjectReference Include="..\SupportDesk.Data\SupportDesk.Data.csproj" />
   </ItemGroup>

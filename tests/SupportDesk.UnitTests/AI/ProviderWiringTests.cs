@@ -88,7 +88,12 @@ public class ProviderWiringTests
     {
         public List<(HttpClient Client, SocketsHttpHandler Real)> Created { get; } = [];
 
-        public HttpMessageHandler Wrap(SocketsHttpHandler real) => stub;
+        public HttpMessageHandler Wrap(SocketsHttpHandler real)
+        {
+            // The client owns what Wrap returns, and the real handler goes unused
+            real.Dispose();
+            return stub;
+        }
 
         void IProviderHttpHooks.Created(HttpClient client, SocketsHttpHandler real) => Created.Add((client, real));
     }

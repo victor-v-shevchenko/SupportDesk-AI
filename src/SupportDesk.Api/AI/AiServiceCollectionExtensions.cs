@@ -134,9 +134,9 @@ public static class AiServiceCollectionExtensions
 /// A seam for tests of the composition root: lets them put a stub in place of the network under the clients it builds, and
 /// look at the <see cref="HttpClient"/> and connect settings each one gets. Not registered in the app.
 /// </summary>
-public interface IProviderHttpHooks
+internal interface IProviderHttpHooks
 {
-    /// <summary>The handler the client sends through, given the real one with the connect timeout set.</summary>
+    /// <summary>The handler the client sends through, given the real one with the connect timeout set. The client takes ownership of the handler it is given, so an implementation that returns another one must dispose the real one itself.</summary>
     HttpMessageHandler Wrap(SocketsHttpHandler real);
 
     /// <summary>Called with each client the root builds, and the real handler under it.</summary>

@@ -30,11 +30,17 @@ public sealed partial class ModelCallWriter(ModelCallBuffer queue, IServiceScope
         using var drain = new CancellationTokenSource(DrainTimeout, time);
         while (queue.Reader.Count > 0 && !drain.IsCancellationRequested)
         {
-            await SaveBatchAsync(drain.Token);
+            await SaveBatchAsync(drain.Token, draining: true);
+        }
+
+        // The deadline passed between batches
+        if (queue.Reader.Count > 0)
+        {
+            LogDrainLeftRows(queue.Reader.Count);
         }
     }
 
-    private async Task SaveBatchAsync(CancellationToken cancellationToken)
+    private async Task SaveBatchAsync(CancellationToken cancellationToken, bool draining = false)
     {
         var batch = new List<ModelCall>(BatchSize);
         while (batch.Count < BatchSize && queue.Reader.TryRead(out var call))
@@ -55,7 +61,8 @@ public sealed partial class ModelCallWriter(ModelCallBuffer queue, IServiceScope
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // Shutdown cut the save short; say so rather than losing the rows silently
-            LogSaveCancelled(batch.Count);
+            // While draining, nothing will save what is still queued behind this batch
+            LogSaveCancelled(draining ? batch.Count + queue.Reader.Count : batch.Count);
             throw;
         }
         catch (Exception exception)
@@ -66,6 +73,9 @@ public sealed partial class ModelCallWriter(ModelCallBuffer queue, IServiceScope
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Shutdown interrupted saving {Count} model call rows; they are dropped")]
     private partial void LogSaveCancelled(int count);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Shutdown ran out of time saving model call rows; {Count} model call rows are dropped")]
+    private partial void LogDrainLeftRows(int count);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Couldn't save {Count} model call rows; they are dropped")]
     private partial void LogSaveFailed(Exception exception, int count);
