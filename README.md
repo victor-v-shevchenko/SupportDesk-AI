@@ -118,7 +118,7 @@ CI runs everything but the evaluation on every push (`dotnet test --filter "Cate
 
 ## Built with Claude Code
 
-The project was built step by step with Claude Code. [SupportDesk-AI.md](SupportDesk-AI.md) is the brief, [PLAN.md](PLAN.md) the design, and [docs/specs/](docs/specs/) has one spec per step with acceptance criteria. [CLAUDE.md](CLAUDE.md) holds the working rules: one branch per spec, tests written with the code, the checks to pass, a browser check for UI work, and a pull request that ticks off each criterion. Claude Code opened every pull request; the user merged each one.
+The project was built step by step with Claude Code. [SupportDesk-AI.md](SupportDesk-AI.md) is the brief, [PLAN.md](PLAN.md) the design, and [docs/specs/](docs/specs/) has one spec per step with acceptance criteria. [CLAUDE.md](CLAUDE.md) holds the working rules: one branch per spec, tests written with the code, the checks to pass, a browser check for UI work, and a pull request that ticks off each criterion. Step 1 was pushed straight to `main`; from step 2 on, Claude Code opened every pull request and the user merged each one.
 
 Every step and fix was reviewed by the `reviewer` subagent ([.claude/agents/reviewer.md](.claude/agents/reviewer.md)), which runs on a different model from the one that wrote the code, can't edit files and reads only the spec, CLAUDE.md and the branch diff. Every finding was fixed or answered in the pull request, and every real bug got a failing test first and an entry in [docs/ai-log.md](docs/ai-log.md). From step 8, implementation moved to cheaper Sonnet subagents (and from #17 to a dedicated `implementer` agent) while the reviewer moved to Opus, so the two still differ.
 
@@ -163,12 +163,12 @@ Thresholds are 80% category accuracy and 70% citation recall for Claude models, 
 
 ## Bugs found and fixed
 
-[docs/ai-log.md](docs/ai-log.md) records every real bug found after the code was written: <!-- AILOG TOTAL --> in all, each with the test that now covers it.
+[docs/ai-log.md](docs/ai-log.md) records every real bug found after the code was written: 41 in all, each with the test that now covers it.
 
-- **By the review subagent (<!-- N REVIEW -->):** mostly bugs that span components. Two API instances starting together crashed on the migration; a stray cancellation could stop the API through the proposal expiry check; a slow caller could time out a stream after its first item; one model answer could make any number of tool calls; a failed `orders.json` load broke every lookup until restart; the cost readout miscounted replies with several model calls. <!-- REVIEW 12 -->
-- **By tests (<!-- N TEST -->):** the token estimate was below Anthropic's real count (found by the opt-in token-count check, which led to ÷ 3 instead of ÷ 4); ticket text could fake the sources block (adversarial tests); a fake assistant turn in a ticket got a proposal, and an injected ticket got the category it asked for (both found by the evaluation, which led to the injection guard); a thinking model used up the classification budget before answering; and several timing tests that failed only on a busy machine, which led to a fake clock that moves only while the code waits on a timer
-- **By browser checks (<!-- N BROWSER -->):** the search page's result-count select showed 3 while searches sent 5, and the ticket page's action buttons had different sizes
-- **By the user:** <!-- N USER -->
+- **By the review subagent (24):** mostly bugs that span components. Two API instances starting together crashed on the migration; a stray cancellation could stop the API through the proposal expiry check; a slow caller could time out a stream after its first item; one model answer could make any number of tool calls; a failed `orders.json` load broke every lookup until restart; the cost readout miscounted replies with several model calls. The step 12 whole-project review read the whole repository at once and found nine more that only show across steps: embedding calls with no timeout, so a stalled embedding server hung a reply; a refused stream that lost its real token count; ticket-page state that followed you to the next ticket; the evaluation dropping a failed ticket's cost; and the usage writer's shutdown log under-counting the rows it lost
+- **By tests (15):** the token estimate was below Anthropic's real count (found by the opt-in token-count check, which led to ÷ 3 instead of ÷ 4); ticket text could fake the sources block (adversarial tests); a fake assistant turn in a ticket got a proposal, and an injected ticket got the category it asked for (both found by the evaluation, which led to the injection guard); a thinking model used up the classification budget before answering; and several timing tests that failed only on a busy machine, which led to a fake clock that moves only while the code waits on a timer
+- **By browser checks (2):** the search page's result-count select showed 3 while searches sent 5, and the ticket page's action buttons had different sizes
+- **By the user:** none of the logged bugs; the user's corrections went into the specs, PLAN.md and CLAUDE.md instead
 
 ## Possible improvements
 
