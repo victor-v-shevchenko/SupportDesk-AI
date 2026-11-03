@@ -5,6 +5,7 @@ import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { FollowUps } from '../api/follow-ups.models';
 import { TicketClassification, TicketDetail } from '../api/tickets.models';
+import { TicketsService } from '../api/tickets.service';
 import { ReplyPanel } from './reply-panel';
 import { TicketDetailPage } from './ticket-detail-page';
 
@@ -205,6 +206,62 @@ describe('TicketDetailPage', () => {
     expect(el.querySelector('.classification [role=status]')).toBeNull();
     expect(el.querySelector('.classification [role=alert]')).toBeNull();
     expect(el.querySelector<HTMLButtonElement>('button.classify')!.disabled).toBe(false);
+  });
+
+  it('ignores an answer to the old ticket classify that arrives before the page renders the new id', async () => {
+    const fixture = create();
+    http.expectOne('/api/tickets/2').flush(ticket);
+    const el = await settle(fixture);
+    el.querySelector<HTMLButtonElement>('button.classify')!.click();
+    const pending = http.expectOne('/api/tickets/2/classification');
+
+    // The id changes, but nothing has rendered yet, so the request is still open
+    fixture.componentRef.setInput('id', '3');
+    pending.flush({ status: 503, title: 'The model is unavailable', detail: 'Try again in a moment.' }, { status: 503, statusText: 'Service Unavailable' });
+    TestBed.tick();
+    http.expectOne('/api/tickets/3').flush({ ...ticket, id: 3, number: 'T-1003' });
+    await settle(fixture);
+
+    expect(el.querySelector('.classification [role=alert]')).toBeNull();
+  });
+
+  it('cancels a pending classify when the page is destroyed', async () => {
+    const fixture = create();
+    http.expectOne('/api/tickets/2').flush(ticket);
+    const el = await settle(fixture);
+    el.querySelector<HTMLButtonElement>('button.classify')!.click();
+    const pending = http.expectOne('/api/tickets/2/classification');
+
+    fixture.destroy();
+
+    expect(pending.cancelled).toBe(true);
+  });
+
+  it('marks the list stale when it cancels a classify that is still running, and not after a finished one', async () => {
+    const service = TestBed.inject(TicketsService);
+    const fixture = create();
+    http.expectOne('/api/tickets/2').flush(ticket);
+    const el = await settle(fixture);
+    el.querySelector<HTMLButtonElement>('button.classify')!.click();
+    http.expectOne('/api/tickets/2/classification');
+    const before = service.listStale();
+
+    fixture.componentRef.setInput('id', '3');
+    TestBed.tick();
+    http.expectOne('/api/tickets/3').flush({ ...ticket, id: 3, number: 'T-1003' });
+    await settle(fixture);
+    expect(service.listStale()).toBe(before + 1);
+
+    el.querySelector<HTMLButtonElement>('button.classify')!.click();
+    http.expectOne('/api/tickets/3/classification').flush(done);
+    await settle(fixture);
+    const afterFinished = service.listStale();
+    fixture.componentRef.setInput('id', '4');
+    TestBed.tick();
+    http.expectOne('/api/tickets/4').flush({ ...ticket, id: 4, number: 'T-1004' });
+    await settle(fixture);
+
+    expect(service.listStale()).toBe(afterFinished);
   });
 
   it('opening another ticket after a model call reads nothing beyond the new ticket initial load', async () => {

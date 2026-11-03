@@ -128,12 +128,20 @@ export class TicketDetailPage {
   private classifyRequest: Subscription | undefined;
 
   constructor() {
-    inject(DestroyRef).onDestroy(() => this.classifyRequest?.unsubscribe());
+    inject(DestroyRef).onDestroy(() => this.cancelClassify());
     effect(() => {
       this.id();
       // The old ticket's request is cancelled, so its result or failure never reaches the new one
-      untracked(() => this.classifyRequest?.unsubscribe());
+      untracked(() => this.cancelClassify());
     });
+  }
+
+  private cancelClassify(): void {
+    if (this.classifyRequest && !this.classifyRequest.closed) {
+      this.classifyRequest.unsubscribe();
+      // The server may have saved the result anyway, so the list could show old badges
+      this.tickets.listStale.update((n) => n + 1);
+    }
   }
 
   /** One request at a time: the button is disabled while it runs. A failure leaves the saved classification on screen. */
@@ -142,15 +150,25 @@ export class TicketDetailPage {
       return;
     }
 
+    // The id can change before the effect cancels the request, so a late answer checks it still belongs here
+    const forId = this.id();
     this.classifying.set(true);
     this.classifyError.set(null);
     this.classifyRequest = this.tickets.classify(ticketId).subscribe({
       next: (classification) => {
+        if (this.id() !== forId) {
+          return;
+        }
+
         this.ticket.update((t) => (t?.id === ticketId ? { ...t, classification } : t));
         this.classifying.set(false);
         this.usageChanged(1);
       },
       error: (error: unknown) => {
+        if (this.id() !== forId) {
+          return;
+        }
+
         this.classifyError.set(errorMessage(error));
         this.classifying.set(false);
         // A failed call writes a usage row too

@@ -277,4 +277,11 @@ Entry format (from CLAUDE.md):
 - Found by: review subagent (issue #54)
 - What was wrong: `TicketCost` computed a `NaN` target from the missing `calls`, and the test passed by accident.
 - Fix: the mock sends `calls: 1` (branch `fix/ticket-switch-state`).
-- Test: `e2e/accessibility.spec.ts` (the reply flow with a proposal)
+- Test: none asserts the mock's `calls`; the mock now sends `calls: 1` and the existing `e2e/accessibility.spec.ts` reply-flow test still passes. A mock event that omits `calls` would not fail a test
+
+## 2026-11-03 — A late classify answer could still reach the next ticket
+- Step: 11 (found in the review of the issue #54 fix)
+- Found by: review subagent
+- What was wrong: the page cancelled a pending classify in an effect, which runs at the next change detection, so an answer delivered between the id change and that render landed on the new ticket; a cancelled classify also left the list stale although the server may have saved the result.
+- Fix: `classify` remembers the id it was started for and ignores answers once it differs; cancelling a running classify bumps `listStale` (branch `fix/ticket-switch-state`).
+- Test: `TicketDetailPage` specs `ignores an answer to the old ticket classify that arrives before the page renders the new id`, `cancels a pending classify when the page is destroyed` and `marks the list stale when it cancels a classify that is still running, and not after a finished one` (all three failed with the guard, the destroy hook and the bump removed)
