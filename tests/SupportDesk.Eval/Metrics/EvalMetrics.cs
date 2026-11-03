@@ -86,9 +86,10 @@ public static class EvalMetricsCalculator
         Pattern(@"\b(do|did) not see anything (about|on|in)\b"),
         Pattern(@"\bnothing in (our|the)\b[^.!?\n]{0,30}\b" + SourceWord + @"\b[^.!?\n]{0,20}\b(covers?|mentions?|says?)\b"),
         Pattern(@"\bnot something i can\b"),
-        // A policy counts only with a marker right after it (it is cited) and a verb about what a text says: "our policy does not cover accidental damage" states a policy
-        Pattern(@"\bpolic(?:y|ies)\s*\[[0-9, ]+\](?:(?!\b(?:we|you|i|they)\b)[^.!?\n,;]){0,40}\b(do|does|did) not (mention|say|specify)\b"),
-        Pattern(@"\bthe information i have (do|does|did) not (cover|address|mention|say)\b"),
+        // A policy counts only with a marker right after it (it is cited) and a verb about what a text says: "our policy does not cover accidental damage" states a policy.
+        // Here and for "the information I have", a following ", so …" draws an answer from the silence ("…doesn't specify a deposit, so none is needed"), which isn't "not covered"
+        Pattern(@"\bpolic(?:y|ies)\s*\[[0-9, ]+\](?:(?!\b(?:we|you|i|they)\b)[^.!?\n,;]){0,40}\b(do|does|did) not (mention|say|specify)\b(?![^.!?\n]*,\s*so\b)"),
+        Pattern(@"\bthe information i have (do|does|did) not (cover|address|mention|say)\b(?![^.!?\n]*,\s*so\b)"),
         Pattern(@"\bnot (covered|mentioned|included|addressed|specified|listed) (in|by|within) the information i have\b"),
     ];
 
@@ -262,10 +263,10 @@ public static class EvalMetricsCalculator
     /// <item>it is what a refusal looked for. In the same clause before the marker: "I" or "we", then "could not", "can not",
     /// "did not", "do not", "was/were/am/are not able to" or "was/were/am/are unable to", then find, locate, confirm or
     /// verify, with no comma, semicolon, colon or sentence end after the verb and no and/but/however/yet/although/though/
-    /// while/so between the verb and the marker (within 120 characters). And either the marker comes straight after a source
-    /// word (source, article, reference, citation) or the verb ("or a source [9]", "confirm [9]"), or it is followed by "in" or
-    /// "among" our/the articles, sources or information ("the promise [9] in our articles"). Not when "but/however/although/
-    /// though/yet" and it/this/that/they follow it in the sentence.</item>
+    /// while/so between the verb and the marker (within 120 characters). The marker is the refusal's object: after the verb or
+    /// a source word (source, article, reference, citation; not a singular one after a preposition), with at most a space, quote
+    /// or bracket between, or after "in/among our/the/my sources/articles", or followed by where the search was ("the promise [9]
+    /// in our articles"). After it, only that place and ", so I/we can not confirm it" may follow before the sentence ends.</item>
     /// </list>
     /// Every other removed marker counts. A note in other words is still counted; a label with a colon on a sentence that
     /// answers the customer ("Source [9]: refunds are available at any time") is not.
@@ -325,19 +326,29 @@ public static class EvalMetricsCalculator
     private static bool IsRefusedBefore(string before, string rest) =>
         RefusalBefore.IsMatch(before)
         && (RefusalTarget.IsMatch(before) || InOurSources.IsMatch(rest))
-        && !Restates.IsMatch(rest);
+        && RefusalTail.IsMatch(rest);
 
     private static readonly Regex RefusalBefore = new(
         @"\b(?:i|we)\s+(?:could not|can not|did not|do not|(?:was|were|am|are) (?:not able|unable) to)\s+(?:find|locate|confirm|verify)\b"
         + @"(?:(?!\b(?:and|but|however|yet|although|though|while|so)\b)[^.!?\n,;:]){0,120}$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 
+    // The marker is the refusal's object: right after the verb, after a source word that isn't the object of a preposition
+    // ("find a source [9]", not "find any limit in the article [9]"), or after "in/among our/the sources" (plural)
     private static readonly Regex RefusalTarget = new(
-        @"\b(?:sources?|articles?|references?|citations?|find|locate|confirm|verify)\W{0,5}$",
+        @"(?:\b(?:find|locate|confirm|verify)|\b(?<!\b(?:in|from|of|within|under|per)\s+(?:(?:any|a|an|the|our|my|your|that|this)\s+)?)(?:source|article|reference|citation)s?|\b(?:in|among)\s+(?:our|the|my)\s+(?:sources|articles))\W{0,5}$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 
+    private const string OurSources = @"(?:in|among)\s+(?:our|the|my)\s+(?:articles|sources|information|help (?:center|pages?|content)|knowledge base)(?:\s+(?:i|we)\s+have)?";
+
     private static readonly Regex InOurSources = new(
-        @"^\W{0,3}(?:in|among)\s+(?:our|the)\s+(?:articles|sources|information)\b",
+        @"^\W{0,3}" + OurSources + @"\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+
+    // After the marker the clause may only say where the search was and that it can't be confirmed; anything else goes on
+    // with a claim, so the marker counts ("…source [9] that limits your refund, so it is lifetime")
+    private static readonly Regex RefusalTail = new(
+        @"^\W{0,3}(?:" + OurSources + @")?\s*(?:,?\s*so\s+(?:i|we)\s+(?:can not|could not|am unable to|am not able to)\s+confirm\s+(?:it|that|this|them)\b)?\s*[.!?)\]""']*\s*$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 
     private static readonly Regex NotesStart = new(

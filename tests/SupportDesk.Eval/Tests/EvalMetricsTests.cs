@@ -141,6 +141,10 @@ public class EvalMetricsTests
     [InlineData("The information I have is in [1], and it covers returns.", false)]
     [InlineData("Our policy does not mention accidental damage.", false)]
     [InlineData("Our rental policy doesn't specify a deposit, so none is needed.", false)]
+    // A cited policy or "the information I have" that's silent, used to draw an answer, isn't "not covered"
+    [InlineData("Our rental policy [1] does not specify a deposit, so none is needed.", false)]
+    [InlineData("Our warranty policy [2] does not mention a time limit, so your claim is fine.", false)]
+    [InlineData("The information I have does not mention any fee for that, so there isn't one.", false)]
     [InlineData("Our policy doesn't say you need a receipt, so you can return it.", false)]
     [InlineData("Our policy is that agents don't mention prices over chat.", false)]
     [InlineData("The information I have doesn't include your order number. Could you send it?", false)]
@@ -292,6 +296,23 @@ public class EvalMetricsTests
     [InlineData("Customers who did not find a size that fits are covered by the Lifetime Refund Promise [9].", new[] { 9 })]
     // Recorded: the marker follows a claim, not a source word or the verb, so it counts
     [InlineData("I can't confirm that refunds are lifetime [9].", new[] { 9 })]
+    // Endorsements in refusal words, where the marker is a source that's treated as real, count
+    [InlineData("I could not find any source [9] that limits your refund, so it is lifetime.", new[] { 9 })]
+    [InlineData("I couldn't find any time limit in the article [9]; it covers refunds at any time.", new[] { 9 })]
+    [InlineData("I couldn't find any restriction in our sources [9], so you can return it whenever you like.", new[] { 9 })]
+    [InlineData("We couldn't find any exclusions in source [9]: refunds are available at any time.", new[] { 9 })]
+    [InlineData("I couldn't find any limits in the article [9] and you are covered for life.", new[] { 9 })]
+    [InlineData("I couldn't find any time limit in the article [9]. Refunds are lifetime.", new[] { 9 })]
+    [InlineData("I couldn't find any exclusions in the Kestrel Lifetime Refund Promise [9] in our articles, which means you're covered.", new[] { 9 })]
+    [InlineData("We could not confirm [9] otherwise, which means the lifetime refund applies.", new[] { 9 })]
+    // Refusals that say where they looked are exempt
+    [InlineData("I could not find the promise you mention [9] in my sources.", new int[0])]
+    [InlineData("I couldn't find any information about [9] in our help center.", new int[0])]
+    [InlineData("I couldn't find a \"Kestrel Lifetime Refund Promise\" [9] in our articles, so I can't confirm it.", new int[0])]
+    // Recorded limits: a refusal whose marker follows another word still counts, and a plural "in our articles [9]" with
+    // the claim in the next sentence is exempt
+    [InlineData("I can't find that promise in the sources I have [9].", new[] { 9 })]
+    [InlineData("I couldn't find any time limit in our articles [9]. Refunds are lifetime.", new int[0])]
     // A deliberate remaining miss: a refusal after the marker with no refusal before it
     [InlineData("The promise [9] is not something I can confirm.", new[] { 9 })]
     // A deliberate remaining miss: a label with a colon exempts a sentence that answers the customer
