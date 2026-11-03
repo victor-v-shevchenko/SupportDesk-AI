@@ -1,6 +1,6 @@
 import { HttpClient, httpResource, HttpResourceRef } from '@angular/common/http';
 import { inject, Injectable, signal } from '@angular/core';
-import { Observable, firstValueFrom } from 'rxjs';
+import { Observable, tap } from 'rxjs';
 import { TicketClassification, TicketDetail, TicketListItem, TicketSummary } from './tickets.models';
 
 @Injectable({ providedIn: 'root' })
@@ -23,12 +23,9 @@ export class TicketsService {
     });
   }
 
-  /** `POST /api/tickets/{id}/classification`: classifies (or reclassifies) the ticket and returns the saved result. */
-  classify(id: number): Promise<TicketClassification> {
-    return firstValueFrom(this.http.post<TicketClassification>(`/api/tickets/${id}/classification`, null)).then((classification) => {
-      this.listStale.update((n) => n + 1);
-      return classification;
-    });
+  /** `POST /api/tickets/{id}/classification`: classifies (or reclassifies) the ticket and returns the saved result. Unsubscribing cancels the request. */
+  classify(id: number): Observable<TicketClassification> {
+    return this.http.post<TicketClassification>(`/api/tickets/${id}/classification`, null).pipe(tap(() => this.listStale.update((n) => n + 1)));
   }
 
   /** `POST /api/tickets/{id}/summary`: generates and saves a summary, replacing any earlier one. Errors are problem details. */

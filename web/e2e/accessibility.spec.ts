@@ -133,7 +133,7 @@ test('the proposal card is operable by keyboard', async ({ page, request }) => {
     ['token', { text: 'An agent will follow up.' }],
     ['tool_call', { name: 'propose_follow_up_task', proposal }],
     ['citations', { citations: [], removed: [] }],
-    ['usage', { inputTokens: 10, outputTokens: 5, costUsd: 0, estimated: false }],
+    ['usage', { inputTokens: 10, outputTokens: 5, costUsd: 0, estimated: false, calls: 1 }],
     ['done', { replyRunId: '00000000-0000-0000-0000-000000000001' }],
   ];
   let confirmed = false;

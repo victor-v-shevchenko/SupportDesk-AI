@@ -187,6 +187,52 @@ describe('TicketDetailPage', () => {
     expect(el.querySelector<HTMLButtonElement>('button.classify')!.disabled).toBe(false);
   });
 
+  it('drops a pending classify when another ticket opens, so its state does not follow', async () => {
+    const fixture = create();
+    http.expectOne('/api/tickets/2').flush(ticket);
+    const el = await settle(fixture);
+    el.querySelector<HTMLButtonElement>('button.classify')!.click();
+    TestBed.tick();
+    const pending = http.expectOne('/api/tickets/2/classification');
+    expect(el.querySelector('.classification [role=status]')?.textContent).toContain('Classifying');
+
+    fixture.componentRef.setInput('id', '3');
+    TestBed.tick();
+    http.expectOne('/api/tickets/3').flush({ ...ticket, id: 3, number: 'T-1003' });
+    await settle(fixture);
+
+    expect(pending.cancelled).toBe(true);
+    expect(el.querySelector('.classification [role=status]')).toBeNull();
+    expect(el.querySelector('.classification [role=alert]')).toBeNull();
+    expect(el.querySelector<HTMLButtonElement>('button.classify')!.disabled).toBe(false);
+  });
+
+  it('opening another ticket after a model call reads nothing beyond the new ticket initial load', async () => {
+    const fixture = create();
+    http.expectOne('/api/tickets/2').flush(ticket);
+    const el = await settle(fixture);
+    el.querySelector<HTMLButtonElement>('button.classify')!.click();
+    http.expectOne('/api/tickets/2/classification').flush(done);
+    await new Promise((resolve) => setTimeout(resolve));
+    TestBed.tick();
+    http.expectOne('/api/model-calls?ticketId=2').flush([{ id: 1, feature: 'Classification', inputTokens: 5, outputTokens: 5, costUsd: 0, isEstimated: false }]);
+    await settle(fixture);
+
+    fixture.componentRef.setInput('id', '3');
+    TestBed.tick();
+    http.expectOne('/api/tickets/3').flush({ ...ticket, id: 3, number: 'T-1003' });
+    await new Promise((resolve) => setTimeout(resolve));
+    TestBed.tick();
+    http.expectOne('/api/model-calls?ticketId=3').flush([]);
+    http.expectOne('/api/tickets/3/follow-ups').flush({ proposals: [], tasks: [] });
+    TestBed.tick();
+    // The first retry of an old refresh would come after 0.5 s
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    TestBed.tick();
+
+    http.expectNone((r) => r.url.startsWith('/api/model-calls'));
+  });
+
   it('shows the cost readout from the ticket model calls, and reads them again after a summary', async () => {
     const fixture = create();
     http.expectOne('/api/tickets/2').flush(ticket);

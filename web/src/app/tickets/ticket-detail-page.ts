@@ -1,7 +1,8 @@
 import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, effect, inject, input, linkedSignal, untracked } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { Subscription } from 'rxjs';
 import { problemMessage } from '../api/api-errors';
 import { TicketsService } from '../api/tickets.service';
 import { ClassificationBadges } from './classification-badges';
@@ -113,36 +114,49 @@ export class TicketDetailPage {
 
   protected readonly ticket = this.tickets.get(this.id);
 
-  /** Changes whenever a model call for this ticket ends, so the cost readout reads its rows again. */
-  protected readonly usageRefresh = signal<CostRefresh | undefined>(undefined);
+  /** Changes whenever a model call for this ticket ends, so the cost readout reads its rows again. Another ticket starts with none. */
+  protected readonly usageRefresh = linkedSignal<string | undefined, CostRefresh | undefined>({ source: this.id, computation: () => undefined });
 
   /** `calls` is how many model calls ended: a summary or a classification is one, a reply says how many it made. */
   protected usageChanged(calls: number): void {
     this.usageRefresh.set({ calls });
   }
 
-  protected readonly classifying = signal(false);
-  protected readonly classifyError = signal<string | null>(null);
+  // The router reuses this page when only the id changes, so what belongs to one ticket starts over with the next
+  protected readonly classifying = linkedSignal<string | undefined, boolean>({ source: this.id, computation: () => false });
+  protected readonly classifyError = linkedSignal<string | undefined, string | null>({ source: this.id, computation: () => null });
+  private classifyRequest: Subscription | undefined;
+
+  constructor() {
+    inject(DestroyRef).onDestroy(() => this.classifyRequest?.unsubscribe());
+    effect(() => {
+      this.id();
+      // The old ticket's request is cancelled, so its result or failure never reaches the new one
+      untracked(() => this.classifyRequest?.unsubscribe());
+    });
+  }
 
   /** One request at a time: the button is disabled while it runs. A failure leaves the saved classification on screen. */
-  protected async classify(ticketId: number): Promise<void> {
+  protected classify(ticketId: number): void {
     if (this.classifying()) {
       return;
     }
 
     this.classifying.set(true);
     this.classifyError.set(null);
-    try {
-      const classification = await this.tickets.classify(ticketId);
-      this.ticket.update((t) => (t?.id === ticketId ? { ...t, classification } : t));
-      this.usageChanged(1);
-    } catch (error) {
-      this.classifyError.set(errorMessage(error));
-      // A failed call writes a usage row too
-      this.usageChanged(1);
-    } finally {
-      this.classifying.set(false);
-    }
+    this.classifyRequest = this.tickets.classify(ticketId).subscribe({
+      next: (classification) => {
+        this.ticket.update((t) => (t?.id === ticketId ? { ...t, classification } : t));
+        this.classifying.set(false);
+        this.usageChanged(1);
+      },
+      error: (error: unknown) => {
+        this.classifyError.set(errorMessage(error));
+        this.classifying.set(false);
+        // A failed call writes a usage row too
+        this.usageChanged(1);
+      },
+    });
   }
 
   protected readonly notFound = computed(() => {

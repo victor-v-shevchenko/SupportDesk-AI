@@ -38,7 +38,7 @@ export const replyErrorMessages = errorMessages;
           @for (call of toolCalls(); track toolCallKey($index, call)) {
             @if (call.name === 'lookup_order_status') {
               <app-order-status-card [orderNumber]="call.arguments.orderNumber" [result]="call.result" />
-            } @else {
+            } @else if (call.name === 'propose_follow_up_task') {
               <app-proposal-card [proposal]="call.proposal" [status]="call.proposal.status" (confirmed)="followUpsChanged.emit()" />
             }
           }
@@ -148,6 +148,11 @@ export class ReplyPanel {
 
   /** Starts a reply, aborting the one in progress first. */
   async suggest(): Promise<void> {
+    if (this.status() === 'streaming') {
+      // The replaced run still writes its rows (a Cancelled one), so it counts as ended
+      this.runEnded.emit(this.calls);
+    }
+
     this.controller?.abort();
     const controller = new AbortController();
     this.controller = controller;
@@ -222,9 +227,10 @@ export class ReplyPanel {
           : [...calls, call],
       );
       this.followUpsChanged.emit();
-    } else {
+    } else if (call.name === 'lookup_order_status') {
       this.toolCalls.update((calls) => [...calls, call]);
     }
+    // Any other name is from a newer server than this page knows: there is nothing to show
   }
 
   private fail(message: string): void {
