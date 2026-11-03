@@ -1,4 +1,5 @@
 using SupportDesk.Core.AI.Usage;
+using SupportDesk.Core.Classification;
 using SupportDesk.Core.Tickets;
 using SupportDesk.Eval.Metrics;
 using SupportDesk.EmbedFixtures;
@@ -421,6 +422,14 @@ public class EvalMetricsTests
         Assert.Equal(
             ["classification failed: 503 Model unavailable", "didn't say the sources don't cover it (phrase list)"],
             EvalMetricsCalculator.ProblemsOf(outcome, NoPrompt));
+    }
+
+    [Fact]
+    public void A_classification_stopped_at_the_output_limit_is_named_in_the_failure_table()
+    {
+        Assert.Equal("NeedsManual (stopped at the output limit)", EvalMetricsCalculator.ClassificationErrorOf(ClassificationStatus.NeedsManual, ClassificationService.OutputLimitReason));
+        Assert.Equal("NeedsManual", EvalMetricsCalculator.ClassificationErrorOf(ClassificationStatus.NeedsManual, null));
+        Assert.Equal("NeedsManual", EvalMetricsCalculator.ClassificationErrorOf(ClassificationStatus.NeedsManual, ClassificationService.InjectionReason(["tag"])));
     }
 
     [Fact]

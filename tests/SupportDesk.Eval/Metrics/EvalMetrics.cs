@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using SupportDesk.Core.AI.Usage;
+using SupportDesk.Core.Classification;
 using SupportDesk.Core.Replies;
 using SupportDesk.Core.Tickets;
 using SupportDesk.EmbedFixtures;
@@ -120,6 +121,15 @@ public static class EvalMetricsCalculator
                 new Ratio(citationInjections.Count(CitedMadeUpArticle), citationInjections.Count),
                 categoryInjections.Count(IsHeldInjection)));
     }
+
+    /// <summary>
+    /// How a classification that isn't <c>Done</c> shows in the failure table. A stop at the output limit is named, so a
+    /// budget problem doesn't read as the model's failure (issue #49).
+    /// </summary>
+    public static string ClassificationErrorOf(ClassificationStatus status, string? reason) =>
+        status == ClassificationStatus.NeedsManual && reason == ClassificationService.OutputLimitReason
+            ? $"{status} (stopped at the output limit)"
+            : status.ToString();
 
     /// <summary>Everything that went wrong with one ticket, for the report's failure table; empty when nothing did.</summary>
     public static IReadOnlyList<string> ProblemsOf(TicketOutcome outcome, SystemPromptLeakCheck leakCheck)

@@ -266,6 +266,23 @@ public class ClassificationServiceTests
     }
 
     [Fact]
+    public async Task A_retry_that_stopped_at_the_output_limit_is_saved_with_the_output_limit_reason()
+    {
+        var ticket = _tickets.Add("T-1003");
+        var provider = new RecordingChatClient(new ScriptedChatClient(
+            _time,
+            ScriptedChatClient.Steps(ScriptedChatClient.Text(InvalidJson)),
+            ScriptedChatClient.Steps(ScriptedChatClient.Text("""{"category":"""), ScriptedChatClient.Finish(ChatFinishReason.Length))));
+        using var pipeline = TestPipeline.Create(provider, _time);
+
+        var result = await Service(pipeline.Client).ClassifyAsync(ticket.Id, Ct);
+
+        Assert.Equal(2, provider.Calls.Count);
+        Assert.Equal(ClassificationStatus.NeedsManual, result?.Status);
+        Assert.Equal(ClassificationService.OutputLimitReason, result?.Reason);
+    }
+
+    [Fact]
     public async Task A_valid_answer_that_stopped_at_the_output_limit_is_still_saved_as_Done()
     {
         var ticket = _tickets.Add("T-1003");

@@ -7,7 +7,9 @@ namespace SupportDesk.Core.AI;
 /// Ollama counts thinking against <c>num_predict</c>, so a model such as <c>qwen3:8b</c> can use a 200-token budget up
 /// before it answers. OllamaSharp sends <see cref="ReasoningEffort.None"/> as <c>"think": false</c>, which models
 /// without thinking accept. Nothing is sent for <c>true</c>: <c>"think": true</c> is a 400 on those models, and a
-/// thinking model thinks by default. Only registered when the chat provider is Ollama.
+/// thinking model thinks by default. A <see cref="ChatOptions.Reasoning"/> the caller set is kept (no feature sets one):
+/// an effort other than <c>None</c> would send <c>"think"</c> as a level, which models without thinking reject. Only
+/// registered when the chat provider is Ollama.
 /// </summary>
 public sealed class OllamaOptionsMiddleware(IChatClient innerClient, IReadOnlyDictionary<AiFeature, bool> think)
     : DelegatingChatClient(innerClient)
