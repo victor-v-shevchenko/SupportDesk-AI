@@ -54,7 +54,7 @@ public class TokenEstimateTests
         var version = new ConfigurationBuilder().AddJsonFile(Path.Combine(BaseDirectory, "appsettings.json")).Build()[$"AI:Prompts:{promptName}"]!;
         var prompt = PromptStore.Load(Path.Combine(BaseDirectory, "prompts"), promptName, version);
         var messages = prompt.ToMessages(await ValuesAsync(prompt, ticketNumber, ct));
-        var model = TokenCountModel.Choose(configuration["AI:Chat:Provider"], configuration["AI:Chat:Model"]);
+        var model = TokenCountModel.Choose(configuration);
 
         var client = new AnthropicClient(new ClientOptions { ApiKey = apiKey });
         var count = await client.Messages.CountTokens(

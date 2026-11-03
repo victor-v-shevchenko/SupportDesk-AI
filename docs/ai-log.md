@@ -217,8 +217,8 @@ Entry format (from CLAUDE.md):
 - Test: `ClassificationServiceTests.A_ticket_with_injection_signals_is_saved_as_NeedsManual_without_calling_the_model` and `Reclassifying_a_ticket_that_now_has_injection_signals_replaces_the_confident_result` (both failed before the fix: status `Done`, and one model call in the first test and two in the second)
 
 ## 2026-11-03 — The token-estimate check sent a qwen model name to Anthropic's token counter
-- Step: 10
+- Step: 3b (found in step 10)
 - Found by: test (the 2026-11-03 qwen2.5:7b evaluation run: 6 `TokenEstimateTests` failed with `AnthropicNotFoundException: model: qwen2.5:7b`; issue #46)
 - What was wrong: `TokenEstimateTests` took `AI:Chat:Model` whenever it was set, whatever the provider, so an Ollama run asked Anthropic's `count_tokens` about a model it doesn't have.
-- Fix: `TokenCountModel.Choose` uses the configured model only when `AI:Chat:Provider` is Anthropic, and `claude-opus-5-5` otherwise (branch fix/token-estimate-model).
-- Test: `TokenCountModelTests.A_non_Anthropic_provider_uses_the_default_model` (failed before the fix: expected `claude-opus-5-5`, got `qwen2.5:7b`)
+- Fix: `TokenCountModel.Choose` uses the configured model only when `AI:Chat:Provider` is Anthropic, and `claude-opus-5-5` otherwise (branch `fix/token-estimate-model`; the settings are bound as the app binds them, so a missing provider is Ollama and a blank model is the default).
+- Test: `TokenCountModelTests.A_provider_other_than_Anthropic_uses_the_default_model` (its Ollama case, first written as `A_non_Anthropic_provider_uses_the_default_model`, failed before the fix: expected `claude-opus-5-5`, got `qwen2.5:7b`)
