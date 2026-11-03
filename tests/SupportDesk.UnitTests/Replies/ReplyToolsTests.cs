@@ -100,6 +100,19 @@ public class ReplyToolsTests
         Assert.Equal(0, _followUps.Confirms);
     }
 
+    /// <summary>A retry in the same run can find its proposal already decided; the model is told, not sent a fresh "awaiting" status.</summary>
+    [Theory]
+    [InlineData(ProposalStatus.Confirmed, "already_confirmed")]
+    [InlineData(ProposalStatus.Expired, "expired")]
+    public async Task A_proposal_decided_before_a_retry_reaches_the_model_with_that_status(ProposalStatus stored, string expected)
+    {
+        _followUps.StoredStatus = stored;
+
+        var result = await InvokeAsync(ReplyTools.ProposeFollowUpTask, """{ "title": "Open a carrier trace" }""");
+
+        Assert.Equal(expected, Unwrap(result).GetProperty("status").GetString());
+    }
+
     [Fact]
     public async Task Notes_and_due_days_are_optional()
     {
@@ -274,6 +287,9 @@ internal sealed class RecordingFollowUps : IFollowUpRepository
 
     public int Confirms { get; private set; }
 
+    /// <summary>The status every stored proposal has, as when it was confirmed or expired before a retry.</summary>
+    public ProposalStatus StoredStatus { get; set; } = ProposalStatus.Pending;
+
     public Guid LastId { get; private set; }
 
     public int Count => _proposals.Count;
@@ -292,6 +308,7 @@ internal sealed class RecordingFollowUps : IFollowUpRepository
 
             stored.Title = proposal.Title;
             stored.Notes = proposal.Notes;
+            stored.Status = StoredStatus;
             stored.DueDate = proposal.DueInDays is { } days ? new DateOnly(2026, 11, 1).AddDays(days) : null;
             LastId = stored.Id;
             return Task.FromResult(stored);

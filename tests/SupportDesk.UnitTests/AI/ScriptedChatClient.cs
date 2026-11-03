@@ -92,6 +92,9 @@ internal sealed class ScriptedChatClient(TimeProvider time, params Func<Cancella
     public static Func<CancellationToken, Task<ChatResponseUpdate?>> Text(string text) =>
         _ => Task.FromResult<ChatResponseUpdate?>(new ChatResponseUpdate(ChatRole.Assistant, text));
 
+    public static Func<CancellationToken, Task<ChatResponseUpdate?>> Thinking(string text) =>
+        _ => Task.FromResult<ChatResponseUpdate?>(new ChatResponseUpdate(ChatRole.Assistant, [new TextReasoningContent(text)]));
+
     public static Func<CancellationToken, Task<ChatResponseUpdate?>> Empty() =>
         _ => Task.FromResult<ChatResponseUpdate?>(new ChatResponseUpdate { Role = ChatRole.Assistant });
 
