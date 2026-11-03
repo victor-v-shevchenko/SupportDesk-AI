@@ -123,6 +123,9 @@ public sealed class AiTimeoutSettings
 
     /// <summary>A whole streaming call, retries included.</summary>
     public int StreamTotalSeconds { get; set; } = 120;
+
+    /// <summary>One embedding call (a search, or a batch of article chunks at startup). Embeddings aren't behind the chat pipeline, so this is their only limit.</summary>
+    public int EmbeddingSeconds { get; set; } = 30;
 }
 
 public sealed class AiRetrySettings

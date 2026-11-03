@@ -17,6 +17,7 @@ public sealed partial class EmbeddingSyncService(
     IEmbeddingGenerator<string, Embedding<float>> generator,
     IOptions<AiOptions> aiOptions,
     IOptions<RetrievalOptions> retrievalOptions,
+    TimeProvider time,
     ILogger<EmbeddingSyncService> logger)
 {
     public async Task<EmbeddingSyncResult> SyncAsync(CancellationToken cancellationToken)
@@ -76,7 +77,17 @@ public sealed partial class EmbeddingSyncService(
             IReadOnlyList<ReadOnlyMemory<float>> vectors;
             try
             {
-                vectors = await CheckedEmbeddings.GenerateAsync(generator, [.. batch.Select(c => c.Chunk.EmbeddingInput)], model, dimensions, cancellationToken);
+                var inputs = (IReadOnlyList<string>)[.. batch.Select(c => c.Chunk.EmbeddingInput)];
+                vectors = await EmbeddingTimeout.RunAsync(
+                    time, aiOptions.Value.Timeouts.EmbeddingSeconds,
+                    token => CheckedEmbeddings.GenerateAsync(generator, inputs, model, dimensions, token), cancellationToken);
+            }
+            catch (TimeoutException exception)
+            {
+                throw new InvalidOperationException(
+                    $"Embedding the article chunks with {aiOptions.Value.Embeddings.Provider} '{model}' took longer than AI:Timeouts:EmbeddingSeconds " +
+                    $"({aiOptions.Value.Timeouts.EmbeddingSeconds} seconds) at startup. A model's first load can be slow: raise the setting, or warm the model first.",
+                    exception);
             }
             catch (HttpRequestException exception)
             {

@@ -81,3 +81,46 @@ public static class FixturePaths
 
     public static string RetrievalQuestions { get; } = Path.Combine(AppContext.BaseDirectory, "fixtures", "retrieval-questions.json");
 }
+
+/// <summary>Embeds with another generator until <see cref="Hang"/> (a server that accepts every call and never answers, until the call is cancelled) or <see cref="Failure"/> is set.</summary>
+public sealed class StallingEmbeddingGenerator(IEmbeddingGenerator<string, Embedding<float>> inner)
+    : DelegatingEmbeddingGenerator<string, Embedding<float>>(inner)
+{
+    private readonly TaskCompletionSource _stalled = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private volatile bool _hang;
+    private volatile Exception? _failure;
+
+    public bool Hang
+    {
+        get => _hang;
+        set => _hang = value;
+    }
+
+    /// <summary>When set, a call that isn't stalled throws it.</summary>
+    public Exception? Failure
+    {
+        get => _failure;
+        set => _failure = value;
+    }
+
+    /// <summary>Completes when a call has started to stall.</summary>
+    public Task Stalled => _stalled.Task;
+
+    public override async Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+        IEnumerable<string> values, EmbeddingGenerationOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        if (_hang)
+        {
+            _stalled.TrySetResult();
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+        }
+
+        if (_failure is { } failure)
+        {
+            throw failure;
+        }
+
+        return await base.GenerateAsync(values, options, cancellationToken);
+    }
+}

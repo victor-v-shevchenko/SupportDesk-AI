@@ -50,6 +50,7 @@ public sealed class AiOptionsValidator : IValidateOptions<AiOptions>
         Range(errors, "AI:Timeouts:FirstItemSeconds", options.Timeouts.FirstItemSeconds, 1, 600);
         Range(errors, "AI:Timeouts:GapSeconds", options.Timeouts.GapSeconds, 1, 600);
         Range(errors, "AI:Timeouts:StreamTotalSeconds", options.Timeouts.StreamTotalSeconds, 1, 3600);
+        Range(errors, "AI:Timeouts:EmbeddingSeconds", options.Timeouts.EmbeddingSeconds, 1, 600);
         Range(errors, "AI:Retry:MaxAttempts", options.Retry.MaxAttempts, 1, 10);
         Range(errors, "AI:Retry:BaseDelayMs", options.Retry.BaseDelayMs, 0, 60_000);
         Range(errors, "AI:Retry:MaxDelayMs", options.Retry.MaxDelayMs, 0, 300_000);

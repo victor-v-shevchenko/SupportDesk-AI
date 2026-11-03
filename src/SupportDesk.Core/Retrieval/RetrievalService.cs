@@ -14,7 +14,8 @@ public sealed class RetrievalService(
     IArticleChunkStore store,
     IEmbeddingGenerator<string, Embedding<float>> generator,
     IOptions<AiOptions> aiOptions,
-    IOptions<RetrievalOptions> retrievalOptions) : IRetrievalService
+    IOptions<RetrievalOptions> retrievalOptions,
+    TimeProvider time) : IRetrievalService
 {
     public async Task<IReadOnlyList<RetrievedChunk>> SearchAsync(string query, int k, CancellationToken cancellationToken)
     {
@@ -25,10 +26,13 @@ public sealed class RetrievalService(
         GeneratedEmbeddings<Embedding<float>> generated;
         try
         {
-            generated = await generator.GenerateAsync([query], cancellationToken: cancellationToken);
+            generated = await EmbeddingTimeout.RunAsync(
+                time, aiOptions.Value.Timeouts.EmbeddingSeconds, token => generator.GenerateAsync([query], cancellationToken: token), cancellationToken);
         }
-        catch (Exception exception) when (exception is not ModelUnavailableException && !cancellationToken.IsCancellationRequested)
+        catch (Exception exception) when (exception is not ModelUnavailableException)
         {
+            // Whatever failed after the caller cancelled (even a timeout that fired just before) is the caller's cancellation
+            cancellationToken.ThrowIfCancellationRequested();
             throw ToModelUnavailable(exception);
         }
 
@@ -43,13 +47,13 @@ public sealed class RetrievalService(
 
     /// <summary>
     /// Embedding providers aren't behind the chat pipeline's error mapping (PLAN.md 6.5), so their failures are mapped here:
-    /// a cancellation the caller didn't ask for is a timeout, an HTTP error keeps its status. The message is fixed text,
+    /// a cancellation the caller didn't ask for, or the limit of <c>AI:Timeouts:EmbeddingSeconds</c>, is a timeout, an HTTP error keeps its status. The message is fixed text,
     /// since the provider's can echo the query, which is ticket text for a reply.
     /// </summary>
     private static ModelUnavailableException ToModelUnavailable(Exception exception)
     {
         var status = (int?)(exception as HttpRequestException)?.StatusCode;
-        var timeout = exception is OperationCanceledException;
+        var timeout = exception is OperationCanceledException or TimeoutException;
         return new ModelUnavailableException(
             timeout ? "The embedding provider timed out." : "The embedding provider failed.",
             exception,

@@ -1,7 +1,13 @@
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Time.Testing;
 using SupportDesk.Api.Endpoints;
+using SupportDesk.Core.AI.Fake;
 
 namespace SupportDesk.IntegrationTests.Retrieval;
 
@@ -51,6 +57,45 @@ public class SearchEndpointTests(PostgresFixture postgres)
         Assert.Equal(10, longest?.Count);
         Assert.Equal(5, defaults?.Count);
         Assert.Equal(defaults![0], Assert.Single(one!));
+    }
+
+    [Fact]
+    public async Task A_search_whose_embedding_never_returns_gets_a_503_timeout_problem()
+    {
+        var time = new FakeTimeProvider();
+        using var stalling = new StallingEmbeddingGenerator(new FakeEmbeddingGenerator(1024));
+        // The generator embeds normally while the API starts (the startup sync), then stalls
+        await using var api = await SeededApi.StartAsync(postgres, Ct, services: services =>
+        {
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(time);
+            services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(stalling);
+        });
+        stalling.Hang = true;
+
+        var request = api.Client.GetAsync(new Uri("/api/search?q=refund", UriKind.Relative), Ct);
+        await stalling.Stalled.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        time.Advance(TimeSpan.FromSeconds(30));
+
+        using var response = await request.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(Ct);
+        Assert.Equal("timeout", problem!.Extensions["code"]?.ToString());
+    }
+
+    [Fact]
+    public async Task A_down_embedding_provider_gets_a_503_model_unavailable_problem()
+    {
+        using var failing = new StallingEmbeddingGenerator(new FakeEmbeddingGenerator(1024));
+        await using var api = await SeededApi.StartAsync(postgres, Ct, services: services =>
+            services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(failing));
+        failing.Failure = new HttpRequestException("Connection refused", null, null);
+
+        var response = await api.Client.GetAsync(new Uri("/api/search?q=refund", UriKind.Relative), Ct);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(Ct);
+        Assert.Equal("model_unavailable", problem!.Extensions["code"]?.ToString());
     }
 
     [Fact]

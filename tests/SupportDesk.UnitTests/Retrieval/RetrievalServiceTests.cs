@@ -54,7 +54,7 @@ public class RetrievalServiceTests
     }
 
     private static RetrievalService Service(IEmbeddingGenerator<string, Embedding<float>> generator) =>
-        new(new EmptyStore(), generator, Options.Create(new AiOptions()), Options.Create(new RetrievalOptions()));
+        new(new EmptyStore(), generator, Options.Create(new AiOptions()), Options.Create(new RetrievalOptions()), TimeProvider.System);
 
     private sealed class ThrowingGenerator(Exception failure) : IEmbeddingGenerator<string, Embedding<float>>
     {
