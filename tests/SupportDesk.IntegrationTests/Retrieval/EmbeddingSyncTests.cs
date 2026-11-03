@@ -139,12 +139,14 @@ public sealed class EmbeddingSyncTests(PostgresFixture postgres) : IDisposable
         using var stalling = new StallingEmbeddingGenerator(new FakeEmbeddingGenerator(1024)) { Hang = true };
 
         var sync = SyncWithAsync(connectionString, stalling, time);
-        await stalling.Stalled.WaitAsync(Ct);
+        await stalling.Stalled.WaitAsync(TimeSpan.FromSeconds(10), Ct);
         time.Advance(TimeSpan.FromSeconds(30));
 
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => sync);
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => sync.WaitAsync(TimeSpan.FromSeconds(10), Ct));
         Assert.Contains("AI:Timeouts:EmbeddingSeconds", error.Message, StringComparison.Ordinal);
         Assert.Contains("30 seconds", error.Message, StringComparison.Ordinal);
+        await using var db = TestDatabase.CreateDbContext(connectionString);
+        Assert.Equal(["fake-hash"], await db.ArticleChunks.Select(c => c.EmbeddingModel).Distinct().ToListAsync(Ct));
     }
 
     public void Dispose()

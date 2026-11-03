@@ -24,12 +24,12 @@ public sealed class EmbeddingTimeoutTests
         var service = Service(generator, time);
 
         var search = service.SearchAsync("refund", 5, Ct);
-        await generator.Started.WaitAsync(Ct);
+        await generator.Started.WaitAsync(Wait, Ct);
         time.Advance(TimeSpan.FromSeconds(29));
         Assert.False(search.IsCompleted);
         time.Advance(TimeSpan.FromSeconds(1));
 
-        var exception = await Assert.ThrowsAsync<ModelUnavailableException>(() => search);
+        var exception = await Assert.ThrowsAsync<ModelUnavailableException>(() => search.WaitAsync(Wait, Ct));
         Assert.True(exception.IsTimeout);
         Assert.True(exception.IsTransient);
     }
@@ -42,10 +42,10 @@ public sealed class EmbeddingTimeoutTests
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(Ct);
 
         var search = service.SearchAsync("refund", 5, cts.Token);
-        await generator.Started.WaitAsync(Ct);
+        await generator.Started.WaitAsync(Wait, Ct);
         await cts.CancelAsync();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => search);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => search.WaitAsync(Wait, Ct));
     }
 
     [Fact]
@@ -54,11 +54,63 @@ public sealed class EmbeddingTimeoutTests
         var time = new TrackedFakeTime(new DateTimeOffset(2026, 11, 1, 9, 0, 0, TimeSpan.Zero));
         using var rig = Create(Turn(Text("never reached")), retrieval: Service(new StalledGenerator(), time), time: time);
 
-        var events = await rig.RunAsync(Ticket(), Ct);
+        var events = await rig.RunAsync(Ticket(), Ct).WaitAsync(Wait, Ct);
 
         StreamAssert.Error(events, ReplyErrorCodes.Timeout);
         Assert.Equal([events[^1]], events);
         Assert.Empty(rig.Spy.Calls);
+    }
+
+    [Fact]
+    public async Task A_caller_who_cancelled_after_the_limit_expired_gets_a_cancellation_not_a_timeout()
+    {
+        var time = new FakeTimeProvider();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+
+        // The call only looks at its token after the gate opens, by which time both the limit and the caller have fired
+        var call = EmbeddingTimeout.RunAsync(time, 30, async token =>
+        {
+            started.SetResult();
+            await gate.Task;
+            token.ThrowIfCancellationRequested();
+            return 0;
+        }, cts.Token);
+        await started.Task.WaitAsync(Wait, Ct);
+        time.Advance(TimeSpan.FromSeconds(30));
+        await cts.CancelAsync();
+        gate.SetResult();
+
+        var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => call.WaitAsync(Wait, Ct));
+        Assert.IsNotType<TimeoutException>(exception);
+    }
+
+    [Fact]
+    public async Task A_failure_after_the_caller_cancelled_is_a_cancellation_not_a_model_error()
+    {
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        var service = Service(new FailingGenerator(new TimeoutException("fired just before the cancel")), new FakeTimeProvider());
+
+        var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.SearchAsync("refund", 5, cts.Token));
+        Assert.IsNotType<ModelUnavailableException>(exception);
+    }
+
+    private static readonly TimeSpan Wait = TimeSpan.FromSeconds(10);
+
+    private sealed class FailingGenerator(Exception failure) : IEmbeddingGenerator<string, Embedding<float>>
+    {
+        public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+            IEnumerable<string> values, EmbeddingGenerationOptions? options = null, CancellationToken cancellationToken = default) =>
+            Task.FromException<GeneratedEmbeddings<Embedding<float>>>(failure);
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose()
+        {
+            // Nothing to release
+        }
     }
 
     private static RetrievalService Service(IEmbeddingGenerator<string, Embedding<float>> generator, TimeProvider time) =>

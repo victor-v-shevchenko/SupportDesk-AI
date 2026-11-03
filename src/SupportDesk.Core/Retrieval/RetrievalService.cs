@@ -29,8 +29,10 @@ public sealed class RetrievalService(
             generated = await EmbeddingTimeout.RunAsync(
                 time, aiOptions.Value.Timeouts.EmbeddingSeconds, token => generator.GenerateAsync([query], cancellationToken: token), cancellationToken);
         }
-        catch (Exception exception) when (exception is not ModelUnavailableException && !cancellationToken.IsCancellationRequested)
+        catch (Exception exception) when (exception is not ModelUnavailableException)
         {
+            // Whatever failed after the caller cancelled (even a timeout that fired just before) is the caller's cancellation
+            cancellationToken.ThrowIfCancellationRequested();
             throw ToModelUnavailable(exception);
         }
 

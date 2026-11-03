@@ -74,10 +74,10 @@ public class SearchEndpointTests(PostgresFixture postgres)
         stalling.Hang = true;
 
         var request = api.Client.GetAsync(new Uri("/api/search?q=refund", UriKind.Relative), Ct);
-        await stalling.Stalled.WaitAsync(Ct);
+        await stalling.Stalled.WaitAsync(TimeSpan.FromSeconds(10), Ct);
         time.Advance(TimeSpan.FromSeconds(30));
 
-        using var response = await request;
+        using var response = await request.WaitAsync(TimeSpan.FromSeconds(10), Ct);
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
         var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(Ct);
         Assert.Equal("timeout", problem!.Extensions["code"]?.ToString());
