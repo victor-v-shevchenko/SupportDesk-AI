@@ -52,13 +52,16 @@ public sealed class RetrievalService(
     /// </summary>
     private static ModelUnavailableException ToModelUnavailable(Exception exception)
     {
-        var status = (int?)(exception as HttpRequestException)?.StatusCode;
+        var http = exception as HttpRequestException;
+        var status = (int?)http?.StatusCode;
         var timeout = exception is OperationCanceledException or TimeoutException;
+        // The retry rules of PLAN.md 6.5: a connection error or a transient status, not a 401 or 404
+        var httpTransient = http is not null && (status is not { } code || ModelError.FromStatus(code).IsTransient);
         return new ModelUnavailableException(
             timeout ? "The embedding provider timed out." : "The embedding provider failed.",
             exception,
             status,
-            isTransient: timeout || exception is HttpRequestException)
+            isTransient: timeout || httpTransient)
         {
             IsTimeout = timeout,
         };

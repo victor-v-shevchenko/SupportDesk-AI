@@ -52,7 +52,7 @@ public static class FollowUpEndpoints
         {
             { Outcome: ConfirmOutcome.Confirmed, Task: { } task } => TypedResults.Ok(ToResponse(task)),
             { Outcome: ConfirmOutcome.Expired } => TypedResults.Problem(
-                statusCode: StatusCodes.Status409Conflict, title: "Proposal expired", detail: "This proposal is more than 24 hours old and can no longer be confirmed."),
+                statusCode: StatusCodes.Status409Conflict, title: "Proposal expired", detail: $"This proposal is more than {FollowUpRules.ProposalLifetime.TotalHours:0} hours old and can no longer be confirmed."),
             _ => TypedResults.Problem(statusCode: StatusCodes.Status404NotFound, title: "Proposal not found", detail: $"There is no proposal with ID {proposalId}."),
         };
     }
