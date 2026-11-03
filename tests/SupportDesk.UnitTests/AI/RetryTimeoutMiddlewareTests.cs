@@ -7,6 +7,7 @@ using static SupportDesk.UnitTests.AI.ScriptedChatClient;
 namespace SupportDesk.UnitTests.AI;
 
 /// <summary>Retries and timeouts (PLAN.md 6.5), through the whole pipeline on a fake clock.</summary>
+[Collection(FakeClockGroup.Name)]
 public class RetryTimeoutMiddlewareTests
 {
     private readonly TrackedFakeTime _time = new();

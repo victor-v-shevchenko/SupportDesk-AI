@@ -16,6 +16,7 @@ using static SupportDesk.UnitTests.Replies.ReplyTestData;
 
 namespace SupportDesk.UnitTests.Replies;
 
+[Collection(FakeClockGroup.Name)]
 public sealed class ReplyServiceTests : IDisposable
 {
     private readonly CapturingLoggerProvider _logs = new();

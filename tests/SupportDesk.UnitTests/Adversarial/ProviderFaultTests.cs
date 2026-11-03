@@ -14,6 +14,7 @@ namespace SupportDesk.UnitTests.Adversarial;
 /// whole pipeline. Every fault must end the stream with exactly one <c>error</c> (or a <c>done</c>), and every call
 /// the pipeline makes leaves one <see cref="ModelCall"/> row, however many attempts it took.
 /// </summary>
+[Collection(FakeClockGroup.Name)]
 public sealed class ProviderFaultTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

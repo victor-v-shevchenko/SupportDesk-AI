@@ -13,6 +13,7 @@ namespace SupportDesk.UnitTests.Adversarial;
 /// Step 9, client and transport (PLAN.md 7): the client leaves, aborts and starts again, or opens the same ticket in two
 /// tabs. A disconnect must reach the provider call within a second of fake time, and runs must never share anything.
 /// </summary>
+[Collection(FakeClockGroup.Name)]
 public sealed partial class ClientAndTransportTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
