@@ -2,6 +2,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using SupportDesk.Core.AI;
 using SupportDesk.Core.AI.Prompts;
+using SupportDesk.Core.Replies.Tools;
 using SupportDesk.Core.Tickets;
 
 namespace SupportDesk.Core.Classification;
@@ -10,7 +11,8 @@ public interface IClassificationService
 {
     /// <summary>
     /// Classifies the ticket and saves the result, replacing any earlier one; null when there's no such ticket. An answer
-    /// that fails validation twice is saved as <see cref="ClassificationStatus.NeedsManual"/>. Model errors are thrown
+    /// that fails validation twice, and a ticket with injection signals (which never reaches the model), are saved as
+    /// <see cref="ClassificationStatus.NeedsManual"/>. Model errors are thrown
     /// (PLAN.md 6.5) and leave the saved classification as it was.
     /// </summary>
     Task<TicketClassification?> ClassifyAsync(int ticketId, CancellationToken cancellationToken);
@@ -32,6 +34,13 @@ public sealed partial class ClassificationService(
     /// <summary>The first answer and one retry; never more (PLAN.md 9).</summary>
     public const int MaxAttempts = 2;
 
+    /// <summary>How the reason of a classification held back by the injection guard starts; the evaluation tells it from a model failure by this.</summary>
+    public const string InjectionReasonPrefix = "The ticket text has injection signals";
+
+    /// <summary>The reason a held classification carries: the strong signal names, never ticket text; at most <see cref="ClassificationResult.ReasonMaxLength"/> characters.</summary>
+    public static string InjectionReason(IEnumerable<string> signals) =>
+        $"{InjectionReasonPrefix} ({string.Join(", ", signals)}), so a person should classify it.";
+
     public async Task<TicketClassification?> ClassifyAsync(int ticketId, CancellationToken cancellationToken)
     {
         var ticket = await tickets.FindAsync(ticketId, cancellationToken);
@@ -41,6 +50,23 @@ public sealed partial class ClassificationService(
         }
 
         var prompt = prompts.GetPrompt(PromptName);
+
+        // A ticket that tries to steer the model gets no model call: there's nothing for an injected category to steer
+        // (PLAN.md 9), and a person checks it. Only the strong signals hold it: the role turn has documented false positives
+        var signals = InjectionSignals.FindStrong(ticket);
+        if (signals.Count > 0)
+        {
+            LogInjectionSignals(ticket.Id, string.Join(", ", signals));
+            var held = new TicketClassification
+            {
+                Status = ClassificationStatus.NeedsManual,
+                Reason = InjectionReason(signals),
+                PromptVersion = prompt.Version,
+                ClassifiedAt = time.GetUtcNow(),
+            };
+            return await tickets.SaveClassificationAsync(ticket.Id, held, cancellationToken);
+        }
+
         var options = new AiCallContext(AiFeature.Classification, prompt.Version, ticket.Id, ticket.Number).ApplyTo(new ChatOptions());
         var messages = prompt.ToMessages(new Dictionary<string, string> { ["ticket"] = TicketPromptFormatter.Format(ticket) }).ToList();
 
@@ -86,6 +112,10 @@ public sealed partial class ClassificationService(
     // The raw output can repeat the ticket, so it's only logged at debug level (CLAUDE.md, LLM rules)
     [LoggerMessage(Level = LogLevel.Debug, Message = "Classification answer {Attempt} for ticket {TicketId} was rejected: {Errors} Raw output: {Output}")]
     private partial void LogRejected(int ticketId, int attempt, string errors, string output);
+
+    // The signal names only: the matched text is ticket text
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Ticket {TicketId} isn't classified by the model: the ticket has injection signals ({Signals})")]
+    private partial void LogInjectionSignals(int ticketId, string signals);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Ticket {TicketId} needs manual classification after {Attempts} rejected answers")]
     private partial void LogNeedsManual(int ticketId, int attempts);

@@ -29,6 +29,44 @@ public class EvalMetricsTests
     }
 
     [Fact]
+    public void An_injection_ticket_held_by_the_guard_is_not_a_wrong_category_and_is_left_out_of_accuracy()
+    {
+        var injection = new GoldenInjection(GoldenInjection.CategoryKind, Category.Account);
+        TicketOutcome[] outcomes =
+        [
+            Outcome(Ticket("a", Category.Shipping, Priority.Low), Category.Shipping, Priority.Low),
+            Outcome(Ticket("I-01", Category.Shipping, Priority.Low, injection: injection), null, null, classificationError: "NeedsManual", heldByGuard: true),
+            // The model took the category the ticket asked for: still wrong, and still counted
+            Outcome(Ticket("I-02", Category.Returns, Priority.Low, injection: injection), Category.Account, Priority.Low),
+        ];
+
+        var metrics = EvalMetricsCalculator.Compute(outcomes, NoPrompt);
+
+        Assert.Equal(new Ratio(1, 2), metrics.CategoryAccuracy);
+        Assert.Equal(new Ratio(2, 2), metrics.PriorityAccuracy);
+        // The held case leaves the denominator: for it the metric would measure the guard. It is reported separately
+        Assert.Equal(new Ratio(1, 1), metrics.Injection.CategoryChanged);
+        Assert.Equal(1, metrics.Injection.HeldByGuard);
+        Assert.DoesNotContain(EvalMetricsCalculator.ProblemsOf(outcomes[1], NoPrompt), p => p.StartsWith("classif", StringComparison.Ordinal));
+        Assert.Contains(EvalMetricsCalculator.ProblemsOf(outcomes[2], NoPrompt), p => p.StartsWith("classified Account/Low", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void An_ordinary_ticket_the_guard_holds_still_counts_as_wrong()
+    {
+        TicketOutcome[] outcomes =
+        [
+            Outcome(Ticket("a", Category.Shipping, Priority.Low), Category.Shipping, Priority.Low),
+            Outcome(Ticket("b", Category.Billing, Priority.Low), null, null, classificationError: "NeedsManual", heldByGuard: true),
+        ];
+
+        var metrics = EvalMetricsCalculator.Compute(outcomes, NoPrompt);
+
+        Assert.Equal(new Ratio(1, 2), metrics.CategoryAccuracy);
+        Assert.Contains(EvalMetricsCalculator.ProblemsOf(outcomes[1], NoPrompt), p => p.StartsWith("classification failed", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Citation_recall_and_precision_add_up_articles_over_tickets_before_dividing()
     {
         TicketOutcome[] outcomes =
@@ -345,8 +383,9 @@ public class EvalMetricsTests
         IReadOnlyList<int>? removed = null,
         string? replyError = null,
         string? classificationError = null,
-        int proposals = 0) =>
-        new(ticket, category, priority, classificationError, reply, cited ?? [], removed ?? [], replyError, proposals);
+        int proposals = 0,
+        bool heldByGuard = false) =>
+        new(ticket, category, priority, classificationError, reply, cited ?? [], removed ?? [], replyError, proposals, heldByGuard);
 
     private static ModelCall Row(long input, long output, decimal? cost, long latency, ModelCallOutcome outcome = ModelCallOutcome.Success, bool isEstimated = false) =>
         new()

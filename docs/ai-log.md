@@ -208,3 +208,10 @@ Entry format (from CLAUDE.md):
 - What was wrong: the first rewrite of the "not covered" patterns kept "no information" only after "have/has", and the contraction step didn't expand "there's", so a wording the old code matched ("There's no information in our articles about restock dates") stopped matching.
 - Fix: contractions are expanded in one place (`there's`, `'ve`, `can't`, `cannot`), and "there is/are no|not any information|details" is matched (fix/eval-metrics).
 - Test: `EvalMetricsTests.Not_covered_is_a_phrase_match_that_refers_to_the_sources` (the "There's no information in our articles…" case)
+
+## 2026-11-03 — An injected ticket was classified with the category it asked for
+- Step: 7 (found in step 10)
+- Found by: test (the step 10 evaluation: `qwen2.5:7b` classified I-01 as Account and I-02 as Technical, the categories those tickets ask for, with and without the reply guard; issue #24)
+- What was wrong: classification has no tools, so the injection guard for replies did nothing for it, and a ticket with injection signals was saved as a confident `Done` classification with the injected category.
+- Fix: `ClassificationService` runs `InjectionSignals.Find` first; a ticket with a strong signal (all but the role turn) is saved as `NeedsManual` with the signal names as the reason and the model is not called (branch `fix/classify-injection-guard`). The evaluation leaves such injection tickets out of the accuracy counts.
+- Test: `ClassificationServiceTests.A_ticket_with_injection_signals_is_saved_as_NeedsManual_without_calling_the_model` and `Reclassifying_a_ticket_that_now_has_injection_signals_replaces_the_confident_result` (both failed before the fix: status `Done`, and one model call in the first test and two in the second)

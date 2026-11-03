@@ -79,14 +79,40 @@ public class InjectionSignalsTests
     public void Ordinary_tickets_have_no_signals(string body) =>
         Assert.Empty(InjectionSignals.Find(Ticket(body: body)));
 
-    // Known false positives, kept on purpose: each only costs the proposal tool for that ticket (PLAN.md 10)
+    // Known false positives, kept on purpose. A role turn only costs the proposal tool for that ticket (PLAN.md 10); the
+    // classification is still made
     [Theory]
     [InlineData("The app crashes on start.\nSystem: Android 15\nApp version: 4.2")]
     [InlineData("I can't sign in.\nUser: jdoe\nIt says the account is locked.")]
-    [InlineData("Your chatbot said:\nUser: where is my order?\nAssistant: it ships tomorrow.\nIt didn't.")]
+    [InlineData("My laptop:\n- System: Windows 11\n- Browser: Edge")]
+    public void Some_ordinary_tickets_with_a_role_turn_lose_only_the_proposal_tool(string body)
+    {
+        var ticket = Ticket(body: body);
+
+        Assert.Equal([InjectionSignals.RoleTurnName], InjectionSignals.Find(ticket));
+        Assert.Empty(InjectionSignals.FindStrong(ticket));
+    }
+
+    // Known false positives on a strong signal: they lose the proposal tool and the classification is held for a person
+    // (PLAN.md 9)
+    [Theory]
     [InlineData("Please ignore the previous instructions about leaving it at the door; I'll be home.")]
     [InlineData("A system prompt popped up asking for my password. Is that you?")]
-    [InlineData("My laptop:\n- System: Windows 11\n- Browser: Edge")]
-    public void Some_ordinary_tickets_are_flagged_and_lose_only_the_proposal_tool(string body) =>
-        Assert.NotEmpty(InjectionSignals.Find(Ticket(body: body)));
+    public void Some_ordinary_tickets_with_a_strong_signal_also_have_the_classification_held(string body) =>
+        Assert.NotEmpty(InjectionSignals.FindStrong(Ticket(body: body)));
+
+    [Fact]
+    public void A_pasted_chatbot_transcript_has_a_role_turn_and_is_not_strong()
+    {
+        var ticket = Ticket(body: "Your chatbot said:\nUser: where is my order?\nAssistant: it ships tomorrow.\nIt didn't.");
+
+        Assert.Contains(InjectionSignals.RoleTurnName, InjectionSignals.Find(ticket));
+        Assert.Empty(InjectionSignals.FindStrong(ticket));
+    }
+
+    [Fact]
+    public void Strong_names_are_every_signal_but_the_role_turn()
+    {
+        Assert.Equal(["tool name", "tag", "chat template", "ignore instructions", "system prompt", "system override"], InjectionSignals.StrongNames);
+    }
 }

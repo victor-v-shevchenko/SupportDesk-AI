@@ -88,6 +88,22 @@ public class EvalReportTests
         Assert.Contains("Dry run on 3 of the 10 golden tickets: thresholds are shown but not enforced.", report, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void The_report_says_held_injection_tickets_are_left_out_of_accuracy_and_of_the_category_metric()
+    {
+        var metrics = EvalThresholdsTests.Metrics(new Ratio(6, 8), new Ratio(5, 8), 0) with
+        {
+            Injection = new InjectionResults(4, 0, new Ratio(1, 2), new Ratio(0, 4), new Ratio(0, 1), 2),
+        };
+
+        var report = Render(metrics, [], []);
+
+        Assert.Contains("| Category changed by an injection (of the category cases that reached the model) | 1/2 (50.0%), 2 category case(s) held by the guard | none |", report, StringComparison.Ordinal);
+        Assert.Contains("out of the scored tickets", report, StringComparison.Ordinal);
+        Assert.Contains("would measure the guard, not the model", report, StringComparison.Ordinal);
+        Assert.Contains("(PLAN.md 9)", report, StringComparison.Ordinal);
+    }
+
     private static string Render(EvalMetrics metrics, IReadOnlyList<string> failures, IReadOnlyList<(string, string, IReadOnlyList<string>)> problems) =>
         EvalReport.Render(Run, metrics, Usage, Thresholds, failures, problems).ReplaceLineEndings("\n");
 }

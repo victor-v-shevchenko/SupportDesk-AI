@@ -6,6 +6,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using SupportDesk.Api.Endpoints;
 using SupportDesk.Core.AI.Prompts;
+using SupportDesk.Core.Classification;
 using SupportDesk.Core.Tickets;
 using SupportDesk.Eval.Metrics;
 using SupportDesk.EmbedFixtures;
@@ -141,6 +142,7 @@ public class EvalSuiteTests
         Category? category = null;
         Priority? priority = null;
         string? classificationError = null;
+        var heldByGuard = false;
         using (var classified = await client.PostAsync(new Uri($"/api/tickets/{id}/classification", UriKind.Relative), content: null, cancellationToken))
         {
             if (classified.IsSuccessStatusCode)
@@ -153,6 +155,8 @@ public class EvalSuiteTests
                 else
                 {
                     classificationError = result.Status.ToString();
+                    heldByGuard = result.Status == ClassificationStatus.NeedsManual
+                        && result.Reason?.StartsWith(ClassificationService.InjectionReasonPrefix, StringComparison.Ordinal) == true;
                 }
             }
             else
@@ -186,7 +190,7 @@ public class EvalSuiteTests
         var followUps = (await client.GetFromJsonAsync<FollowUpsResponse>($"/api/tickets/{id}/follow-ups", EvalApi.Json, cancellationToken))!;
         return (id, new TicketOutcome(
             ticket, category, priority, classificationError, text.ToString(),
-            [.. cited.Distinct(StringComparer.Ordinal)], removed, replyError, followUps.Proposals.Count));
+            [.. cited.Distinct(StringComparer.Ordinal)], removed, replyError, followUps.Proposals.Count, heldByGuard));
     }
 
     private static async Task<IReadOnlyList<ServerSentEvent>> ReplyAsync(HttpClient client, int ticketId, CancellationToken cancellationToken)
