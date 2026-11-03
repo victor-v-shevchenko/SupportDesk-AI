@@ -6,6 +6,8 @@
 
 ![The ticket page: a suggested reply streamed with numbered citations, an order lookup card and a follow-up proposal waiting for Confirm](docs/images/ticket-reply.png)
 
+<sub>Taken with the fake provider (the dev-container quick start below): the reply, tool calls and token counts are scripted, and the fake embeddings are hashes, so which article the reply cites is arbitrary.</sub>
+
 SupportDesk AI is a support-ticket assistant for a fictional outdoor-gear store, built to show LLM features the way they'd run in production rather than in a demo. An agent opens a ticket and gets a summary, a category and priority, and a suggested reply streamed token by token, grounded in the knowledge base with numbered citations. While it writes, the model can look up an order and propose a follow-up task, which only becomes real when a person confirms it. Around the model sit the safeguards: timeouts and retries that understand streams, a token budget, a cost row for every model call, prompt-injection defenses, and an evaluation suite that measures each model against a golden set. It's an ASP.NET Core (.NET 10) Minimal API, an Angular app with signals, PostgreSQL with pgvector, and Microsoft.Extensions.AI over Anthropic, OpenAI, Ollama and a scripted fake provider.
 
 ## Quick start
@@ -97,22 +99,22 @@ Every call's input is estimated before it's sent (characters ÷ 3 × 1.2 plus 10
 
 ## Tests
 
-Counted from the runs on <!-- RUN DATE --> at commit <!-- COMMIT -->.
+Counted from local runs of the step 12 code on 2026-11-03; every suite passed.
 
 | Suite | What it covers | How to run | Tests |
 | --- | --- | --- | --- |
-| .NET unit (`tests/SupportDesk.UnitTests`) | Pipeline middleware on a fake clock, the fake provider, prompt building and escaping, citation parsing, classification validation, tools and their arguments, injection signals, provider adapters against stub HTTP | `dotnet test tests/SupportDesk.UnitTests` | <!-- UNIT --> |
-| .NET integration (`tests/SupportDesk.IntegrationTests`) | Testcontainers PostgreSQL + pgvector: migrations, seeding, endpoints, retrieval against committed embedding fixtures and their hash check, proposals and confirm, adversarial tickets through the API | `dotnet test tests/SupportDesk.IntegrationTests` | <!-- INTEGRATION --> |
-| Evaluation code (`tests/SupportDesk.Eval/Tests`) | The metrics, thresholds, golden set and report writer of the evaluation suite, without a model | `dotnet test tests/SupportDesk.Eval --filter "Category!=Eval"` | <!-- EVALCODE --> |
-| Angular unit (`web/src`) | Components, the SSE parser, services, the cost readout | `npm --prefix web test -- --watch=false` | <!-- ANGULAR --> |
-| End-to-end (`web/e2e`) | Playwright against the API with the fake provider and the production Angular build: the main flows, errors, layout, accessibility (ARIA snapshot, Tab walk, contrast) | `npm --prefix web run e2e` | <!-- E2E --> |
+| .NET unit (`tests/SupportDesk.UnitTests`) | Pipeline middleware on a fake clock, the fake provider, prompt building and escaping, citation parsing, classification validation, tools and their arguments, injection signals, provider adapters against stub HTTP | `dotnet test tests/SupportDesk.UnitTests` | 620 |
+| .NET integration (`tests/SupportDesk.IntegrationTests`) | Testcontainers PostgreSQL + pgvector: migrations, seeding, endpoints, retrieval against committed embedding fixtures and their hash check, proposals and confirm, adversarial tickets through the API | `dotnet test tests/SupportDesk.IntegrationTests` | 125 |
+| Evaluation code (`tests/SupportDesk.Eval/Tests`) | The metrics, thresholds, golden set and report writer of the evaluation suite, without a model | `dotnet test tests/SupportDesk.Eval --filter "Category!=Eval"` | 201 |
+| Angular unit (`web/src`) | Components, the SSE parser, services, the cost readout | `npm --prefix web test -- --watch=false` | 128 |
+| End-to-end (`web/e2e`) | Playwright against the API with the fake provider and the production Angular build: the main flows, errors, layout, accessibility (ARIA snapshot, Tab walk, contrast) | `npm --prefix web run e2e` (against a disposable database; the environment is in [CLAUDE.md](CLAUDE.md#commands)) | 40 |
 | Evaluation (`Category=Eval`, opt-in) | The golden set against a real chat model; writes a report to `docs/eval/` (below) | `dotnet test tests/SupportDesk.Eval --filter Category=Eval` | 36 golden tickets |
 
 CI runs everything but the evaluation on every push (`dotnet test --filter "Category!=Eval"`), and no test in CI calls a real model or embedding API. The full command list is in [CLAUDE.md](CLAUDE.md#commands).
 
 ## Code quality
 
-- **SonarQube Cloud** checks every pull request with the default "Sonar way" quality gate on new code (ratings A, every security hotspot reviewed, coverage at least 80%, duplication at most 3%) and the "Sonar way comprehensive" quality profile; the gate is a required check. On <!-- SONAR DATE --> the [project](https://sonarcloud.io/project/overview?id=victor-v-shevchenko_SupportDesk-AI) showed <!-- COVERAGE --> coverage, <!-- DUPLICATION --> duplication, <!-- ISSUES --> and the gate passing on `main`
+- **SonarQube Cloud** checks every pull request with the default "Sonar way" quality gate on new code (ratings A, every security hotspot reviewed, coverage at least 80%, duplication at most 3%) and the "Sonar way comprehensive" quality profile; the gate is a required check. On 2026-11-03 the [project](https://sonarcloud.io/project/overview?id=victor-v-shevchenko_SupportDesk-AI) showed, for `main` at `0331b02` (the last fix before step 12): the gate passing, 93.1% coverage, 0.0% duplication, no bugs, vulnerabilities or security hotspots, and 9 code smells, all fixed in step 12. The badges above show the live values. Locally the Angular unit tests cover 98.2% of lines
 - **In the build:** .NET analyzers at `latest-recommended` with warnings as errors, ESLint for the Angular app, and `gitleaks` over the whole git history. SonarQube for IDE runs in connected mode in the dev container, so the same rules show before a push
 - **Rules turned off:** none. The step 3b review of every issue SonarQube Cloud had raised found each one a real finding, so `sonar/SonarQube.Analysis.xml` has no rule exclusions; it only leaves generated code, seed data and build output out of analysis ([PLAN.md 11](PLAN.md#11-testing))
 
