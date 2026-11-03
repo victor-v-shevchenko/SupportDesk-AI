@@ -100,6 +100,24 @@ public class RetryTimeoutMiddlewareTests
     }
 
     [Fact]
+    public async Task A_streamed_refusal_before_any_item_passes_on_its_held_updates_then_throws()
+    {
+        Func<CancellationToken, Task<ChatResponseUpdate?>> thinking = _ =>
+            Task.FromResult<ChatResponseUpdate?>(new ChatResponseUpdate(ChatRole.Assistant, [new TextReasoningContent("Thinking")]));
+        var provider = new ScriptedChatClient(_time, Steps(Empty(), thinking, Finish(ChatFinishReason.ContentFilter), Usage(310, 0)));
+        using var pipeline = Pipeline(provider);
+        var received = new List<ChatResponseUpdate>();
+
+        await Assert.ThrowsAsync<ModelRefusedException>(() => _time.ReadAllAsync(pipeline.Client.GetStreamingResponseAsync("hi", Reply, Ct), received));
+
+        Assert.Equal(1, provider.Calls);
+        var contents = received.SelectMany(u => u.Contents).ToList();
+        Assert.Equal("Thinking", Assert.Single(contents.OfType<TextReasoningContent>()).Text);
+        Assert.Equal(310, Assert.Single(contents.OfType<UsageContent>()).Details.InputTokenCount);
+        Assert.Equal(ChatFinishReason.ContentFilter, received.Select(u => u.FinishReason).Last(r => r is not null));
+    }
+
+    [Fact]
     public async Task Backoff_doubles_with_jitter_in_the_upper_half()
     {
         var provider = new ScriptedChatClient(_time, Steps(Fail(503)));
