@@ -289,7 +289,8 @@ public sealed class ProviderFaultTests
 
         Assert.Equal(ReplyErrorCodes.ModelRefused, Assert.IsType<ReplyError>(Assert.Single(events)).Code);
         Assert.Single(rig.Spy.Calls);
-        Assert.Single(rig.Rows);
+        var row = Assert.Single(rig.Rows);
+        Assert.Equal((ModelCallOutcome.Error, 310L, 0L, false), (row.Outcome, row.InputTokens, row.OutputTokens, row.IsEstimated));
     }
 
     [Fact]

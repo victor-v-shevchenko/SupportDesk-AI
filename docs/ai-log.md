@@ -236,3 +236,10 @@ Entry format (from CLAUDE.md):
 - What was wrong: `TokenEstimateTests` took `AI:Chat:Model` whenever it was set, whatever the provider, so an Ollama run asked Anthropic's `count_tokens` about a model it doesn't have.
 - Fix: `TokenCountModel.Choose` uses the configured model only when `AI:Chat:Provider` is Anthropic, and `claude-opus-5-5` otherwise (branch `fix/token-estimate-model`; the settings are bound as the app binds them, so a missing provider is Ollama and a blank model is the default).
 - Test: `TokenCountModelTests.A_provider_other_than_Anthropic_uses_the_default_model` (its Ollama case, first written as `A_non_Anthropic_provider_uses_the_default_model`, failed before the fix: expected `claude-opus-5-5`, got `qwen2.5:7b`)
+
+## 2026-11-03 — A streamed refusal with no text lost its usage
+- Step: 3 (found in the step 12 whole-project review)
+- Found by: review subagent (issue #53)
+- What was wrong: when a stream ended in a refusal before any text, `RetryTimeoutMiddleware` kept the held updates (which carry the usage) because the refusal was recorded as a failure, so the model call's row was an estimate (`IsEstimated = true`) although Anthropic bills refused requests.
+- Fix: the held updates are passed on before a `ModelRefusedException` as well as at a clean end; a refusal is still not retried (branch `fix/refusal-usage`).
+- Test: `ProviderFaultTests.A_refusal_without_any_text_is_the_only_event` now asserts the row's outcome, tokens and `IsEstimated = false` (failed before the fix: 1544 input tokens, estimated)

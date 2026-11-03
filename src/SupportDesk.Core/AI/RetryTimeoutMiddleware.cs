@@ -124,9 +124,10 @@ public sealed class RetryTimeoutMiddleware(IChatClient innerClient, AiOptions se
             await updates.DisposeAsync();
         }
 
-        if (state.Failure is null)
+        if (state.Failure is null or ModelRefusedException)
         {
-            // A stream that ended without an item (only usage, or a refusal): pass on what it sent
+            // A stream that ended without an item (only usage, or a refusal): pass on what it sent. A refusal is never
+            // retried and its closing updates carry the usage the provider bills for, so they go out before the exception
             foreach (var waiting in held)
             {
                 yield return waiting;
