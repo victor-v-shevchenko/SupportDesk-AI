@@ -255,33 +255,33 @@ Entry format (from CLAUDE.md):
 - Step: 11 (found in the step 12 whole-project review)
 - Found by: review subagent (issue #54)
 - What was wrong: the router reuses `TicketDetailPage` when only `:id` changes, so a pending classify (a Promise, not cancellable) showed "Classifying…" on the next ticket and its result or failure and cost refresh landed there, and the last `usageRefresh` made every new `TicketCost` run the whole backoff.
-- Fix: `TicketsService.classify` returns an Observable that the page unsubscribes when the id changes; `classifying`, `classifyError` and `usageRefresh` are `linkedSignal`s of the id (branch `fix/ticket-switch-state`).
+- Fix: `TicketsService.classify` returns an Observable that the page unsubscribes when the id changes; `classifying`, `classifyError` and `usageRefresh` are `linkedSignal`s of the id (branch #58).
 - Test: `TicketDetailPage` specs `drops a pending classify when another ticket opens, so its state does not follow` and `opening another ticket after a model call reads nothing beyond the new ticket initial load`
 
 ## 2026-11-03 — A reply replaced by "Suggest again" was not counted
 - Step: 9 (found in step 12)
 - Found by: review subagent (issue #54)
 - What was wrong: `runEnded` was emitted on stop and on end, but not when a second click aborted a streaming run, which still writes a `Cancelled` usage row, so the cost readout's target was one short.
-- Fix: `ReplyPanel.suggest` emits `runEnded` for the run it replaces (branch `fix/ticket-switch-state`; PLAN.md 7 says so).
+- Fix: `ReplyPanel.suggest` emits `runEnded` for the run it replaces (branch #58; PLAN.md 7 says so).
 - Test: `ReplyPanel` spec `emits runEnded for a streaming run that a second Suggest replaces`
 
 ## 2026-11-03 — An unknown tool name broke the reply panel
 - Step: 9 (found in step 12)
 - Found by: review subagent (issue #54)
 - What was wrong: any `tool_call` that wasn't `lookup_order_status` was rendered as a proposal, and read `call.proposal.status`.
-- Fix: only the two known names are stored and rendered; others are ignored (branch `fix/ticket-switch-state`).
+- Fix: only the two known names are stored and rendered; others are ignored (branch #58).
 - Test: `ReplyPanel` spec `ignores a tool call it does not know instead of rendering it as a proposal`
 
 ## 2026-11-03 — The accessibility e2e mock sent a `usage` event without `calls`
 - Step: 11 (found in step 12)
 - Found by: review subagent (issue #54)
 - What was wrong: `TicketCost` computed a `NaN` target from the missing `calls`, and the test passed by accident.
-- Fix: the mock sends `calls: 1` (branch `fix/ticket-switch-state`).
+- Fix: the mock sends `calls: 1` (branch #58).
 - Test: none asserts the mock's `calls`; the mock now sends `calls: 1` and the existing `e2e/accessibility.spec.ts` reply-flow test still passes. A mock event that omits `calls` would not fail a test
 
 ## 2026-11-03 — A late classify answer could still reach the next ticket
 - Step: 11 (found in the review of the issue #54 fix)
 - Found by: review subagent
 - What was wrong: the page cancelled a pending classify in an effect, which runs at the next change detection, so an answer delivered between the id change and that render landed on the new ticket; a cancelled classify also left the list stale although the server may have saved the result.
-- Fix: `classify` remembers the id it was started for and ignores answers once it differs; cancelling a running classify bumps `listStale` (branch `fix/ticket-switch-state`).
+- Fix: `classify` remembers the id it was started for and ignores answers once it differs; cancelling a running classify bumps `listStale` (branch #58).
 - Test: `TicketDetailPage` specs `ignores an answer to the old ticket classify that arrives before the page renders the new id`, `cancels a pending classify when the page is destroyed` and `marks the list stale when it cancels a classify that is still running, and not after a finished one` (all three failed with the guard, the destroy hook and the bump removed)
