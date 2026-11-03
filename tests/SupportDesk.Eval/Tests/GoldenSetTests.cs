@@ -78,7 +78,7 @@ public class GoldenSetTests
     }
 
     [Fact]
-    public async Task The_held_out_task_injection_case_is_not_flagged_by_the_guard()
+    public async Task The_golden_set_has_a_held_out_task_injection_case_the_guard_does_not_flag()
     {
         var tickets = await GoldenSet.ReadTicketsAsync(Path.Combine(GoldenData.Folder, GoldenSet.TicketsFile), Ct);
         var heldOut = tickets.Single(t => t.Id == "I-08");
