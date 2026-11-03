@@ -154,10 +154,10 @@ All routes are under `/api`. Errors use RFC 7807 problem details.
   | Model | Size | Use |
   | --- | --- | --- |
   | `qwen2.5:1.5b` | about 1 GB | default chat model: small, fast, supports tools; weak at following instructions (in the step 5 check it used the sources but wrote no `[n]` markers) |
-  | `qwen2.5:7b` | about 4.7 GB | better replies and tool calls, and cites sources; the model the step 10 evaluation runs with. On CPU it needs longer timeouts (6.5) |
+  | `qwen2.5:7b` | about 4.7 GB | better replies and tool calls, and cites sources; the model the step 10 evaluation runs with. On CPU it needs longer timeouts (6.5). Known limits, kept as model limits rather than fixed in code (evaluation below): it can repeat a made-up promise from the ticket and tell the customer a task was proposed when none was |
   | `mxbai-embed-large` | about 670 MB | embeddings (1024 dimensions, from step 4) |
-  | `qwen3:8b` | about 5.2 GB | the only local model here that called the reply's tools (step 8 check, below); thinks before answering, so each call is slow on CPU. Needs the same longer timeouts as `qwen2.5:7b` |
-  | `llama3.1:8b` | about 4.9 GB | tried in step 8 for tool calling; didn't call the tools (below) |
+  | `qwen3:8b` | about 5.2 GB | the only local model here that called the reply's tools (step 8 check, below); thinks before answering, so each call is slow on CPU. Needs the same longer timeouts as `qwen2.5:7b`. Its thinking counts against the output budget (6.6), so with the default 200-token classification budget it stops before answering and every classification ends `NeedsManual` (issue #49) |
+  | `llama3.1:8b` | about 4.9 GB | tried in step 8 for tool calling; didn't call the tools (below). In the 2026-11-03 evaluation it wrote the tool call as JSON text in the reply and made up order numbers |
 
   **Tool calling with local models (step 8 check, November 2026, T-1002 with five sources in the prompt, CPU):**
 
@@ -167,6 +167,8 @@ All routes are under `/api`. Errors use RFC 7807 problem details.
   | `llama3.1:8b` | No | Said it had looked up the order and would propose a task, without calling either tool |
   | `qwen3:8b` | Yes | Two calls, about 7 minutes in all; the reply used the status and last event. It cited `[1]` on a sentence from the tool result and made up a date to check tracking by; it didn't propose a task |
   | `claude-opus-5-5` | Yes, both tools | Three calls, 6,952 input and 914 output tokens, $0.046 |
+
+  **Reply quality with local models (evaluation, 2026-11-03, `reply.v4`, `docs/eval/README.md`):** none of the 7–8B models here gives replies that can go out unedited, which is why a human agent reviews every suggested reply. `qwen2.5:7b` repeats the made-up promise on I-07 (issue #23) and tells the I-08 customer "I've proposed a task" without calling the tool (#44); `llama3.1:8b` does neither, but writes `{"name": "lookup_order_status", …}` into the reply text and makes up order numbers; `qwen3:8b` couldn't be measured (#49). Opus 5.5 handles all of these cases. Both qwen2.5:7b failures are kept as known model limits, not fixed in code: the prompt rule for #23 didn't change it, and checks that rewrite model text would be fragile. A local model is a choice for development and privacy, not for replies sent without review. On a busy machine a model's first load can take minutes, longer than `FirstItemSeconds`: warm it first (CLAUDE.md commands)
 
   The tools reach Ollama (`Ollama_requests_carry_the_reply_tools_with_their_schemas`). Given a conversation in which the lookup had already happened, with the result in OllamaSharp's envelope (section 10), `qwen2.5:7b` and `llama3.1:8b` both read it correctly, for a found and an unknown order. So the gap is in deciding to call a tool, not in reading the result. The fake provider (`tool-call-order`, `tool-call-proposal`) shows the tool path in tests and the dev UI; tool use and the reply rules (no greeting, no citations for tool data, no made-up dates) are for steps 9 and 10 to measure
 
