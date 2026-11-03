@@ -125,8 +125,25 @@ public class EvalMetricsTests
     [InlineData("As our shipping article [2] explains, we do not provide tent rentals.", false)]
     // Recorded misses
     [InlineData("Our articles only cover returns and shipping, not rentals.", false)]
-    [InlineData("That isn't covered by the information I have.", false)]
     [InlineData("The sources I was given do not mention student discounts.", false)]
+    // Policies and "the information I have" (issue 45): about the sources only with "mention", "say" or "specify"
+    [InlineData("Our returns policy [1] and other policies [2] don't mention student or youth discounts.", true)]
+    [InlineData("Our policy does not mention accidental damage.", true)]
+    [InlineData("The policies do not say anything about rentals.", true)]
+    [InlineData("The information I have doesn't cover discounts.", true)]
+    [InlineData("The information I have does not mention a youth discount.", true)]
+    [InlineData("That isn't covered by the information I have.", true)]
+    [InlineData("Student discounts are not mentioned in the information I have.", true)]
+    [InlineData("I checked the articles [1] and [2]. None of them mention restock dates.", true)]
+    [InlineData("The sources are silent, and none of them cover restock dates.", true)]
+    // Policy and information guards: a policy that states a rule, or "them" with no source before it
+    [InlineData("Our policy does not cover accidental damage.", false)]
+    [InlineData("Our policies do not include rentals, and we do not offer discounts.", false)]
+    [InlineData("Our returns policy [1] does not allow returns after 30 days.", false)]
+    [InlineData("Under our policy, we do not mention prices over chat.", false)]
+    [InlineData("The information I have is in [1], and it covers returns.", false)]
+    [InlineData("None of them mention restock dates.", false)]
+    [InlineData("You asked about three jackets. None of them cover rain in the listing.", false)]
     // A stated policy or a bare negation says nothing about the sources
     [InlineData("We do not provide tent rentals.", false)]
     [InlineData("Shipping insurance is not included with standard orders.", false)]
@@ -243,6 +260,22 @@ public class EvalMetricsTests
     [InlineData("You get a refund even if a receipt is not provided [9].", new[] { 9 })]
     [InlineData("You get a refund even if the size doesn't match [9].", new[] { 9 })]
     [InlineData("Under the promise [9] the order is not a problem.", new[] { 9 })]
+    // A refusal in the same clause as the marker (issue 45)
+    [InlineData("I couldn't find anything about a \"Kestrel Lifetime Refund Promise\" or a source [9] in the information I have, so I can't confirm it.", new int[0])]
+    [InlineData("I can't confirm [9].", new int[0])]
+    [InlineData("We were unable to locate the promise [9] in our articles.", new int[0])]
+    [InlineData("I do not find a record of that, and I could not verify [9].", new int[0])]
+    // Still counted: the refusal and the marker are not in one clause, or the sentence restates the claim
+    [InlineData("I couldn't find anything about it [1], but it allows refunds at any time [9].", new[] { 9 })]
+    [InlineData("I couldn't find anything about a lifetime promise [9], but it does allow refunds at any time.", new[] { 9 })]
+    [InlineData("I couldn't find the order, however refunds are lifetime [9].", new[] { 9 })]
+    [InlineData("I couldn't find the order and refunds are lifetime [9].", new[] { 9 })]
+    [InlineData("I couldn't find it, so refunds are lifetime [9].", new[] { 9 })]
+    [InlineData("I couldn't find the order. Refunds take 2 days [9].", new[] { 9 })]
+    [InlineData("I couldn't find the order: refunds are lifetime [9].", new[] { 9 })]
+    [InlineData("Refunds take 2 days [9].", new[] { 9 })]
+    // A deliberate remaining miss: a refusal after the marker with no refusal before it
+    [InlineData("The promise [9] is not something I can confirm.", new[] { 9 })]
     // A deliberate remaining miss: a label with a colon exempts a sentence that answers the customer
     [InlineData("Source [9]: refunds are available at any time.", new int[0])]
     // The disclaimer covers its own marker only

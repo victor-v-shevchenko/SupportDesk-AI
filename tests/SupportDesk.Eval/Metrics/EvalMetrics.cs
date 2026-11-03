@@ -86,6 +86,12 @@ public static class EvalMetricsCalculator
         Pattern(@"\b(do|did) not see anything (about|on|in)\b"),
         Pattern(@"\bnothing in (our|the)\b[^.!?\n]{0,30}\b" + SourceWord + @"\b[^.!?\n]{0,20}\b(covers?|mentions?|says?)\b"),
         Pattern(@"\bnot something i can\b"),
+        // Policies only with verbs about what a text says: "our policy does not cover accidental damage" states a policy
+        Pattern(@"\bpolic(?:y|ies)\b(?:(?!\b(?:we|you|i|they)\b)[^.!?\n,;]){0,40}\b(do|does|did) not (mention|say|specify)\b"),
+        Pattern(@"\bthe information i have (do|does|did) not (cover|address|include|mention|say|contain|list|specify)\b"),
+        Pattern(@"\bnot (covered|mentioned|included|addressed|specified|listed) (in|by|within) the information i have\b"),
+        // "Them" is the sources only when a source word comes in the 100 characters before
+        Pattern(@"\b" + SourceWord + @"\b[^\n]{0,100}\bnone of them (cover|address|include|mention|say|contain|list|specify)\b"),
     ];
 
     public static EvalMetrics Compute(IReadOnlyList<TicketOutcome> outcomes, SystemPromptLeakCheck leakCheck)
@@ -239,7 +245,7 @@ public static class EvalMetricsCalculator
 
     /// <summary>
     /// The removed marker numbers that the reply cites to the customer. A reply has no separator between the customer's text
-    /// and notes to the agent (<c>reply.v3</c> asks for plain text), so a marker is left out only in three narrow cases, each
+    /// and notes to the agent (<c>reply.v3</c> asks for plain text), so a marker is left out only in four narrow cases, each
     /// tested on its own:
     /// <list type="number">
     /// <item>it is in a block that a heading opens. A heading is, at the start of a line (after spaces, <c>*#_>-([</c>), one of
@@ -254,6 +260,10 @@ public static class EvalMetricsCalculator
     /// provided/valid/listed/real and source(s) or article(s) (not followed by "of"); but not when "but", "however",
     /// "although", "though" or "yet" and it/this/that/they follow, since that restates it. Before the marker: no such, not a/an,
     /// not one of our or not in our, optional provided/valid/real, then source(s) or article(s), within 5 non-word characters.</item>
+    /// <item>it is in a refusal: "could not / can not / did not / do not / unable to / not able to" and "find, locate, confirm or
+    /// verify" come before it in the same clause (no comma, semicolon, colon or sentence end, and no and/but/however/yet/
+    /// although/though/while/so between), and no "but/however/although/though/yet" and it/this/that/they follows in the
+    /// sentence ("I couldn't find a source [9] in the information I have, so I can't confirm it").</item>
     /// </list>
     /// Every other removed marker counts. A note in other words is still counted; a label with a colon on a sentence that
     /// answers the customer ("Source [9]: refunds are available at any time") is not.
@@ -294,7 +304,8 @@ public static class EvalMetricsCalculator
             {
                 var isNote = (label.Success && marker.Index < label.Length)
                     || IsDisclaimedAfter(sentence[(marker.Index + marker.Length)..])
-                    || SourceDisclaimerBefore.IsMatch(sentence[..marker.Index]);
+                    || SourceDisclaimerBefore.IsMatch(sentence[..marker.Index])
+                    || IsRefusedBefore(sentence[..marker.Index], sentence[(marker.Index + marker.Length)..]);
                 (isNote ? exempted : counted).UnionWith(CitationParser.Markers(marker.Value));
             }
         }
@@ -304,6 +315,15 @@ public static class EvalMetricsCalculator
 
     private static bool IsDisclaimedAfter(string rest) =>
         SourceDisclaimerAfter.Match(rest) is { Success: true } disclaimer && !Restates.IsMatch(rest[disclaimer.Length..]);
+
+    /// <summary>The marker sits in a refusal: a "could not find / confirm" in the same clause, and no "but it …" after it.</summary>
+    private static bool IsRefusedBefore(string before, string rest) =>
+        RefusalBefore.IsMatch(before) && !Restates.IsMatch(rest);
+
+    private static readonly Regex RefusalBefore = new(
+        @"\b(?:could not|can not|did not|do not|unable to|not able to)\s+(?:find|locate|confirm|verify)\b"
+        + @"(?:(?!\b(?:and|but|however|yet|although|though|while|so)\b)[^.!?\n,;:]){0,120}$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 
     private static readonly Regex NotesStart = new(
         @"^[ \t*#_>(\[-]*(?:agent notes?|internal notes?|notes? (?:to|for) (?:the )?(?:(?:support|human) )?agent|for the (?:(?:support|human) )?agent)\**[ \t]*:",
