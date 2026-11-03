@@ -1,12 +1,47 @@
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Options;
 using SupportDesk.Core.AI;
+using SupportDesk.Core.AI.Prompts;
 using SupportDesk.Core.Replies;
+using SupportDesk.Core.Replies.Tools;
 using static SupportDesk.UnitTests.Replies.ReplyTestData;
 
 namespace SupportDesk.UnitTests.Replies;
 
 public class ReplyPromptBuilderTests
 {
+    private static readonly PromptTemplate CurrentReplyTemplate = new PromptStore(Options.Create(new AiOptions
+    {
+        Prompts = new(StringComparer.Ordinal) { ["reply"] = "reply.v4" },
+    })).GetPrompt("reply");
+
+    private static AIFunction Tool(string name) => AIFunctionFactory.Create(() => "x", name);
+
+    [Fact]
+    public void A_run_that_offers_both_tools_describes_both()
+    {
+        var options = new ChatOptions { Tools = [Tool(ReplyTools.LookupOrderStatus), Tool(ReplyTools.ProposeFollowUpTask)] };
+
+        var prompt = ReplyPromptBuilder.Build(CurrentReplyTemplate, Ticket(), [Chunk("shipping", 0.7)], options, 6000);
+
+        Assert.Equal(CurrentReplyTemplate.System, prompt.Messages[0].Text);
+        Assert.Contains("- propose_follow_up_task:", prompt.Messages[0].Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_guarded_run_leaves_the_proposal_tool_out_of_the_system_prompt()
+    {
+        var options = new ChatOptions { Tools = [Tool(ReplyTools.LookupOrderStatus)] };
+
+        var prompt = ReplyPromptBuilder.Build(CurrentReplyTemplate, Ticket(), [Chunk("shipping", 0.7)], options, 6000);
+
+        var system = prompt.Messages[0].Text;
+        Assert.DoesNotContain("propose_follow_up_task", system, StringComparison.Ordinal);
+        Assert.DoesNotContain("only proposes a task", system, StringComparison.Ordinal);
+        Assert.Contains("- lookup_order_status:", system, StringComparison.Ordinal);
+        Assert.Contains("Call each tool at most once", system, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void The_query_is_the_subject_and_body()
     {
