@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http.HttpResults;
+using SupportDesk.Core.AI;
 using SupportDesk.Core.Retrieval;
 
 namespace SupportDesk.Api.Endpoints;
@@ -16,7 +17,7 @@ public static class SearchEndpoints
     }
 
     /// <summary><c>k</c> arrives as a string, so a value that isn't a number gets the same field error as one out of range.</summary>
-    public static async Task<Results<Ok<List<SearchResultResponse>>, ValidationProblem>> Search(
+    public static async Task<Results<Ok<List<SearchResultResponse>>, ValidationProblem, ProblemHttpResult>> Search(
         string? q, string? k, IRetrievalService retrieval, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(retrieval);
@@ -27,8 +28,15 @@ public static class SearchEndpoints
             return TypedResults.ValidationProblem(errors);
         }
 
-        var results = await retrieval.SearchAsync(query, count, cancellationToken);
-        return TypedResults.Ok(results.Select(r => new SearchResultResponse(r.ArticleSlug, r.ArticleTitle, r.Heading, r.Text, r.Similarity)).ToList());
+        try
+        {
+            var results = await retrieval.SearchAsync(query, count, cancellationToken);
+            return TypedResults.Ok(results.Select(r => new SearchResultResponse(r.ArticleSlug, r.ArticleTitle, r.Heading, r.Text, r.Similarity)).ToList());
+        }
+        catch (ModelUnavailableException exception)
+        {
+            return ModelProblems.Unavailable(exception);
+        }
     }
 
     public static (string Query, int K, Dictionary<string, string[]> Errors) Validate(string? q, string? k)

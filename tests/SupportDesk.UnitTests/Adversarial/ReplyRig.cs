@@ -78,9 +78,9 @@ internal sealed class ReplyRig : IDisposable
 
     /// <summary>Builds a rig whose provider plays <paramref name="turns"/> for <see cref="TicketNumber"/>'s reply.</summary>
     public static ReplyRig Create(
-        string turns, IRetrievalService? retrieval = null, Action<AiOptions>? configure = null, StubOrders? orders = null, RecordingFollowUps? followUps = null, TimeSpan? callbackLatency = null)
+        string turns, IRetrievalService? retrieval = null, Action<AiOptions>? configure = null, StubOrders? orders = null, RecordingFollowUps? followUps = null, TimeSpan? callbackLatency = null, TrackedFakeTime? time = null)
     {
-        var time = new TrackedFakeTime(new DateTimeOffset(2026, 11, 1, 9, 0, 0, TimeSpan.Zero), callbackLatency);
+        time ??= new TrackedFakeTime(new DateTimeOffset(2026, 11, 1, 9, 0, 0, TimeSpan.Zero), callbackLatency);
         var fake = new FakeChatClient(FakeScenarioSet.Parse(Scenario(turns)), time);
         return new ReplyRig(time, new SpyChatClient(fake, time), retrieval ?? new StubRetrieval(), orders ?? new StubOrders(), followUps ?? new RecordingFollowUps(), configure);
     }

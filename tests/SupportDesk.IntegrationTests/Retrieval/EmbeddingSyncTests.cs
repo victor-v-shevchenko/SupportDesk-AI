@@ -3,6 +3,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using SupportDesk.Core.AI;
 using SupportDesk.Core.AI.Fake;
 using SupportDesk.Core.Articles;
@@ -129,6 +130,23 @@ public sealed class EmbeddingSyncTests(PostgresFixture postgres) : IDisposable
         Assert.Contains("AI__Embeddings__Provider=Fake", error.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task An_embedding_call_that_never_returns_fails_the_sync_naming_the_timeout_setting()
+    {
+        var connectionString = await postgres.CreateDatabaseAsync(Ct);
+        await StartAsync(connectionString);
+        var time = new FakeTimeProvider();
+        using var stalling = new StallingEmbeddingGenerator(new FakeEmbeddingGenerator(1024)) { Hang = true };
+
+        var sync = SyncWithAsync(connectionString, stalling, time);
+        await stalling.Stalled.WaitAsync(Ct);
+        time.Advance(TimeSpan.FromSeconds(30));
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => sync);
+        Assert.Contains("AI:Timeouts:EmbeddingSeconds", error.Message, StringComparison.Ordinal);
+        Assert.Contains("30 seconds", error.Message, StringComparison.Ordinal);
+    }
+
     public void Dispose()
     {
         _generator.Dispose();
@@ -148,7 +166,7 @@ public sealed class EmbeddingSyncTests(PostgresFixture postgres) : IDisposable
     /// needs embedding. Called directly rather than through startup: when startup fails inside WebApplicationFactory, the
     /// exception that reaches the test races with the app disposing its services (docs/ai-log.md, step 3b).
     /// </summary>
-    private async Task SyncWithAsync(string connectionString, IEmbeddingGenerator<string, Embedding<float>> generator)
+    private async Task SyncWithAsync(string connectionString, IEmbeddingGenerator<string, Embedding<float>> generator, TimeProvider? time = null)
     {
         await using var factory = new ApiFactory(connectionString, "Development", Settings(),
             services: services => services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(_generator));
@@ -161,6 +179,7 @@ public sealed class EmbeddingSyncTests(PostgresFixture postgres) : IDisposable
             generator,
             Options.Create(aiOptions),
             scope.ServiceProvider.GetRequiredService<IOptions<RetrievalOptions>>(),
+            time ?? TimeProvider.System,
             NullLogger<EmbeddingSyncService>.Instance);
 
         await sync.SyncAsync(Ct);

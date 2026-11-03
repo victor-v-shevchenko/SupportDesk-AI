@@ -177,6 +177,7 @@ public class ProviderRegistrationTests
     [Theory]
     [InlineData("AI:Embeddings:Dimensions", "768", "AI:Embeddings:Dimensions")]
     [InlineData("AI:Timeouts:ConnectSeconds", "0", "AI:Timeouts:ConnectSeconds")]
+    [InlineData("AI:Timeouts:EmbeddingSeconds", "0", "AI:Timeouts:EmbeddingSeconds")]
     [InlineData("AI:Ollama:Endpoint", "file:///etc/passwd", "AI:Ollama:Endpoint")]
     [InlineData("AI:Anthropic:Effort:Reply", "None", "AI:Anthropic:Effort:Reply")]
     public void Invalid_settings_fail_at_startup(string setting, string value, string expected)
