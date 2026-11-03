@@ -14,7 +14,7 @@ import { Category, ClassificationStatus, Priority } from '../api/tickets.models'
         </span>
       }
       @case ('NeedsManual') {
-        <span class="badge manual">Needs manual classification</span>
+        <span class="badge manual" [attr.title]="reason()">Needs manual classification</span>
       }
       @default {
         <span class="not-run">Not classified</span>

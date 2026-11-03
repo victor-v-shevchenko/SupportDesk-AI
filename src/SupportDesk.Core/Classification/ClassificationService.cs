@@ -37,6 +37,10 @@ public sealed partial class ClassificationService(
     /// <summary>How the reason of a classification held back by the injection guard starts; the evaluation tells it from a model failure by this.</summary>
     public const string InjectionReasonPrefix = "The ticket text has injection signals";
 
+    /// <summary>The reason a held classification carries: the strong signal names, never ticket text; at most <see cref="ClassificationResult.ReasonMaxLength"/> characters.</summary>
+    public static string InjectionReason(IEnumerable<string> signals) =>
+        $"{InjectionReasonPrefix} ({string.Join(", ", signals)}), so a person should classify it.";
+
     public async Task<TicketClassification?> ClassifyAsync(int ticketId, CancellationToken cancellationToken)
     {
         var ticket = await tickets.FindAsync(ticketId, cancellationToken);
@@ -48,15 +52,15 @@ public sealed partial class ClassificationService(
         var prompt = prompts.GetPrompt(PromptName);
 
         // A ticket that tries to steer the model gets no model call: there's nothing for an injected category to steer
-        // (PLAN.md 10, injection guard), and a person checks it
-        var signals = InjectionSignals.Find(ticket);
+        // (PLAN.md 9), and a person checks it. Only the strong signals hold it: the role turn has documented false positives
+        var signals = InjectionSignals.FindStrong(ticket);
         if (signals.Count > 0)
         {
             LogInjectionSignals(ticket.Id, string.Join(", ", signals));
             var held = new TicketClassification
             {
                 Status = ClassificationStatus.NeedsManual,
-                Reason = $"{InjectionReasonPrefix} ({string.Join(", ", signals)}), so a person should classify it.",
+                Reason = InjectionReason(signals),
                 PromptVersion = prompt.Version,
                 ClassifiedAt = time.GetUtcNow(),
             };

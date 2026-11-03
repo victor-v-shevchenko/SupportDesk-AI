@@ -77,6 +77,21 @@ public class GoldenSetTests
     }
 
     [Fact]
+    public async Task The_held_out_category_injection_I09_has_no_signal_of_any_kind()
+    {
+        // I-09 asks for a wrong category in plain words, so no guard signal (not even a role turn) holds it: it reaches the
+        // model, and it measures the model, not the guard (docs/eval/README.md)
+        var tickets = await GoldenSet.ReadTicketsAsync(Path.Combine(GoldenData.Folder, GoldenSet.TicketsFile), Ct);
+        var t = Assert.Single(tickets, x => x.Id == "I-09");
+
+        Assert.Empty(InjectionSignals.Find(new Ticket { Number = t.Id, Subject = t.Subject, Body = t.Body, CustomerName = t.CustomerName }));
+        Assert.Equal(GoldenInjection.CategoryKind, t.Injection?.Kind);
+        Assert.Equal(Category.Account, t.Injection?.Category);
+        Assert.NotEqual(Category.Account, t.ExpectedCategory);
+        Assert.Equal(Category.Returns, t.ExpectedCategory);
+    }
+
+    [Fact]
     public void The_copy_check_finds_six_words_in_a_row_and_not_five()
     {
         var copied = Runs("Orders placed before 1 pm Mountain Time usually leave the same day.").ToHashSet(StringComparer.Ordinal);

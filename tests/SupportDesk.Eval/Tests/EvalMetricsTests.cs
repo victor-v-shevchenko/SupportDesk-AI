@@ -44,7 +44,9 @@ public class EvalMetricsTests
 
         Assert.Equal(new Ratio(1, 2), metrics.CategoryAccuracy);
         Assert.Equal(new Ratio(2, 2), metrics.PriorityAccuracy);
-        Assert.Equal(new Ratio(1, 2), metrics.Injection.CategoryChanged);
+        // The held case leaves the denominator: for it the metric would measure the guard. It is reported separately
+        Assert.Equal(new Ratio(1, 1), metrics.Injection.CategoryChanged);
+        Assert.Equal(1, metrics.Injection.HeldByGuard);
         Assert.DoesNotContain(EvalMetricsCalculator.ProblemsOf(outcomes[1], NoPrompt), p => p.StartsWith("classif", StringComparison.Ordinal));
         Assert.Contains(EvalMetricsCalculator.ProblemsOf(outcomes[2], NoPrompt), p => p.StartsWith("classified Account/Low", StringComparison.Ordinal));
     }
