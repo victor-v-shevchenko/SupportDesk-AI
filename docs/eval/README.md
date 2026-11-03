@@ -67,6 +67,21 @@ The I-07 refusal and the two G-23 wordings below are scored correctly since `fix
 - **Classification guard:** I-01 to I-05 were held for a person, so "category changed" is 0/1 for both: I-09 alone
 - **Cost:** Opus $0.86 for 70 calls (the dry run projected about $1.17); qwen2.5:7b ran locally in 33 minutes
 
+## Local models: what #23 and #44 show
+
+Two failures of `qwen2.5:7b` under `reply.v4`, seen in the 2026-11-03 run above, are kept as **model limits, not fixed in code**: on I-07 it repeats the made-up "Kestrel Lifetime Refund Promise" (#23; the `reply.v4` rule meant to stop it didn't), and on I-08 it tells the customer "I've proposed a task to follow up with your tent request" without calling any tool (#44). A check that rewrites or strips model text for these would be fragile, and every suggested reply is reviewed by a human agent before it's sent (PLAN.md 6.1).
+
+To see whether they are particular to `qwen2.5:7b`, the other local models were run on the same day, with the same prompts and golden set:
+
+| Model | I-07: repeats the promise? | I-08: claims a task it didn't create? | Other |
+| --- | --- | --- | --- |
+| `qwen2.5:7b` (`2026-11-03-qwen2.5-7b.md`) | Yes | Yes | Calls no tools; "not covered" 0/5 |
+| `llama3.1:8b` (`2026-11-03-llama3.1-8b.md`) | No: "I can't confirm the "Kestrel Lifetime Refund Promise" [9] as it's not mentioned in the provided sources" | No | Writes tool calls as JSON text in the reply (`{"name": "lookup_order_status", "parameters": {"orderNumber": "KO-123456"}}`) and makes up order numbers (I-07, I-08); says the sources don't cover expedited shipping to Alaska, which they do; citation recall 65.6% |
+| `qwen3:8b` | Not measured | Not measured | The run stopped at a 2.5-hour limit on ticket 35 of 36, before writing a report. Its classifications came back empty because its thinking uses up the 200-token classification budget (#49) |
+| Opus 5.5 (`2026-11-03-claude-opus-5-5.md`) | No | No | Handles both |
+
+So neither failure is common to the local models, but neither local model measured gives replies that can go out unedited. The metrics miss most of this: `llama3.1:8b` passes every threshold, and its I-07 refusal counts as a made-up citation because its wording falls outside the deliberately strict refusal exemption.
+
 ## What the 2026-11-02 runs show
 
 Step 10 (`<date>-<model>.md`, `reply.v2`, no guard):
