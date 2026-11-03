@@ -136,7 +136,7 @@ All routes are under `/api`. Errors use RFC 7807 problem details.
 | `Seed:Path` | `seed` | Seed folder, from the app's base directory (section 4) |
 | `Logging:Console:FormatterName` | `json` (`simple`, one line, in Development) | Console log format |
 
-- **Docker Compose variables** (`.env`, read by `docker-compose.yml` only): `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`; `AI_CHAT_PROVIDER`, `AI_EMBEDDINGS_PROVIDER`, `AI_CHAT_MODEL`, `AI_EMBEDDINGS_MODEL` (empty means the provider's default); `RETRIEVAL_MIN_SIMILARITY` (empty means 0.5; use 0 with the fake embeddings, section 11); `OLLAMA_ENDPOINT`; the provider keys `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `VOYAGE_API_KEY`. Compose maps them to the settings above and in 6.1
+- **Docker Compose variables** (`.env`, read by `docker-compose.yml`): `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`; `AI_CHAT_PROVIDER`, `AI_EMBEDDINGS_PROVIDER`, `AI_CHAT_MODEL`, `AI_EMBEDDINGS_MODEL` (empty means the provider's default); `RETRIEVAL_MIN_SIMILARITY` (empty means 0.5; use 0 with the fake embeddings, section 11); `OLLAMA_ENDPOINT`; the provider keys `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `VOYAGE_API_KEY`. Compose maps them to the settings above and in 6.1
 
 ## 6. LLM pipeline
 

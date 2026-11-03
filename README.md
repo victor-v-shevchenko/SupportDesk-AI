@@ -38,7 +38,7 @@ Then:
 docker compose up --build
 ```
 
-Open http://localhost:4200 (API health: http://localhost:5080/api/health). The first start builds two images and takes a few minutes. The fake provider plays scripted answers (`tests/fixtures/fake-scenarios.json`), so the same tickets always behave the same way: T-1002 looks up an order, T-1008 proposes a follow-up task, T-1021 shows a provider error, T-1023 a timeout, T-1025 a refusal.
+Open http://localhost:4200 (API health: http://localhost:5080/api/health). The first start builds two images and takes a few minutes. The fake provider plays scripted answers (`tests/fixtures/fake-scenarios.json`), so the same tickets always behave the same way: T-1002 looks up an order, T-1008 proposes a follow-up task, T-1021 shows a provider error, T-1023 a timeout (after about a minute: three attempts that each wait past the first-item limit), T-1025 a refusal.
 
 ### Dev container (VS Code)
 
@@ -53,12 +53,12 @@ Open http://localhost:4200 (API health: http://localhost:5080/api/health). The f
 
 | Provider | Dev container (`dotnet run`) | Docker Compose (`.env`) |
 | --- | --- | --- |
-| Ollama (the default; free and local) | Install [Ollama](https://ollama.com) on the host, `ollama pull qwen2.5:1.5b` and `ollama pull mxbai-embed-large`, then `dotnet run --project src/SupportDesk.Api` | `AI_CHAT_PROVIDER=Ollama`, `AI_EMBEDDINGS_PROVIDER=Ollama` (or `--profile ollama` for Ollama in a container, see [CLAUDE.md](CLAUDE.md#commands)) |
+| Ollama (the default; free and local) | Install [Ollama](https://ollama.com) on the host, `ollama pull qwen2.5:1.5b` and `ollama pull mxbai-embed-large`, then `dotnet run --project src/SupportDesk.Api` | `AI_CHAT_PROVIDER=Ollama`, `AI_EMBEDDINGS_PROVIDER=Ollama`, with the same two models pulled on the host. Or Ollama in a container: `docker compose --profile ollama up -d ollama`, `docker compose exec ollama ollama pull qwen2.5:1.5b`, the same for `mxbai-embed-large`, and `OLLAMA_ENDPOINT=http://ollama:11434` |
 | Anthropic chat | `dotnet user-secrets set AI:Anthropic:ApiKey <key> --project src/SupportDesk.Api`, then `AI__Chat__Provider=Anthropic` | `AI_CHAT_PROVIDER=Anthropic`, `ANTHROPIC_API_KEY=<key>` |
-| OpenAI chat or embeddings | `AI:OpenAI:ApiKey` in user secrets, `AI__Chat__Provider=OpenAI AI__Chat__Model=<model>` | `AI_CHAT_PROVIDER=OpenAI`, `AI_CHAT_MODEL=<model>`, `OPENAI_API_KEY=<key>` |
+| OpenAI chat or embeddings | `AI:OpenAI:ApiKey` in user secrets, `AI__Chat__Provider=OpenAI AI__Chat__Model=<model>` and/or `AI__Embeddings__Provider=OpenAI` | `AI_CHAT_PROVIDER=OpenAI` with `AI_CHAT_MODEL=<model>`, and/or `AI_EMBEDDINGS_PROVIDER=OpenAI`; `OPENAI_API_KEY=<key>` |
 | Voyage embeddings | `AI:Voyage:ApiKey` in user secrets, `AI__Embeddings__Provider=Voyage` | `AI_EMBEDDINGS_PROVIDER=Voyage`, `VOYAGE_API_KEY=<key>` |
 
-Chat and embeddings are chosen separately, so Anthropic chat with local Ollama embeddings works. Changing the embedding model re-embeds the articles at startup. Keys never go in `appsettings.json`; the dev container keeps `ANTHROPIC_API_KEY` out of its environment so Claude Code doesn't pick it up, which is why `dotnet run` uses user secrets. Larger local models need longer timeouts on CPU; the commands are in [CLAUDE.md](CLAUDE.md#commands), and every setting is in [PLAN.md 6.1](PLAN.md#61-providers-and-config).
+Chat and embeddings are chosen separately, so Anthropic chat with local Ollama embeddings works. Startup embeds the articles, so with Ollama embeddings the API stops at startup unless `mxbai-embed-large` is pulled. On a Linux host without Docker Desktop, Ollama listens only on 127.0.0.1, which containers can't reach: start it with `OLLAMA_HOST=0.0.0.0`. Changing the embedding model re-embeds the articles at startup. Keys never go in `appsettings.json`; the dev container keeps `ANTHROPIC_API_KEY` out of its environment so Claude Code doesn't pick it up, which is why `dotnet run` uses user secrets. Larger local models need longer timeouts on CPU; the commands are in [CLAUDE.md](CLAUDE.md#commands), and every setting is in [PLAN.md 6.1](PLAN.md#61-providers-and-config).
 
 ## Design notes
 
@@ -91,7 +91,7 @@ An HTTP resilience handler only sees requests and responses. A streamed reply ca
 
 ### Proposals, not actions
 
-The model gets two tools: `lookup_order_status`, which only reads, and `propose_follow_up_task`, which saves a *proposal*. The task itself is created only by `POST /api/follow-ups/{id}/confirm`, a normal endpoint the person calls by pressing Confirm; it's idempotent and proposals expire after 24 hours. Microsoft.Extensions.AI's function approval was considered and not used: it needs the conversation stored between requests and another model call to continue ([PLAN.md 10](PLAN.md#10-tools)). When the ticket text has injection signals (a fake assistant turn, a tool name, "ignore previous instructions"), the run doesn't offer the proposal tool at all, and classification holds the ticket for a person instead of calling the model.
+The model gets two tools: `lookup_order_status`, which only reads, and `propose_follow_up_task`, which saves a *proposal*. The task itself is created only by `POST /api/follow-ups/{id}/confirm`, a normal endpoint the person calls by pressing Confirm; it's idempotent and proposals expire after 24 hours. Microsoft.Extensions.AI's function approval was considered and not used: it needs the conversation stored between requests and another model call to continue ([PLAN.md 10](PLAN.md#10-tools)). When the ticket text has injection signals (a fake assistant turn, a tool name, "ignore previous instructions"), the run doesn't offer the proposal tool at all. The stronger signals (all but a role turn such as `Assistant:`, which pasted device details trip too) also make classification hold the ticket for a person instead of calling the model.
 
 ### Token budget
 
@@ -116,7 +116,7 @@ CI runs everything but the evaluation on every push (`dotnet test --filter "Cate
 
 - **SonarQube Cloud** checks every pull request with the default "Sonar way" quality gate on new code (ratings A, every security hotspot reviewed, coverage at least 80%, duplication at most 3%) and the "Sonar way comprehensive" quality profile; the gate is a required check. On 2026-11-03 the [project](https://sonarcloud.io/project/overview?id=victor-v-shevchenko_SupportDesk-AI) showed, for `main` at `0331b02` (the last fix before step 12): the gate passing, 93.1% coverage, 0.0% duplication, no bugs, vulnerabilities or security hotspots, and 9 code smells, all fixed in step 12. The badges above show the live values. Locally the Angular unit tests cover 98.2% of lines
 - **In the build:** .NET analyzers at `latest-recommended` with warnings as errors, ESLint for the Angular app, and `gitleaks` over the whole git history. SonarQube for IDE runs in connected mode in the dev container, so the same rules show before a push
-- **Rules turned off:** none. The step 3b review of every issue SonarQube Cloud had raised found each one a real finding, so `sonar/SonarQube.Analysis.xml` has no rule exclusions; it only leaves generated code, seed data and build output out of analysis ([PLAN.md 11](PLAN.md#11-testing))
+- **Rules turned off:** none. The step 3b review of every issue SonarQube Cloud had raised found each one a real finding, so `sonar/SonarQube.Analysis.xml` has no rule exclusions; it only leaves migrations, seed data, test fixtures and build output out of analysis ([PLAN.md 11](PLAN.md#11-testing))
 
 ## Built with Claude Code
 
@@ -145,7 +145,7 @@ The main session (Opus 5.5) wrote the specs with the user, ran the checks and br
 
 ## Evaluation results
 
-The evaluation runs classification and a reply for each of 36 golden tickets, written for the evaluation and not taken from the seed data: 27 ordinary ones (5 that no article covers) and 9 prompt-injection cases, two of them held out so they trip none of the guard's patterns. Only the chat model is real; retrieval uses committed embeddings, so every model sees the same sources. Latest run per model, all on 2026-11-03 with `classify.v2` and `reply.v4`:
+The evaluation runs classification and a reply for each of 36 golden tickets, written for the evaluation and not taken from the seed data: 27 ordinary ones (5 that no article covers) and 9 prompt-injection cases, two of them held out so they trip none of the guard's patterns. Only the chat model is real; retrieval uses committed embeddings, so every model sees the same sources. Latest run per model, all on 2026-11-03 with `classify.v2` and `reply.v4` (reports: [Opus 5.5](docs/eval/2026-11-03-claude-opus-5-5.md), [qwen2.5:7b](docs/eval/2026-11-03-qwen2.5-7b.md), [qwen3:8b](docs/eval/2026-11-03-qwen3-8b-thinking-off.md), with thinking off for classification and summaries as the code now does by default, and [llama3.1:8b](docs/eval/2026-11-03-llama3.1-8b.md)):
 
 | | Opus 5.5 | qwen2.5:7b | qwen3:8b | llama3.1:8b |
 | --- | --- | --- | --- | --- |
@@ -165,9 +165,9 @@ Thresholds are 80% category accuracy and 70% citation recall for Claude models, 
 
 ## Bugs found and fixed
 
-[docs/ai-log.md](docs/ai-log.md) records every real bug found after the code was written: 41 in all, each with the test that now covers it.
+[docs/ai-log.md](docs/ai-log.md) records every real bug found after the code was written: 44 in all, each with what was done about it and, where one could be written, the test that now covers it.
 
-- **By the review subagent (24):** mostly bugs that span components. Two API instances starting together crashed on the migration; a stray cancellation could stop the API through the proposal expiry check; a slow caller could time out a stream after its first item; one model answer could make any number of tool calls; a failed `orders.json` load broke every lookup until restart; the cost readout miscounted replies with several model calls. The step 12 whole-project review read the whole repository at once and found nine more that only show across steps: embedding calls with no timeout, so a stalled embedding server hung a reply; a refused stream that lost its real token count; ticket-page state that followed you to the next ticket; the evaluation dropping a failed ticket's cost; and the usage writer's shutdown log under-counting the rows it lost
+- **By the review subagent (27):** mostly bugs that span components. Two API instances starting together crashed on the migration; a stray cancellation could stop the API through the proposal expiry check; a slow caller could time out a stream after its first item; one model answer could make any number of tool calls; a failed `orders.json` load broke every lookup until restart; the cost readout miscounted replies with several model calls. The step 12 whole-project review (four reviewers over the repository in slices) and the reviews of its fixes found twelve more, most of them only visible across steps: embedding calls with no timeout, so a stalled embedding server hung a reply; a refused stream that lost its real token count; ticket-page state that followed you to the next ticket; the evaluation dropping a failed ticket's cost; the usage writer's shutdown log under-counting the rows it lost; and a Docker Compose path that couldn't set a model or keep citations with the fake model, and whose web image couldn't write its cache
 - **By tests (15):** the token estimate was below Anthropic's real count (found by the opt-in token-count check, which led to ÷ 3 instead of ÷ 4); ticket text could fake the sources block (adversarial tests); a fake assistant turn in a ticket got a proposal, and an injected ticket got the category it asked for (both found by the evaluation, which led to the injection guard); a thinking model used up the classification budget before answering; and several timing tests that failed only on a busy machine, which led to a fake clock that moves only while the code waits on a timer
 - **By browser checks (2):** the search page's result-count select showed 3 while searches sent 5, and the ticket page's action buttons had different sizes
 - **By the user:** none of the logged bugs; the user's corrections went into the specs, PLAN.md and CLAUDE.md instead
