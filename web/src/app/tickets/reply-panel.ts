@@ -38,7 +38,7 @@ export const replyErrorMessages = errorMessages;
           @for (call of toolCalls(); track toolCallKey($index, call)) {
             @if (call.name === 'lookup_order_status') {
               <app-order-status-card [orderNumber]="call.arguments.orderNumber" [result]="call.result" />
-            } @else {
+            } @else if (call.name === 'propose_follow_up_task') {
               <app-proposal-card [proposal]="call.proposal" [status]="call.proposal.status" (confirmed)="followUpsChanged.emit()" />
             }
           }
@@ -122,14 +122,15 @@ export class ReplyPanel {
   readonly ticketId = input.required<number>();
   /** A reply proposed a follow-up, or one was confirmed here, so the page's follow-ups list is out of date. */
   readonly followUpsChanged = output<void>();
-  /** A reply ended (finished, failed or stopped), so the model calls it made are saved or about to be. */
-  /** The run ended; the value is how many model calls it made (the `usage` event says; 1 when the run ended before it). */
+  /** A run ended (finished, failed, stopped or replaced by a second Suggest); the value is how many model calls it made (the `usage` event says; 1 when it ended before it). */
   readonly runEnded = output<number>();
 
   private readonly replies = inject(RepliesService);
   private controller: AbortController | undefined;
   /** How many model calls the current run made: the `usage` event says, and 1 until it does. */
   private calls = 1;
+  /** Whether the current run has told the page it ended, so each run does it once. */
+  private runEndedEmitted = true;
 
   protected readonly status = signal<ReplyStatus>('idle');
   protected readonly text = signal('');
@@ -148,6 +149,9 @@ export class ReplyPanel {
 
   /** Starts a reply, aborting the one in progress first. */
   async suggest(): Promise<void> {
+    // The replaced run still writes its rows (a Cancelled one), so it counts as ended
+    this.endRun();
+
     this.controller?.abort();
     const controller = new AbortController();
     this.controller = controller;
@@ -158,6 +162,7 @@ export class ReplyPanel {
     this.usage.set(undefined);
     this.errorMessage.set('');
     this.calls = 1;
+    this.runEndedEmitted = false;
 
     try {
       for await (const event of this.replies.stream(this.ticketId(), controller.signal)) {
@@ -195,7 +200,7 @@ export class ReplyPanel {
     }
 
     if (controller === this.controller && !controller.signal.aborted) {
-      this.runEnded.emit(this.calls);
+      this.endRun();
     }
   }
 
@@ -204,7 +209,7 @@ export class ReplyPanel {
     if (this.status() === 'streaming') {
       this.controller?.abort();
       this.status.set('stopped');
-      this.runEnded.emit(this.calls);
+      this.endRun();
     }
   }
 
@@ -222,8 +227,16 @@ export class ReplyPanel {
           : [...calls, call],
       );
       this.followUpsChanged.emit();
-    } else {
+    } else if (call.name === 'lookup_order_status') {
       this.toolCalls.update((calls) => [...calls, call]);
+    }
+    // Any other name is from a newer server than this page knows: there is nothing to show
+  }
+
+  private endRun(): void {
+    if (!this.runEndedEmitted) {
+      this.runEndedEmitted = true;
+      this.runEnded.emit(this.calls);
     }
   }
 

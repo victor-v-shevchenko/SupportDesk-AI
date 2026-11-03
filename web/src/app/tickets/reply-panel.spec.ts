@@ -246,6 +246,33 @@ describe('ReplyPanel', () => {
     expect(el.querySelector('.tool-calls')).toBeNull();
   });
 
+  it('ignores a tool call it does not know instead of rendering it as a proposal', async () => {
+    const fixture = create();
+    click(fixture.nativeElement, '.suggest');
+    streams[0].push({ type: 'tool_call', name: 'delete_everything', arguments: {} } as unknown as ReplyEvent, { type: 'token', text: 'Hello' });
+    const el = await settle(fixture);
+
+    expect(el.querySelector('.tool-calls')).toBeNull();
+    expect(el.querySelector('.reply-text')?.textContent).toBe('Hello');
+  });
+
+  it('emits runEnded for a streaming run that a second Suggest replaces', async () => {
+    const fixture = create();
+    const ended: number[] = [];
+    fixture.componentInstance.runEnded.subscribe((calls) => ended.push(calls));
+    click(fixture.nativeElement, '.suggest');
+    streams[0].push({ type: 'token', text: 'Hi' });
+    const el = await settle(fixture);
+
+    click(el, '.suggest');
+    await settle(fixture);
+    expect(ended).toEqual([1]);
+
+    streams[1].push({ type: 'usage', inputTokens: 1, outputTokens: 1, costUsd: 0, estimated: false, calls: 2 }, { type: 'done', replyRunId: 'r' });
+    await settle(fixture);
+    expect(ended).toEqual([1, 2]);
+  });
+
   it('marks estimated usage and an unknown cost', async () => {
     const fixture = create();
     click(fixture.nativeElement, '.suggest');
