@@ -1,4 +1,4 @@
-/** One row of `GET /api/model-calls` (PLAN.md 4 and 6.6); only the fields the UI reads. */
+/** One row of `GET /api/model-calls` (PLAN.md 4 and 6.6); a subset of the response: the totals read the token, cost and estimate fields, and `id` and `feature` identify the row. */
 export interface ModelCallRow {
   id: number;
   feature: 'Reply' | 'Summary' | 'Classification';

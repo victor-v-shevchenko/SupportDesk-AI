@@ -9,7 +9,7 @@ export type ReplySegment =
  * The marker forms the server's `CitationParser` reads: `[2]`, `[ 3 ]`, `[1, 2]`, ASCII digits only, at most 9 of them.
  * Keep the two in step.
  */
-const markerPattern = /\[\s*([0-9]{1,9}(?:\s*,\s*[0-9]{1,9})*)\s*\]/g;
+const markerPattern = /\[\s*(\d{1,9}(?:\s*,\s*\d{1,9})*)\s*\]/g;
 
 /**
  * Splits `text` into plain text and citation markers. A number in `citations` becomes a link; one that isn't (it was

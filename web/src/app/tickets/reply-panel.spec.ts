@@ -4,7 +4,8 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { ReplyEvent, ReplyRequestError, ReplyStreamEndedError } from '../api/replies.models';
 import { RepliesService } from '../api/replies.service';
-import { ReplyPanel, replyErrorMessages } from './reply-panel';
+import { errorMessages } from '../api/api-errors';
+import { ReplyPanel } from './reply-panel';
 
 /** One scripted reply request: the test pushes events, and aborting the signal rejects like `fetch` does. */
 class ScriptedStream {
@@ -289,14 +290,14 @@ describe('ReplyPanel', () => {
     expect(el.querySelector('.no-citations')?.textContent).toContain('No sources cited');
   });
 
-  for (const code of Object.keys(replyErrorMessages)) {
+  for (const code of ['model_unavailable', 'budget_exceeded', 'model_refused', 'timeout', 'internal_error']) {
     it(`shows a readable message for ${code}`, async () => {
       const fixture = create();
       click(fixture.nativeElement, '.suggest');
       streams[0].push({ type: 'token', text: 'Partial' }, { type: 'error', code, message: 'server text' });
       const el = await settle(fixture);
 
-      expect(el.querySelector('[role=alert]')?.textContent).toContain(replyErrorMessages[code]);
+      expect(el.querySelector('[role=alert]')?.textContent).toContain(errorMessages[code]);
       expect(el.querySelector('.reply-text')?.textContent).toBe('Partial');
       expect(el.querySelector('.stop')).toBeNull();
     });
