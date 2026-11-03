@@ -95,6 +95,16 @@ public sealed class OllamaSettings
 {
     /// <summary>Set in appsettings.json (Ollama on the host, plain HTTP); required when Ollama is the chat or embedding provider.</summary>
     public Uri? Endpoint { get; set; }
+
+    /// <summary>
+    /// Whether a thinking model may think, per feature (PLAN.md 6.1). <c>false</c> sends <c>"think": false</c>; <c>true</c>
+    /// or a missing feature leaves it to the model. Off for the short answers, whose budget thinking would use up (issue #49).
+    /// </summary>
+    public Dictionary<AiFeature, bool> Think { get; set; } = new()
+    {
+        [AiFeature.Summary] = false,
+        [AiFeature.Classification] = false,
+    };
 }
 
 public sealed class AiTimeoutSettings

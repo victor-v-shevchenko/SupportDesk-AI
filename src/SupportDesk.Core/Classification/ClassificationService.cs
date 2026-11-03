@@ -11,8 +11,8 @@ public interface IClassificationService
 {
     /// <summary>
     /// Classifies the ticket and saves the result, replacing any earlier one; null when there's no such ticket. An answer
-    /// that fails validation twice, and a ticket with injection signals (which never reaches the model), are saved as
-    /// <see cref="ClassificationStatus.NeedsManual"/>. Model errors are thrown
+    /// that fails validation twice, one that stopped at the output limit, and a ticket with injection signals (which never
+    /// reaches the model) are saved as <see cref="ClassificationStatus.NeedsManual"/>. Model errors are thrown
     /// (PLAN.md 6.5) and leave the saved classification as it was.
     /// </summary>
     Task<TicketClassification?> ClassifyAsync(int ticketId, CancellationToken cancellationToken);
@@ -36,6 +36,12 @@ public sealed partial class ClassificationService(
 
     /// <summary>How the reason of a classification held back by the injection guard starts; the evaluation tells it from a model failure by this.</summary>
     public const string InjectionReasonPrefix = "The ticket text has injection signals";
+
+    /// <summary>
+    /// The reason of an answer that stopped at the output limit before it was valid (issue #49): a budget problem, not the
+    /// model's answer, so it isn't retried with the same limit.
+    /// </summary>
+    public const string OutputLimitReason = "The model's answer stopped at the output limit before it was complete, so a person should classify it.";
 
     /// <summary>The reason a held classification carries: the strong signal names, never ticket text; at most <see cref="ClassificationResult.ReasonMaxLength"/> characters.</summary>
     public static string InjectionReason(IEnumerable<string> signals) =>
@@ -70,17 +76,14 @@ public sealed partial class ClassificationService(
         var options = new AiCallContext(AiFeature.Classification, prompt.Version, ticket.Id, ticket.Number).ApplyTo(new ChatOptions());
         var messages = prompt.ToMessages(new Dictionary<string, string> { ["ticket"] = TicketPromptFormatter.Format(ticket) }).ToList();
 
-        var result = await ClassifyAsync(ticket.Id, prompt, messages, options, cancellationToken);
-        var classification = result is null
-            ? new TicketClassification { Status = ClassificationStatus.NeedsManual }
-            : new TicketClassification { Status = ClassificationStatus.Done, Category = result.Category, Priority = result.Priority, Reason = result.Reason };
+        var classification = await ClassifyAsync(ticket.Id, prompt, messages, options, cancellationToken);
         classification.PromptVersion = prompt.Version;
         classification.ClassifiedAt = time.GetUtcNow();
 
         return await tickets.SaveClassificationAsync(ticket.Id, classification, cancellationToken);
     }
 
-    private async Task<ClassificationResult?> ClassifyAsync(
+    private async Task<TicketClassification> ClassifyAsync(
         int ticketId, PromptTemplate prompt, List<ChatMessage> messages, ChatOptions options, CancellationToken cancellationToken)
     {
         for (var attempt = 1; attempt <= MaxAttempts; attempt++)
@@ -89,12 +92,19 @@ public sealed partial class ClassificationService(
             var response = await chat.GetResponseAsync<ClassificationResult>(
                 messages, ClassificationJson.Options, options, useJsonSchemaResponseFormat: true, cancellationToken);
             var validation = ClassificationValidator.Validate(response.Text);
-            if (validation.IsValid)
+            if (validation.Result is { } result)
             {
-                return validation.Result;
+                return new TicketClassification { Status = ClassificationStatus.Done, Category = result.Category, Priority = result.Priority, Reason = result.Reason };
             }
 
             LogRejected(ticketId, attempt, validation.ErrorText, response.Text);
+
+            // A retry with the same limit would stop there again, typically while a thinking model is still thinking
+            if (response.FinishReason == ChatFinishReason.Length)
+            {
+                LogStoppedAtOutputLimit(ticketId, attempt, response.Usage?.OutputTokenCount);
+                return new TicketClassification { Status = ClassificationStatus.NeedsManual, Reason = OutputLimitReason };
+            }
 
             // The rejected answer goes back as the model's turn (an empty one can't be sent), then the error as the next user turn
             if (!string.IsNullOrWhiteSpace(response.Text))
@@ -106,7 +116,7 @@ public sealed partial class ClassificationService(
         }
 
         LogNeedsManual(ticketId, MaxAttempts);
-        return null;
+        return new TicketClassification { Status = ClassificationStatus.NeedsManual };
     }
 
     // The raw output can repeat the ticket, so it's only logged at debug level (CLAUDE.md, LLM rules)
@@ -116,6 +126,9 @@ public sealed partial class ClassificationService(
     // The signal names only: the matched text is ticket text
     [LoggerMessage(Level = LogLevel.Warning, Message = "Ticket {TicketId} isn't classified by the model: the ticket has injection signals ({Signals})")]
     private partial void LogInjectionSignals(int ticketId, string signals);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Classification answer {Attempt} for ticket {TicketId} stopped at the output limit after {OutputTokens} tokens; raise AI:Budget:MaxOutputTokens:Classification or turn the model's thinking off (AI:Ollama:Think)")]
+    private partial void LogStoppedAtOutputLimit(int ticketId, int attempt, long? outputTokens);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Ticket {TicketId} needs manual classification after {Attempts} rejected answers")]
     private partial void LogNeedsManual(int ticketId, int attempts);

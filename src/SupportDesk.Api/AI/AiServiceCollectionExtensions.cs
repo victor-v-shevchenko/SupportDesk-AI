@@ -56,7 +56,8 @@ public static class AiServiceCollectionExtensions
         return options.Chat.Provider switch
         {
             ChatProvider.Fake => new FakeChatClient(FakeScenarioSet.Load(options.Fake.ResolvedScenariosPath), services.GetRequiredService<TimeProvider>()),
-            ChatProvider.Ollama => new OllamaApiClient(CreateHttpClient(options, options.Ollama.Endpoint), model),
+            ChatProvider.Ollama => new OllamaOptionsMiddleware(
+                new OllamaApiClient(CreateHttpClient(options, options.Ollama.Endpoint), model), options.Ollama.Think),
             ChatProvider.Anthropic => new AnthropicOptionsMiddleware(
                 new AnthropicClient(new ClientOptions
                 {

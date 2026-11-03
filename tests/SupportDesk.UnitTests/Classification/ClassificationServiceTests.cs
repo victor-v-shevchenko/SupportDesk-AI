@@ -245,6 +245,41 @@ public class ClassificationServiceTests
     }
 
     [Fact]
+    public async Task An_answer_that_stopped_at_the_output_limit_is_saved_as_NeedsManual_without_a_retry()
+    {
+        var ticket = _tickets.Add("T-1003");
+        var provider = new RecordingChatClient(new ScriptedChatClient(_time, ScriptedChatClient.Steps(
+            ScriptedChatClient.Text("""{"category":"Bil"""),
+            ScriptedChatClient.Usage(400, 200),
+            ScriptedChatClient.Finish(ChatFinishReason.Length))));
+        using var pipeline = TestPipeline.Create(provider, _time);
+        var logs = new LevelLogger();
+
+        var result = await Service(pipeline.Client, logs).ClassifyAsync(ticket.Id, Ct);
+
+        Assert.Single(provider.Calls);
+        Assert.Equal(ClassificationStatus.NeedsManual, result?.Status);
+        Assert.Equal(ClassificationService.OutputLimitReason, result?.Reason);
+        Assert.Null(result?.Category);
+        Assert.Contains(logs.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("stopped at the output limit after 200 tokens", StringComparison.Ordinal));
+        Assert.DoesNotContain(logs.Entries, e => e.Message.Contains("needs manual classification after", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_valid_answer_that_stopped_at_the_output_limit_is_still_saved_as_Done()
+    {
+        var ticket = _tickets.Add("T-1003");
+        var provider = new RecordingChatClient(new ScriptedChatClient(_time, ScriptedChatClient.Steps(
+            ScriptedChatClient.Text(ValidJson), ScriptedChatClient.Finish(ChatFinishReason.Length))));
+        using var pipeline = TestPipeline.Create(provider, _time);
+
+        var result = await Service(pipeline.Client).ClassifyAsync(ticket.Id, Ct);
+
+        Assert.Equal(ClassificationStatus.Done, result?.Status);
+        Assert.Equal(Category.Billing, result?.Category);
+    }
+
+    [Fact]
     public async Task Rejected_raw_output_is_logged_only_at_debug_level()
     {
         var ticket = _tickets.Add("T-1024");

@@ -32,6 +32,10 @@ public class ProviderAdapterTests
         {"id":"msg_1","type":"message","role":"assistant","model":"claude-opus-5-5","content":[{"type":"text","text":"Hello"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":12,"output_tokens":1}}
         """;
 
+    private const string OllamaText = """
+        {"model":"qwen2.5:7b","created_at":"2026-11-01T00:00:00Z","message":{"role":"assistant","content":"Hello"},"done":true,"done_reason":"stop","prompt_eval_count":3,"eval_count":1}
+        """;
+
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private static ChatOptions ReplyOptions => new AiCallContext(AiFeature.Reply, "reply.v1", 2, "T-1002", Guid.NewGuid()).ApplyTo(new ChatOptions());
@@ -230,6 +234,45 @@ public class ProviderAdapterTests
         Assert.Equal([ReplyTools.LookupOrderStatus, ReplyTools.ProposeFollowUpTask], tools.Select(t => t.GetProperty("function").GetProperty("name").GetString()));
         var orderNumber = tools[0].GetProperty("function").GetProperty("parameters").GetProperty("properties").GetProperty("orderNumber");
         Assert.Equal("string", orderNumber.GetProperty("type").GetString());
+    }
+
+    /// <summary>
+    /// Issue #49: Ollama counts thinking against <c>num_predict</c>, so classification and summaries turn it off and the
+    /// reply leaves it to the model. Only <c>"think": false</c> is ever sent, since models without thinking reject <c>true</c>.
+    /// </summary>
+    [Theory]
+    [InlineData(AiFeature.Classification, true)]
+    [InlineData(AiFeature.Summary, true)]
+    [InlineData(AiFeature.Reply, false)]
+    public async Task Ollama_requests_turn_thinking_off_for_the_short_answers(AiFeature feature, bool thinkingOff)
+    {
+        using var handler = new StubHttpHandler(HttpStatusCode.OK, OllamaText, "application/x-ndjson");
+        using var client = Pipeline(new OllamaOptionsMiddleware(Ollama(handler), new AiOptions().Ollama.Think), new OllamaErrorClassifier());
+
+        await client.GetResponseAsync("hi", new AiCallContext(feature, "v1", 2, "T-1002").ApplyTo(new ChatOptions()), Ct);
+
+        var request = JsonDocument.Parse(Assert.Single(handler.Requests)).RootElement;
+        Assert.Equal(thinkingOff, request.TryGetProperty("think", out var think));
+        if (thinkingOff)
+        {
+            Assert.Equal(JsonValueKind.False, think.ValueKind);
+        }
+    }
+
+    /// <summary>What <c>qwen3:8b</c> sent in issue #49: thinking only, cut off by <c>num_predict</c>. The pipeline reports it as a length stop.</summary>
+    [Fact]
+    public async Task An_Ollama_answer_cut_off_while_thinking_comes_back_empty_with_a_length_finish()
+    {
+        using var handler = new StubHttpHandler(HttpStatusCode.OK, """
+            {"model":"qwen3:8b","created_at":"2026-11-03T00:00:00Z","message":{"role":"assistant","content":"","thinking":"Okay, the customer says the order"},"done":true,"done_reason":"length","prompt_eval_count":400,"eval_count":200}
+            """, "application/x-ndjson");
+        using var client = Pipeline(Ollama(handler), new OllamaErrorClassifier());
+
+        var response = await client.GetResponseAsync("hi", new AiCallContext(AiFeature.Classification, "v1", 2, "T-1002").ApplyTo(new ChatOptions()), Ct);
+
+        Assert.Equal(ChatFinishReason.Length, response.FinishReason);
+        Assert.Equal("", response.Text);
+        Assert.Equal(200, response.Usage?.OutputTokenCount);
     }
 
     /// <summary>

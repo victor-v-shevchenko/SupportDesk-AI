@@ -1,10 +1,12 @@
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SupportDesk.Core.AI;
 using SupportDesk.Core.AI.Prompts;
 using SupportDesk.Core.Summaries;
 using SupportDesk.Core.Tickets;
+using SupportDesk.UnitTests.AI;
 
 namespace SupportDesk.UnitTests.Summaries;
 
@@ -82,6 +84,21 @@ public class SummaryServiceTests
     }
 
     [Fact]
+    public async Task Empty_output_that_stopped_at_the_output_limit_is_logged_as_a_budget_stop()
+    {
+        var tickets = new StubTicketRepository(NewTicket());
+        using var logs = new CapturingLoggerProvider();
+        using var factory = new LoggerFactory([logs]);
+        var chat = new StubChatClient(_ => "", ChatFinishReason.Length);
+
+        await Assert.ThrowsAsync<ModelOutputException>(() => Service(chat, tickets, logger: factory.CreateLogger<SummaryService>()).GenerateAsync(2, Ct));
+
+        Assert.Empty(tickets.Saved);
+        var message = Assert.Single(logs.Messages);
+        Assert.Contains("stopped at the output limit", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_model_error_propagates_and_saves_nothing()
     {
         var tickets = new StubTicketRepository(NewTicket());
@@ -104,11 +121,11 @@ public class SummaryServiceTests
 
     private static PromptTemplate Prompt() => PromptStore.Load(PromptsFolder, SummaryService.PromptName, "summary.v2");
 
-    private static SummaryService Service(IChatClient chat, ITicketRepository tickets, int maxOutputTokens = 200)
+    private static SummaryService Service(IChatClient chat, ITicketRepository tickets, int maxOutputTokens = 200, ILogger<SummaryService>? logger = null)
     {
         var options = new AiOptions();
         options.Budget.MaxOutputTokens[AiFeature.Summary] = maxOutputTokens;
-        return new SummaryService(chat, new FixedPromptStore(Prompt()), tickets, Options.Create(options), NullLogger<SummaryService>.Instance);
+        return new SummaryService(chat, new FixedPromptStore(Prompt()), tickets, Options.Create(options), logger ?? NullLogger<SummaryService>.Instance);
     }
 
     private static Ticket NewTicket(string body = "My order was supposed to arrive last week.") => new()
@@ -126,7 +143,7 @@ public class SummaryServiceTests
         public PromptTemplate GetPrompt(string name) => prompt;
     }
 
-    private sealed class StubChatClient(Func<IEnumerable<ChatMessage>, string> answer) : IChatClient
+    private sealed class StubChatClient(Func<IEnumerable<ChatMessage>, string> answer, ChatFinishReason? finishReason = null) : IChatClient
     {
         public int NonStreamingCalls { get; private set; }
 
@@ -136,7 +153,7 @@ public class SummaryServiceTests
         {
             NonStreamingCalls++;
             LastOptions = options;
-            return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, answer(messages))));
+            return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, answer(messages))) { FinishReason = finishReason ?? ChatFinishReason.Stop });
         }
 
         public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
