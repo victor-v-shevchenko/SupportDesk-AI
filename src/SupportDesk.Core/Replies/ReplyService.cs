@@ -22,6 +22,14 @@ public interface IReplyService
     IAsyncEnumerable<ReplyEvent> StreamAsync(Ticket ticket, CancellationToken cancellationToken);
 }
 
+/// <summary>The two settings the reply reads, from <see cref="AiOptions"/> and <see cref="RetrievalOptions"/>.</summary>
+public sealed class ReplySettings(IOptions<AiOptions> aiOptions, IOptions<RetrievalOptions> retrievalOptions)
+{
+    public int ReplyChunks => retrievalOptions.Value.ReplyChunks;
+
+    public int MaxInputTokensPerCall => aiOptions.Value.Budget.MaxInputTokensPerCall;
+}
+
 /// <summary>
 /// A reply grounded in the knowledge base (PLAN.md 6.3, 6.4, 8), streamed through the shared pipeline, with the two tools
 /// of PLAN.md 10. The pipeline's tool loop runs them; this service only offers them and reports the calls that ran.
@@ -32,12 +40,9 @@ public sealed partial class ReplyService(
     ReplyToolFactory toolFactory,
     IPromptStore prompts,
     PriceTable prices,
-    IOptions<AiOptions> aiOptions,
-    IOptions<RetrievalOptions> retrievalOptions,
+    ReplySettings settings,
     ILogger<ReplyService> logger) : IReplyService
 {
-    public const string PromptName = "reply";
-
     public IAsyncEnumerable<ReplyEvent> StreamAsync(Ticket ticket, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(ticket);
@@ -105,7 +110,7 @@ public sealed partial class ReplyService(
 
     private async IAsyncEnumerable<ReplyEvent> RunAsync(Ticket ticket, Guid replyRunId, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var template = prompts.GetPrompt(PromptName);
+        var template = prompts.GetPrompt(PromptNames.Reply);
         var tools = toolFactory.Create(ticket, replyRunId);
         if (tools.InjectionSignals.Count > 0)
         {
@@ -116,8 +121,8 @@ public sealed partial class ReplyService(
         var options = new AiCallContext(AiFeature.Reply, template.Version, ticket.Id, ticket.Number, replyRunId)
             .ApplyTo(new ChatOptions { Tools = [.. tools.Tools] });
 
-        var chunks = await retrieval.SearchAsync(ReplyPromptBuilder.BuildQuery(ticket), retrievalOptions.Value.ReplyChunks, cancellationToken);
-        var prompt = ReplyPromptBuilder.Build(template, ticket, chunks, options, aiOptions.Value.Budget.MaxInputTokensPerCall);
+        var chunks = await retrieval.SearchAsync(ReplyPromptBuilder.BuildQuery(ticket), settings.ReplyChunks, cancellationToken);
+        var prompt = ReplyPromptBuilder.Build(template, ticket, chunks, options, settings.MaxInputTokensPerCall);
         if (prompt.Dropped > 0)
         {
             LogDropped(replyRunId, ticket.Id, prompt.Dropped, prompt.Sources.Count);

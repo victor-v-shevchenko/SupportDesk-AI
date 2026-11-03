@@ -56,8 +56,7 @@ internal sealed class ReplyRig : IDisposable
             new ReplyToolFactory(orders, followUps),
             new PromptStore(settings),
             new PriceTable(settings, NullLogger<PriceTable>.Instance),
-            settings,
-            Options.Create(new RetrievalOptions { ReplyChunks = 10 }),
+            new ReplySettings(settings, Options.Create(new RetrievalOptions { ReplyChunks = 10 })),
             _loggerFactory.CreateLogger<ReplyService>());
     }
 

@@ -477,8 +477,7 @@ public sealed class ReplyServiceTests : IDisposable
             tools ?? new ReplyToolFactory(new StubOrders(), new RecordingFollowUps()),
             new PromptStore(options),
             new PriceTable(options, NullLogger<PriceTable>.Instance),
-            options,
-            Options.Create(new RetrievalOptions()),
+            new ReplySettings(options, Options.Create(new RetrievalOptions())),
             _loggerFactory.CreateLogger<ReplyService>());
     }
 

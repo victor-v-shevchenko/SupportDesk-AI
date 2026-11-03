@@ -11,6 +11,7 @@ public static class ReplyServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddSupportDeskReplies(this IServiceCollection services)
     {
+        services.AddScoped<ReplySettings>();
         services.AddScoped<IReplyService, ReplyService>();
         services.AddScoped<ReplyToolFactory>();
         services.AddSingleton<ProposalExpiryService>();
