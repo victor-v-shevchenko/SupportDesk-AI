@@ -294,7 +294,7 @@ Entry format (from CLAUDE.md):
 - Test: `GuardedTicketRunTests.A_ticket_that_fails_after_it_was_created_keeps_its_ID_so_its_cost_is_counted` and `GuardedTicketRunTests.A_failure_while_running_a_ticket_is_recorded_as_a_failed_ticket_not_a_stopped_run` (its `IOException` case)
 
 ## 2026-11-03 — ModelCallWriter logged only the batch in flight when its shutdown drain ran out of time
-- Step: 6b (found in the issue #55 review)
+- Step: 3b (found in the step 12 review of #55)
 - Found by: review subagent
 - What was wrong: when the 5-second drain deadline cut a save short, the writer logged only that batch's row count; rows still queued behind it were lost unlogged, and if the deadline passed between batches the loop ended with no log at all.
 - Fix: while draining, the cancelled-save log counts the batch plus what is left in the queue, and a drain that ends with rows queued logs how many were dropped (branch `fix/test-gaps`).
