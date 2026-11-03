@@ -57,21 +57,25 @@ public static class EvalMetricsCalculator
     /// <summary>
     /// Wordings a reply uses to say the sources don't cover the question, matched after contractions are written out
     /// (<see cref="Expand"/>: <c>don't</c> becomes <c>do not</c>), so models that write contractions and models that don't are
-    /// measured alike. A wording counts when it has the articles or sources as its subject ("our articles do not include…",
-    /// "none of our help articles cover…"), says something is not covered, mentioned, included, addressed, specified or listed
-    /// "in" the articles, or says there is no (or not any) information or that the model could not find or confirm it. A bare
+    /// measured alike. A wording counts when it has the articles or sources as its subject, with no comma, semicolon or
+    /// we/you/I/they between the two ("our articles do not include…", "none of our help articles cover…", "nothing in our
+    /// articles mentions…"), says something is not covered, mentioned, included, addressed, specified or listed "in" the
+    /// articles, or says there is no (or not any) information, that the model did not see anything about it, or that it could
+    /// not find or confirm it. A bare
     /// negation ("we do not provide tent rentals", "this is not available", "not covered under our warranty article") doesn't
     /// count, since it can state a policy. An approximation: a reply can say so in other words (a miss), or use one while
     /// still answering (a false hit).
     /// </summary>
     public static IReadOnlyList<Regex> NotCoveredPatterns { get; } =
     [
-        Pattern(@"\b" + SourceWord + @"\b[^.!?\n]{0,40}\b(do|does|did) not (cover|address|include|mention|say|provide|contain|list|specify|have)\b"),
+        Pattern(@"\b" + SourceWord + @"\b(?:(?!\b(?:we|you|i|they)\b)[^.!?\n,;]){0,40}\b(do|does|did) not (cover|address|include|mention|say|provide|contain|list|specify|have)\b"),
         Pattern(@"\bnone of (our|the|these|those|my)\b[^.!?\n]{0,30}\b" + SourceWord + @"\b[^.!?\n]{0,20}\b(cover|address|include|mention|say|provide|contain|list|specify|have)\b"),
         Pattern(@"\bnot (covered|mentioned|included|addressed|specified|listed) (in|within) (our|the|these|those|any|my) (provided |help |support )?" + SourceWord + @"\b"),
         Pattern(@"\b(do|does|did) not have (any |specific |enough |that |the |more |further )?(information|details)\b"),
         Pattern(@"\b(have|has|there is|there are) (no|not any) (information|details)\b"),
         Pattern(@"\b(could not|can not|did not|do not|unable to|not able to) (find|locate|confirm)\b"),
+        Pattern(@"\b(do|did) not see anything (about|on|in)\b"),
+        Pattern(@"\bnothing in (our|the)\b[^.!?\n]{0,30}\b" + SourceWord + @"\b[^.!?\n]{0,20}\b(covers?|mentions?|says?)\b"),
         Pattern(@"\bnot something i can\b"),
     ];
 
@@ -217,11 +221,18 @@ public static class EvalMetricsCalculator
     /// and notes to the agent (<c>reply.v3</c> asks for plain text), so a marker is left out only in three narrow cases, each
     /// tested on its own:
     /// <list type="number">
-    /// <item>it comes after a line that opens notes aimed at the agent ("Note to the agent:", "Agent notes:", "For the agent:",
-    /// "Internal note:"); a bare "Note:" doesn't open notes, since customer text can start that way;</item>
-    /// <item>its sentence opens with a label that has a colon or dash after the marker ("Source [9]: …", "Article [9] - …");</item>
-    /// <item>it is the subject of a statement that it isn't a source: right after the marker "is/are/was/does/did not exist" or
-    /// "is not (one of our / a) (provided / valid) source / article", or right before it "no such source" or "not a source".</item>
+    /// <item>it is in a block that a heading opens. A heading is, at the start of a line (after spaces, <c>*#_>-([</c>), one of
+    /// "agent note(s)", "internal note(s)", "note(s) to/for (the) (support/human) agent" or "for the (support/human) agent",
+    /// then optional <c>**</c> and a colon right after. The block runs to the end of the reply, or, when the heading is on the
+    /// first non-empty line, to the next blank line (a preface to a draft). A bare "Note:", "Internal notes show…:" or "For
+    /// the agent who…:" is no heading;</item>
+    /// <item>it is inside a label at the start of its sentence: "source", "article", "reference" or "citation" (plural
+    /// allowed), the marker, then a colon or dash ("Source [9]: …", "Article [9] - …"); other markers in that sentence count;</item>
+    /// <item>it is the subject of a statement that it isn't a source. After the marker: optional which/that/it/this, then
+    /// is/are/was/does/do/did not, then "exist" or an optional one of/a/an/in/among, optional our/the/your, optional
+    /// provided/valid/listed/real and source(s) or article(s) (not followed by "of"); but not when "but", "however",
+    /// "although", "though" or "yet" and it/this/that/they follow, since that restates it. Before the marker: no such, not a/an,
+    /// not one of our or not in our, optional provided/valid/real, then source(s) or article(s), within 5 non-word characters.</item>
     /// </list>
     /// Every other removed marker counts. A note in other words is still counted; a label with a colon on a sentence that
     /// answers the customer ("Source [9]: refunds are available at any time") is not.
@@ -241,23 +252,27 @@ public static class EvalMetricsCalculator
             return ([], []);
         }
 
-        var text = Expand(outcome.ReplyText);
-        var notes = NotesStart.Match(text);
-        var customerText = notes.Success ? text[..notes.Index] : text;
+        var customerText = Expand(outcome.ReplyText);
         var counted = new HashSet<int>();
         var exempted = new HashSet<int>();
-        if (notes.Success)
+        var heading = NotesStart.Match(customerText);
+        if (heading.Success)
         {
-            exempted.UnionWith(CitationParser.Markers(text[notes.Index..]));
+            // A heading on the first non-empty line prefaces a draft: its block ends at the next blank line
+            var end = string.IsNullOrWhiteSpace(customerText[..heading.Index]) && BlankLine.Match(customerText, heading.Index) is { Success: true } blank
+                ? blank.Index
+                : customerText.Length;
+            exempted.UnionWith(CitationParser.Markers(customerText[heading.Index..end]));
+            customerText = customerText[..heading.Index] + customerText[end..];
         }
 
         foreach (var sentence in SentenceSplit.Split(customerText))
         {
-            var label = SourceLabel.IsMatch(sentence);
+            var label = SourceLabel.Match(sentence);
             foreach (var marker in MarkerSpan.Matches(sentence).Cast<Match>())
             {
-                var isNote = label
-                    || SourceDisclaimerAfter.IsMatch(sentence[(marker.Index + marker.Length)..])
+                var isNote = (label.Success && marker.Index < label.Length)
+                    || IsDisclaimedAfter(sentence[(marker.Index + marker.Length)..])
                     || SourceDisclaimerBefore.IsMatch(sentence[..marker.Index]);
                 (isNote ? exempted : counted).UnionWith(CitationParser.Markers(marker.Value));
             }
@@ -266,9 +281,14 @@ public static class EvalMetricsCalculator
         return ([.. counted.Where(removed.Contains).Order()], [.. exempted.Where(n => removed.Contains(n) && !counted.Contains(n)).Order()]);
     }
 
+    private static bool IsDisclaimedAfter(string rest) =>
+        SourceDisclaimerAfter.Match(rest) is { Success: true } disclaimer && !Restates.IsMatch(rest[disclaimer.Length..]);
+
     private static readonly Regex NotesStart = new(
-        @"^[\s*#_>-]*(agent notes?|notes? (to|for) (the )?(human )?agent|for the (human )?agent|internal notes?)\b[^\n]{0,40}:",
+        @"^[ \t*#_>(\[-]*(?:agent notes?|internal notes?|notes? (?:to|for) (?:the )?(?:(?:support|human) )?agent|for the (?:(?:support|human) )?agent)\**[ \t]*:",
         RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+
+    private static readonly Regex BlankLine = new(@"\n[ \t]*\r?\n", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 
     private static readonly Regex SentenceSplit = new(@"(?<=[.!?])\s+|\n+", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 
@@ -281,8 +301,11 @@ public static class EvalMetricsCalculator
 
     private static readonly Regex SourceDisclaimerAfter = new(
         @"^\W{0,3}(?:(?:which|that|it|this)\s+)?(?:is|are|was|does|do|did)\s+not\s+"
-        + @"(?:exist\b|(?:one of |a |an |in |among )?(?:our |the |your )?(?:provided |valid |listed |real )?(?:sources?|articles?)\b)",
+        + @"(?:exist\b|(?:one of |a |an |in |among )?(?:our |the |your )?(?:provided |valid |listed |real )?(?:sources?|articles?)\b(?!\s+of\b))",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+
+    private static readonly Regex Restates = new(
+        @"\b(?:but|however|although|though|yet),?\s+(?:it|this|that|they)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 
     private static readonly Regex SourceDisclaimerBefore = new(
         @"\b(?:no such|not an?|not one of our|not in our)\s+(?:(?:provided|valid|real)\s+)?(?:sources?|articles?)\W{0,5}$",
