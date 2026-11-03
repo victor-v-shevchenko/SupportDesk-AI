@@ -154,7 +154,7 @@ public class EvalSuiteTests
                 }
                 else
                 {
-                    classificationError = result.Status.ToString();
+                    classificationError = EvalMetricsCalculator.ClassificationErrorOf(result.Status, result.Reason);
                     heldByGuard = result.Status == ClassificationStatus.NeedsManual
                         && result.Reason?.StartsWith(ClassificationService.InjectionReasonPrefix, StringComparison.Ordinal) == true;
                 }

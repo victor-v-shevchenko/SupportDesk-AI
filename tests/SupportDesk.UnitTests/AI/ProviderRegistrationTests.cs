@@ -31,6 +31,7 @@ public class ProviderRegistrationTests
         Assert.NotNull(client.GetService<FunctionInvokingChatClient>());
         Assert.NotNull(client.GetService<ErrorMappingMiddleware>());
         Assert.Equal(provider == "Anthropic", client.GetService<AnthropicOptionsMiddleware>() is not null);
+        Assert.Equal(provider == "Ollama", client.GetService<OllamaOptionsMiddleware>() is not null);
     }
 
     [Fact]

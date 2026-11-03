@@ -13,6 +13,13 @@ Entry format (from CLAUDE.md):
 - Test: <test name that now covers it>
 ```
 
+## 2026-11-03 — A thinking model used up the classification budget before answering
+- Step: 7 (found in step 10)
+- Found by: test (the 2026-11-03 qwen3:8b evaluation run: 32 of 34 tickets unclassified, every Ollama request a 200; issue #49)
+- What was wrong: Ollama counts thinking against `num_predict`, and qwen3:8b thinks for about 350 tokens, so with the 200-token classification budget it stopped before writing any JSON; the empty answer was retried with the same limit and then saved as `NeedsManual`, which looked like the model's failure rather than a budget problem.
+- Fix: `OllamaOptionsMiddleware` sends `"think": false` for classification and summaries (`AI:Ollama:Think`), and an invalid answer that stopped at the output limit is saved as `NeedsManual` with an output-limit reason, without a retry, and logged as a budget stop (branch `fix/ollama-thinking-budget`).
+- Test: `ClassificationServiceTests.An_answer_that_stopped_at_the_output_limit_is_saved_as_NeedsManual_without_a_retry` (failed before the fix: two calls and no reason) and `ProviderAdapterTests.Ollama_requests_turn_thinking_off_for_the_short_answers`
+
 ## 2026-11-03 — Evaluation metrics misread a refusal and two "not covered" wordings
 - Step: 10
 - Found by: test (the 2026-11-03 evaluation, replies read by hand; issue #45)

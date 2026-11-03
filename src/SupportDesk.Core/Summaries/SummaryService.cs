@@ -50,7 +50,16 @@ public sealed partial class SummaryService(
         var text = SummaryOutput.Check(response.Text);
         if (text is null)
         {
-            LogEmptySummary(ticket.Id);
+            // Stopping at the limit with nothing written is a budget problem, typically a thinking model (issue #49)
+            if (response.FinishReason == ChatFinishReason.Length)
+            {
+                LogStoppedAtOutputLimit(ticket.Id, response.Usage?.OutputTokenCount);
+            }
+            else
+            {
+                LogEmptySummary(ticket.Id);
+            }
+
             throw new ModelOutputException("The model returned an empty summary.");
         }
 
@@ -67,4 +76,7 @@ public sealed partial class SummaryService(
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "The summary for ticket {TicketId} was empty; the saved summary is unchanged")]
     private partial void LogEmptySummary(int ticketId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The summary for ticket {TicketId} stopped at the output limit after {OutputTokens} tokens with no text; raise AI:Budget:MaxOutputTokens:Summary or turn the model's thinking off (AI:Ollama:Think). The saved summary is unchanged")]
+    private partial void LogStoppedAtOutputLimit(int ticketId, long? outputTokens);
 }

@@ -104,6 +104,9 @@ internal sealed class ScriptedChatClient(TimeProvider time, params Func<Cancella
             Contents = [new UsageContent(new UsageDetails { InputTokenCount = input, OutputTokenCount = output })],
         });
 
+    public static Func<CancellationToken, Task<ChatResponseUpdate?>> Finish(ChatFinishReason reason) =>
+        _ => Task.FromResult<ChatResponseUpdate?>(new ChatResponseUpdate { FinishReason = reason });
+
     public static Func<CancellationToken, Task<ChatResponseUpdate?>> Fail(int status, double? retryAfterSeconds = null) =>
         _ => throw new FakeProviderException("scripted", (HttpStatusCode)status, retryAfterSeconds is { } s ? TimeSpan.FromSeconds(s) : null);
 
