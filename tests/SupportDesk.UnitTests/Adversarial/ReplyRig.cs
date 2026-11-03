@@ -41,7 +41,7 @@ internal sealed class ReplyRig : IDisposable
 
         void Configure(AiOptions options)
         {
-            options.Prompts["reply"] = "reply.v3";
+            options.Prompts["reply"] = "reply.v4";
             // Backoff stays short, so a retry never needs more than a few steps of the fake clock
             options.Retry.BaseDelayMs = 100;
             options.Retry.MaxDelayMs = 5000;

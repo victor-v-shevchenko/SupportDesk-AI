@@ -1,12 +1,77 @@
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Options;
 using SupportDesk.Core.AI;
+using SupportDesk.Core.AI.Prompts;
 using SupportDesk.Core.Replies;
+using SupportDesk.Core.Replies.Tools;
 using static SupportDesk.UnitTests.Replies.ReplyTestData;
 
 namespace SupportDesk.UnitTests.Replies;
 
 public class ReplyPromptBuilderTests
 {
+    // The version the app is configured with, so a new prompt version is the one checked
+    private static readonly PromptTemplate CurrentReplyTemplate = new PromptStore(Options.Create(new AiOptions
+    {
+        Prompts = new(StringComparer.Ordinal) { ["reply"] = ConfiguredVersion("reply") },
+    })).GetPrompt("reply");
+
+    private static string ConfiguredVersion(string promptName)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "SupportDesk.slnx")))
+        {
+            directory = directory.Parent;
+        }
+
+        var settings = Path.Combine(directory?.FullName ?? throw new InvalidOperationException("SupportDesk.slnx not found above the test folder."), "src", "SupportDesk.Api", "appsettings.json");
+        using var json = System.Text.Json.JsonDocument.Parse(File.ReadAllText(settings));
+        return json.RootElement.GetProperty("AI").GetProperty("Prompts").GetProperty(promptName).GetString()!;
+    }
+
+    private static AIFunction Tool(string name) => AIFunctionFactory.Create(() => "x", name);
+
+    [Fact]
+    public void The_configured_reply_prompt_describes_each_tool_on_exactly_one_line_and_nowhere_else()
+    {
+        // SystemFor removes a withheld tool by its "- <name>:" line, so a prompt that words or wraps it differently would
+        // leave text behind on guarded runs
+        var lines = CurrentReplyTemplate.System.ReplaceLineEndings("\n").Split('\n');
+        foreach (var name in ReplyTools.Names)
+        {
+            var index = Assert.Single(lines.Select((line, i) => (line, i)), x => x.line.StartsWith($"- {name}:", StringComparison.Ordinal)).i;
+            Assert.Single(lines, line => line.Contains(name, StringComparison.Ordinal));
+            // The next line starts a new bullet or section, so nothing about the tool continues onto it
+            var next = index + 1 < lines.Length ? lines[index + 1] : "";
+            Assert.True(next.Length == 0 || next.StartsWith("- ", StringComparison.Ordinal), $"The line after {name}'s continues it: \"{next}\"");
+        }
+    }
+
+    [Fact]
+    public void A_run_that_offers_both_tools_describes_both()
+    {
+        var options = new ChatOptions { Tools = [Tool(ReplyTools.LookupOrderStatus), Tool(ReplyTools.ProposeFollowUpTask)] };
+
+        var prompt = ReplyPromptBuilder.Build(CurrentReplyTemplate, Ticket(), [Chunk("shipping", 0.7)], options, 6000);
+
+        Assert.Equal(CurrentReplyTemplate.System, prompt.Messages[0].Text);
+        Assert.Contains("- propose_follow_up_task:", prompt.Messages[0].Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_guarded_run_leaves_the_proposal_tool_out_of_the_system_prompt()
+    {
+        var options = new ChatOptions { Tools = [Tool(ReplyTools.LookupOrderStatus)] };
+
+        var prompt = ReplyPromptBuilder.Build(CurrentReplyTemplate, Ticket(), [Chunk("shipping", 0.7)], options, 6000);
+
+        var system = prompt.Messages[0].Text;
+        Assert.DoesNotContain("propose_follow_up_task", system, StringComparison.Ordinal);
+        Assert.DoesNotContain("only proposes a task", system, StringComparison.Ordinal);
+        Assert.Contains("- lookup_order_status:", system, StringComparison.Ordinal);
+        Assert.Contains("Call each tool at most once", system, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void The_query_is_the_subject_and_body()
     {

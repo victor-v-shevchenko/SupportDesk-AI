@@ -29,6 +29,9 @@ public sealed class ReplyTools
     public const string LookupOrderStatus = "lookup_order_status";
     public const string ProposeFollowUpTask = "propose_follow_up_task";
 
+    /// <summary>Every reply tool's name: the reply prompt describes each on its own <c>- &lt;name&gt;:</c> line.</summary>
+    public static readonly IReadOnlyList<string> Names = [LookupOrderStatus, ProposeFollowUpTask];
+
     /// <summary>Tool calls one run may run, across both tools and every round (PLAN.md 10); later calls get an error result.</summary>
     public const int MaxCallsPerRun = 5;
 
