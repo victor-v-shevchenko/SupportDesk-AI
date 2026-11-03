@@ -57,17 +57,17 @@ public static class AiServiceCollectionExtensions
         {
             ChatProvider.Fake => new FakeChatClient(FakeScenarioSet.Load(options.Fake.ResolvedScenariosPath), services.GetRequiredService<TimeProvider>()),
             ChatProvider.Ollama => new OllamaOptionsMiddleware(
-                new OllamaApiClient(CreateHttpClient(options, options.Ollama.Endpoint), model), options.Ollama.Think),
+                new OllamaApiClient(CreateHttpClient(services, options, options.Ollama.Endpoint), model), options.Ollama.Think),
             ChatProvider.Anthropic => new AnthropicOptionsMiddleware(
                 new AnthropicClient(new ClientOptions
                 {
                     ApiKey = ProviderKeys.Require(keys.Anthropic, ProviderKeys.AnthropicSetting),
-                    HttpClient = CreateHttpClient(options),
+                    HttpClient = CreateHttpClient(services, options),
                     // Only RetryTimeoutMiddleware retries (PLAN.md 6.2)
                     MaxRetries = 0,
                 }).AsIChatClient(model),
                 options.Anthropic.Effort),
-            ChatProvider.OpenAI => CreateOpenAIClient(options, keys).GetChatClient(model).AsIChatClient(),
+            ChatProvider.OpenAI => CreateOpenAIClient(services, options, keys).GetChatClient(model).AsIChatClient(),
             _ => throw new InvalidOperationException($"AI:Chat:Provider '{options.Chat.Provider}' isn't supported."),
         };
     }
@@ -91,18 +91,18 @@ public static class AiServiceCollectionExtensions
         return embeddings.Provider switch
         {
             EmbeddingProvider.Fake => new FakeEmbeddingGenerator(embeddings.Dimensions),
-            EmbeddingProvider.Ollama => new OllamaApiClient(CreateHttpClient(options, options.Ollama.Endpoint), embeddings.ResolvedModel),
+            EmbeddingProvider.Ollama => new OllamaApiClient(CreateHttpClient(services, options, options.Ollama.Endpoint), embeddings.ResolvedModel),
             EmbeddingProvider.Voyage => new VoyageEmbeddingGenerator(
-                CreateHttpClient(options), ProviderKeys.Require(keys.Voyage, ProviderKeys.VoyageSetting), embeddings.ResolvedModel, embeddings.Dimensions),
-            EmbeddingProvider.OpenAI => CreateOpenAIClient(options, keys).GetEmbeddingClient(embeddings.ResolvedModel).AsIEmbeddingGenerator(embeddings.Dimensions),
+                CreateHttpClient(services, options), ProviderKeys.Require(keys.Voyage, ProviderKeys.VoyageSetting), embeddings.ResolvedModel, embeddings.Dimensions),
+            EmbeddingProvider.OpenAI => CreateOpenAIClient(services, options, keys).GetEmbeddingClient(embeddings.ResolvedModel).AsIEmbeddingGenerator(embeddings.Dimensions),
             _ => throw new InvalidOperationException($"AI:Embeddings:Provider '{embeddings.Provider}' isn't supported."),
         };
     }
 
-    private static OpenAIClient CreateOpenAIClient(AiOptions options, ProviderKeys keys) =>
+    private static OpenAIClient CreateOpenAIClient(IServiceProvider services, AiOptions options, ProviderKeys keys) =>
         new(new ApiKeyCredential(ProviderKeys.Require(keys.OpenAI, ProviderKeys.OpenAISetting)), new OpenAIClientOptions
         {
-            Transport = new HttpClientPipelineTransport(CreateHttpClient(options)),
+            Transport = new HttpClientPipelineTransport(CreateHttpClient(services, options)),
             // Only RetryTimeoutMiddleware retries (PLAN.md 6.2)
             RetryPolicy = new ClientRetryPolicy(maxRetries: 0),
         });
@@ -111,15 +111,34 @@ public static class AiServiceCollectionExtensions
     /// One long-lived client per provider, with only a connect timeout (PLAN.md 6.2): how long a call may take is the
     /// pipeline's decision, since <see cref="HttpClient.Timeout"/> can't tell a slow stream from a stuck one.
     /// </summary>
-    private static HttpClient CreateHttpClient(AiOptions options, Uri? baseAddress = null) =>
-        new(new SocketsHttpHandler
+    private static HttpClient CreateHttpClient(IServiceProvider services, AiOptions options, Uri? baseAddress = null)
+    {
+        var handler = new SocketsHttpHandler
         {
             ConnectTimeout = TimeSpan.FromSeconds(options.Timeouts.ConnectSeconds),
             // Long-lived, so DNS changes are picked up by recycling connections instead
             PooledConnectionLifetime = TimeSpan.FromMinutes(15),
-        })
+        };
+        var hooks = services.GetService<IProviderHttpHooks>();
+        var client = new HttpClient(hooks?.Wrap(handler) ?? handler)
         {
             BaseAddress = baseAddress,
             Timeout = Timeout.InfiniteTimeSpan,
         };
+        hooks?.Created(client, handler);
+        return client;
+    }
+}
+
+/// <summary>
+/// A seam for tests of the composition root: lets them put a stub in place of the network under the clients it builds, and
+/// look at the <see cref="HttpClient"/> and connect settings each one gets. Not registered in the app.
+/// </summary>
+public interface IProviderHttpHooks
+{
+    /// <summary>The handler the client sends through, given the real one with the connect timeout set.</summary>
+    HttpMessageHandler Wrap(SocketsHttpHandler real);
+
+    /// <summary>Called with each client the root builds, and the real handler under it.</summary>
+    void Created(HttpClient client, SocketsHttpHandler real);
 }

@@ -285,3 +285,10 @@ Entry format (from CLAUDE.md):
 - What was wrong: the page cancelled a pending classify in an effect, which runs at the next change detection, so an answer delivered between the id change and that render landed on the new ticket; a cancelled classify also left the list stale although the server may have saved the result.
 - Fix: `classify` remembers the id it was started for and ignores answers once it differs; cancelling a running classify bumps `listStale` (PR #58).
 - Test: `TicketDetailPage` specs `ignores an answer to the old ticket classify that arrives before the page renders the new id`, `cancels a pending classify when the page is destroyed` and `marks the list stale when it cancels a classify that is still running, and not after a finished one` (all three failed with the guard, the destroy hook and the bump removed)
+
+## 2026-11-03 — Evaluation dropped a failed ticket's cost and stopped on a broken reply stream
+- Step: 11 (found in the step 12 whole-project review, issue #55)
+- Found by: review subagent
+- What was wrong: `EvalSuiteTests` added a ticket's ID to the list it reads usage rows by only after the ticket's run returned, so a ticket that failed after it was created (and had already called the model) left its `ModelCalls` rows out of the cost totals. It also caught only `HttpRequestException`, `JsonException`, `InvalidOperationException` and `KeyNotFoundException`, so an `IOException` while reading the reply stream ended the run before the report was written.
+- Fix: the guard moved to `GuardedTicketRun`, which gets the ID as soon as the ticket is created and also treats `IOException` as a failed ticket (branch `fix/test-gaps`).
+- Test: `GuardedTicketRunTests.A_ticket_that_fails_after_it_was_created_keeps_its_ID_so_its_cost_is_counted` and `GuardedTicketRunTests.A_failure_while_running_a_ticket_is_recorded_as_a_failed_ticket_not_a_stopped_run` (its `IOException` case)

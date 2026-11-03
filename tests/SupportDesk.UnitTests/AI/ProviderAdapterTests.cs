@@ -180,6 +180,19 @@ public class ProviderAdapterTests
     }
 
     [Fact]
+    public async Task An_OpenAI_429_with_Retry_After_carries_it_as_RetryAfter()
+    {
+        using var handler = new StubHttpHandler(
+            HttpStatusCode.TooManyRequests, """{"error":{"message":"slow down","type":"rate_limit"}}""", headers: new Dictionary<string, string> { ["Retry-After"] = "7" });
+        using var client = Pipeline(OpenAI(handler), new OpenAIErrorClassifier());
+
+        var error = await Assert.ThrowsAsync<ModelUnavailableException>(() => client.GetResponseAsync("hi", ReplyOptions, Ct));
+
+        Assert.Equal(TimeSpan.FromSeconds(7), error.RetryAfter);
+        Assert.True(error.IsTransient);
+    }
+
+    [Fact]
     public async Task OpenAI_requests_do_not_carry_the_call_context()
     {
         using var handler = new StubHttpHandler(HttpStatusCode.OK, """

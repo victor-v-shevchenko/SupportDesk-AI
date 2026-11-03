@@ -1,0 +1,202 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
+using SupportDesk.Api.AI;
+using SupportDesk.Core.AI;
+using SupportDesk.Core.AI.Usage;
+
+namespace SupportDesk.UnitTests.AI;
+
+/// <summary>The background writer between the usage buffer and the database (PLAN.md 6.6), against a scripted repository.</summary>
+public sealed class ModelCallWriterTests : IDisposable
+{
+    private readonly FakeTimeProvider _time = new();
+    private readonly CapturingLoggerProvider _logs = new();
+    private readonly ScriptedRepository _repository = new();
+    private readonly ModelCallBuffer _buffer = new(Options.Create(new AiOptions()), NullLogger<ModelCallBuffer>.Instance);
+    private readonly ServiceProvider _services;
+    private readonly LoggerFactory _loggers;
+    private readonly ModelCallWriter _writer;
+
+    public ModelCallWriterTests()
+    {
+        _services = new ServiceCollection().AddSingleton<IModelCallRepository>(_repository).BuildServiceProvider();
+        _loggers = new LoggerFactory([_logs]);
+        _writer = new ModelCallWriter(_buffer, _services.GetRequiredService<IServiceScopeFactory>(), _loggers.CreateLogger<ModelCallWriter>(), _time);
+    }
+
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    public void Dispose()
+    {
+        _writer.Dispose();
+        _loggers.Dispose();
+        _services.Dispose();
+        _logs.Dispose();
+    }
+
+    [Fact]
+    public async Task Rows_are_saved_in_batches_of_at_most_100()
+    {
+        Enqueue(250);
+
+        await _writer.StartAsync(Ct);
+        await _repository.WaitForRowsAsync(250);
+        await _writer.StopAsync(Ct);
+
+        Assert.Equal([100, 100, 50], _repository.BatchSizes);
+    }
+
+    [Fact]
+    public async Task A_failed_batch_is_logged_and_the_next_one_still_saves()
+    {
+        _repository.FailNext = true;
+        Enqueue(150);
+
+        await _writer.StartAsync(Ct);
+        await _repository.WaitForRowsAsync(50);
+        await _writer.StopAsync(Ct);
+
+        Assert.Equal([50], _repository.SavedBatchSizes);
+        Assert.Contains(_logs.Messages, m => m.Contains("Couldn't save 100 model call rows", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Stopping_saves_the_rows_still_queued()
+    {
+        _repository.HoldFirstSave = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Enqueue(150);
+        await _writer.StartAsync(Ct);
+        await _repository.FirstSaveStarted;
+
+        var stopping = _writer.StopAsync(Ct);
+        _repository.HoldFirstSave.SetResult();
+        await stopping.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+
+        Assert.Equal(150, _repository.SavedRows);
+        Assert.DoesNotContain(_logs.Messages, m => m.Contains("dropped", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_drain_that_runs_past_its_deadline_logs_how_many_rows_it_lost()
+    {
+        _repository.HoldFirstSave = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _repository.HangSecondSave = true;
+        Enqueue(150);
+        await _writer.StartAsync(Ct);
+        await _repository.FirstSaveStarted;
+
+        var stopping = _writer.StopAsync(Ct);
+        _repository.HoldFirstSave.SetResult();
+        await _repository.SecondSaveStarted;
+        _time.Advance(TimeSpan.FromSeconds(5));
+        await stopping.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+
+        Assert.Contains(_logs.Messages, m => m.Contains("Shutdown interrupted saving 50 model call rows", StringComparison.Ordinal));
+        Assert.Equal(100, _repository.SavedRows);
+    }
+
+    private void Enqueue(int count)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            _buffer.Add(new ModelCall { Feature = AiFeature.Reply, Provider = "fake", Model = "fake", PromptVersion = "reply.v1" });
+        }
+    }
+
+    private sealed class ScriptedRepository : IModelCallRepository
+    {
+        private readonly Lock _gate = new();
+        private readonly List<int> _batches = [];
+        private readonly List<int> _saved = [];
+        private readonly TaskCompletionSource _firstStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _secondStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _calls;
+
+        public bool FailNext { get; set; }
+
+        public TaskCompletionSource? HoldFirstSave { get; set; }
+
+        public bool HangSecondSave { get; set; }
+
+        public Task FirstSaveStarted => _firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+
+        public Task SecondSaveStarted => _secondStarted.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+
+        /// <summary>The size of every batch the writer handed over, whether or not it saved.</summary>
+        public IReadOnlyList<int> BatchSizes
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return [.. _batches];
+                }
+            }
+        }
+
+        public IReadOnlyList<int> SavedBatchSizes
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return [.. _saved];
+                }
+            }
+        }
+
+        public int SavedRows => SavedBatchSizes.Sum();
+
+        public async Task WaitForRowsAsync(int rows)
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            while (SavedRows < rows)
+            {
+                await Task.Delay(10, timeout.Token);
+            }
+        }
+
+        public async Task AddRangeAsync(IReadOnlyList<ModelCall> calls, CancellationToken cancellationToken)
+        {
+            int call;
+            lock (_gate)
+            {
+                call = ++_calls;
+                _batches.Add(calls.Count);
+            }
+
+            if (call == 1)
+            {
+                _firstStarted.TrySetResult();
+                if (FailNext)
+                {
+                    throw new InvalidOperationException("The database is down");
+                }
+
+                if (HoldFirstSave is { } hold)
+                {
+                    await hold.Task;
+                }
+            }
+            else if (call == 2)
+            {
+                _secondStarted.TrySetResult();
+                if (HangSecondSave)
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                }
+            }
+
+            lock (_gate)
+            {
+                _saved.Add(calls.Count);
+            }
+        }
+
+        public Task<IReadOnlyList<ModelCall>> ListAsync(int? ticketId, int limit, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+    }
+}

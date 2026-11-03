@@ -49,18 +49,7 @@ public class EvalSuiteTests
             foreach (var ticket in tickets)
             {
                 var watch = Stopwatch.StartNew();
-                TicketOutcome outcome;
-                try
-                {
-                    (var id, outcome) = await RunAsync(client, ticket, Ct);
-                    ticketIds.Add(id);
-                }
-                catch (Exception exception) when (exception is HttpRequestException or JsonException or InvalidOperationException or KeyNotFoundException)
-                {
-                    // One broken ticket mustn't lose an hour's run: it counts as failed, and the report says so
-                    var error = $"not run ({exception.GetType().Name})";
-                    outcome = new TicketOutcome(ticket, null, null, error, "", [], [], error, 0);
-                }
+                var outcome = await GuardedTicketRun.RunAsync(ticket, ticketIds, (t, created) => RunAsync(client, t, created, Ct));
 
                 outcomes.Add(outcome);
                 TestContext.Current.SendDiagnosticMessage(
@@ -128,16 +117,18 @@ public class EvalSuiteTests
         Assert.True(failures.Count == 0, $"{settings.Model} missed its thresholds (report: {path}):\n" + string.Join('\n', failures));
     }
 
-    private static async Task<(int Id, TicketOutcome Outcome)> RunAsync(HttpClient client, GoldenTicket ticket, CancellationToken cancellationToken)
+    private static async Task<TicketOutcome> RunAsync(HttpClient client, GoldenTicket ticket, Action<int> created, CancellationToken cancellationToken)
     {
-        using var created = await client.PostAsJsonAsync(
+        using var creation = await client.PostAsJsonAsync(
             "/api/tickets", new CreateTicketRequest(ticket.Subject, ticket.Body, ticket.CustomerName, null), EvalApi.Json, cancellationToken);
-        if (created.StatusCode != HttpStatusCode.Created)
+        if (creation.StatusCode != HttpStatusCode.Created)
         {
-            throw new InvalidOperationException($"{ticket.Id} wasn't created: {(int)created.StatusCode}.");
+            throw new InvalidOperationException($"{ticket.Id} wasn't created: {(int)creation.StatusCode}.");
         }
 
-        var id = (await created.Content.ReadFromJsonAsync<TicketDetailResponse>(EvalApi.Json, cancellationToken))!.Id;
+        var id = (await creation.Content.ReadFromJsonAsync<TicketDetailResponse>(EvalApi.Json, cancellationToken))!.Id;
+        // From here on the ticket may have model calls, so a failure below still has its cost counted
+        created(id);
 
         Category? category = null;
         Priority? priority = null;
@@ -188,9 +179,9 @@ public class EvalSuiteTests
         }
 
         var followUps = (await client.GetFromJsonAsync<FollowUpsResponse>($"/api/tickets/{id}/follow-ups", EvalApi.Json, cancellationToken))!;
-        return (id, new TicketOutcome(
+        return new TicketOutcome(
             ticket, category, priority, classificationError, text.ToString(),
-            [.. cited.Distinct(StringComparer.Ordinal)], removed, replyError, followUps.Proposals.Count, heldByGuard));
+            [.. cited.Distinct(StringComparer.Ordinal)], removed, replyError, followUps.Proposals.Count, heldByGuard);
     }
 
     private static async Task<IReadOnlyList<ServerSentEvent>> ReplyAsync(HttpClient client, int ticketId, CancellationToken cancellationToken)

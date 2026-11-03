@@ -14,13 +14,13 @@ internal static class AiTestServices
     /// <summary>What appsettings.json sets for prompts and the Ollama endpoint; everything else uses the code defaults unless a test overrides it.</summary>
     private static readonly Dictionary<string, string?> BaseSettings = new()
     {
-        ["AI:Prompts:reply"] = "reply.v1",
+        ["AI:Prompts:reply"] = "reply.v4",
         ["AI:Prompts:summary"] = "summary.v2",
         ["AI:Prompts:classify"] = "classify.v2",
         ["AI:Ollama:Endpoint"] = "http://ollama.test:11434",
     };
 
-    public static ServiceProvider Build(IReadOnlyDictionary<string, string?> settings, string environment = "Development", ILoggerProvider? logger = null)
+    public static ServiceProvider Build(IReadOnlyDictionary<string, string?> settings, string environment = "Development", ILoggerProvider? logger = null, Action<IServiceCollection>? configure = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(BaseSettings)
@@ -39,6 +39,7 @@ internal static class AiTestServices
             }
         });
         services.AddSupportDeskAi();
+        configure?.Invoke(services);
         return services.BuildServiceProvider();
     }
 

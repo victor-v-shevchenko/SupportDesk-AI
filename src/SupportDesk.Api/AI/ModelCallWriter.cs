@@ -7,7 +7,7 @@ namespace SupportDesk.Api.AI;
 /// that fails to save is logged and dropped, so a database outage can't back up into the pipeline. On shutdown it
 /// saves what's left, for a few seconds at most.
 /// </summary>
-public sealed partial class ModelCallWriter(ModelCallBuffer queue, IServiceScopeFactory scopes, ILogger<ModelCallWriter> logger) : BackgroundService
+public sealed partial class ModelCallWriter(ModelCallBuffer queue, IServiceScopeFactory scopes, ILogger<ModelCallWriter> logger, TimeProvider time) : BackgroundService
 {
     private const int BatchSize = 100;
     private static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(5);
@@ -27,7 +27,7 @@ public sealed partial class ModelCallWriter(ModelCallBuffer queue, IServiceScope
         }
 
         queue.Complete();
-        using var drain = new CancellationTokenSource(DrainTimeout);
+        using var drain = new CancellationTokenSource(DrainTimeout, time);
         while (queue.Reader.Count > 0 && !drain.IsCancellationRequested)
         {
             await SaveBatchAsync(drain.Token);
