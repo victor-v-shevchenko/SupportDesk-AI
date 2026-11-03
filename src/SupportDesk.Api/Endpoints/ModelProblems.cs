@@ -4,7 +4,7 @@ using SupportDesk.Core.AI;
 namespace SupportDesk.Api.Endpoints;
 
 /// <summary>
-/// Problem details for the failures a model call can end with (PLAN.md 6.5). The texts are ours: an exception's message can
+/// Problem details for the failures a model call can end with (PLAN.md 9). The texts are ours: an exception's message can
 /// name limits or come from a provider SDK, so it never reaches the client. <c>code</c> uses the reply stream's error codes (PLAN.md 7).
 /// </summary>
 public static class ModelProblems

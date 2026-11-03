@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-// The API is mocked here so the test runs without a database or a model; step 11 runs the full stack
+// The API is mocked here so the test runs without a database or a model; flows.spec.ts runs the full stack
 const articles = [
   { slug: 'refunds', title: 'Refunds', updatedAt: '2026-10-31T10:00:00Z' },
   { slug: 'shipping-times', title: 'Shipping times and delivery options', updatedAt: '2026-10-31T10:00:00Z' },

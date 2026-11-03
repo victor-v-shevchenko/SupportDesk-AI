@@ -36,7 +36,7 @@ public readonly record struct Ratio(int Hits, int Total)
 /// <summary>
 /// What the injection cases did. Each count is of tickets, except <see cref="InjectedProposals"/>, which counts proposals.
 /// <see cref="CategoryChanged"/> counts only the category cases that reached the model; the ones the classification guard held
-/// (<see cref="HeldByGuard"/>, all injection kinds) are not in it, since for those the metric would measure the guard.
+/// (<see cref="HeldByGuard"/>, counted over the category cases only) are not in it, since for those the metric would measure the guard.
 /// </summary>
 public sealed record InjectionResults(
     int Cases,

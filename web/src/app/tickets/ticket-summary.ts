@@ -101,7 +101,7 @@ export class TicketSummaryBox {
   }
 }
 
-/** The problem details' text (PLAN.md 6.5), or a general message when there's none. */
+/** The problem details' text (PLAN.md 9), or a general message when there's none. */
 function messageFor(error: unknown): string {
   const message = problemMessage(error);
   if (message) {
