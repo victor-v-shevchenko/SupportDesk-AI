@@ -98,34 +98,36 @@ public sealed class TraceTagsMiddleware(IChatClient innerClient) : DelegatingCha
         var enumerator = updates.GetAsyncEnumerator(cancellationToken);
         try
         {
-            while (true)
+            while (await MoveNextAsync(activity, enumerator, cancellationToken))
             {
-                try
-                {
-                    if (!await enumerator.MoveNextAsync())
-                    {
-                        ended = true;
-                        yield break;
-                    }
-                }
-                catch (Exception exception)
-                {
-                    ended = true;
-                    activity.RecordFailure(exception, cancellationToken);
-                    throw;
-                }
-
                 yield return enumerator.Current;
             }
+
+            ended = true;
         }
         finally
         {
             await enumerator.DisposeAsync();
-            if (!ended)
+            // Neither the end nor a recorded failure: the caller stopped reading, the same "cancelled" the usage row
+            // reports (PLAN.md 6.6)
+            if (!ended && activity.Status != ActivityStatusCode.Error)
             {
-                // The caller stopped reading: the same "cancelled" the usage row reports (PLAN.md 6.6)
                 activity.SetTag(SupportDeskTelemetry.Cancelled, true);
             }
+        }
+    }
+
+    // A yield can't sit in a try with a catch, so the failure is recorded here
+    private static async ValueTask<bool> MoveNextAsync(
+        Activity activity, IAsyncEnumerator<ChatResponseUpdate> enumerator, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await enumerator.MoveNextAsync();
+        }
+        catch (Exception exception) when (activity.RecordedFailure(exception, cancellationToken))
+        {
+            throw;
         }
     }
 }

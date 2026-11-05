@@ -93,11 +93,7 @@ public sealed partial class ReplyService(
                 }
 
                 // Both are last, so a caller that stops reading right after one isn't logged as cancelling
-                if (next is ReplyError or ReplyDone)
-                {
-                    finished = true;
-                    activity?.SetTag(SupportDeskTelemetry.Outcome, next is ReplyDone ? "done" : "error");
-                }
+                finished = EndsStream(next, activity);
 
                 yield return next;
                 if (finished)
@@ -116,6 +112,23 @@ public sealed partial class ReplyService(
                 LogCancelled(replyRunId, ticket.Id);
             }
         }
+    }
+
+    /// <summary>Whether <paramref name="next"/> is the last event (done or error), recording the outcome on the span if so.</summary>
+    private static bool EndsStream(ReplyEvent next, Activity? activity)
+    {
+        var outcome = next switch
+        {
+            ReplyDone => "done",
+            ReplyError => "error",
+            _ => null,
+        };
+        if (outcome is not null)
+        {
+            activity?.SetTag(SupportDeskTelemetry.Outcome, outcome);
+        }
+
+        return outcome is not null;
     }
 
     private async IAsyncEnumerable<ReplyEvent> RunAsync(Ticket ticket, Guid replyRunId, Activity? activity, [EnumeratorCancellation] CancellationToken cancellationToken)
