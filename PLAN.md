@@ -493,14 +493,15 @@ These come from the current API and must be checked against the SDK version in u
 
 ## 14. Telemetry
 
-Step 13. A request can be followed end to end in a trace; metrics are [step 14](docs/specs/14-metrics.md). Traces carry IDs, counts and codes, never prompt, ticket, reply or tool text. With no collector configured nothing changes.
+Steps 13 and 14. A request can be followed end to end in a trace, and counters ([step 14](docs/specs/14-metrics.md), below) show usage, cost and failures over time. Traces carry IDs, counts and codes; metrics carry counts and codes, never prompt, ticket, reply or tool text. With no collector configured nothing changes.
 
 **Config**
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` (environment) | none | Where to send traces (OTLP over gRPC). Unset or empty means no tracer provider at all: nothing listens to the sources and nothing is exported. Only this variable turns export on; `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` alone doesn't |
-| `OTEL_SERVICE_NAME` (environment) | `supportdesk-api` | Service name on every span |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` (environment) | none | Where to send traces and metrics (OTLP over gRPC). Unset or empty means no tracer or meter provider at all: nothing listens to the sources and meters and nothing is exported. Only this variable turns export on; `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` alone doesn't |
+| `OTEL_SERVICE_NAME` (environment) | `supportdesk-api` | Service name on every span and metric |
+| `OTEL_METRIC_EXPORT_INTERVAL` (environment) | `60000` | Milliseconds between metric exports (the SDK default, not set by the app). Counters reach the dashboard up to a minute after they change; `5000` makes it quick for a local look |
 | `Telemetry:CaptureMessageContent` | `false` | Put prompts, replies, tool arguments and results in the model-call spans. Refused at startup in `Production` (`TelemetryOptionsValidator`), logged at warning level when on |
 
 `Telemetry:CaptureMessageContent` is set explicitly on both Microsoft.Extensions.AI clients. Their own default follows the `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` environment variable, which the library reads once per process; setting the property in code is what keeps that variable from turning capture on. The test projects set the variable for their whole process (`HostileTelemetryEnvironment`), so every pipeline test runs against it.
@@ -529,6 +530,27 @@ Step 13. A request can be followed end to end in a trace; metrics are [step 14](
 - **Errors:** a failed span has status `Error`, its description is the code the client sees (`timeout`, `model_unavailable`, `budget_exceeded`, `model_refused`, `internal_error`), and it has the tags `error.type` (the exception type) and `supportdesk.error_code`. Exception messages are never recorded. A caller's cancellation, or a stream the caller stops reading, leaves status `Unset` and the tag `supportdesk.cancelled`
 - **Streams:** the `reply` span, and so its model-call spans, end when the stream ends: `done`, `error`, or the caller leaving
 - **One `chat` span per `ModelCalls` row**, because both sit at the same place in the pipeline, with one exception: a call the budget guard or request cap refuses (6.4) is an `Error` `chat` span (`budget_exceeded`) and writes no row, since the telemetry client is above those guards and the usage logging below them. Library child spans (Npgsql, `HttpClient`) of a request the caller cancelled can still show `Error`; `SpanSanitizer` only removes their descriptions
+
+**Metrics** (step 14; `SupportDeskMetrics`, `AddSupportDeskMeters`)
+
+- **Wiring:** the meter provider is built beside the tracer provider, only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, with the same OTLP exporter. It listens to the app's meter `SupportDesk`, Microsoft.Extensions.AI's `Experimental.Microsoft.Extensions.AI` (its `gen_ai.client.token.usage` and `gen_ai.client.operation.duration` histograms come from the two `UseOpenTelemetry()` clients) and ASP.NET Core's built-in meters (`http.server.request.duration`, active requests), through `AddAspNetCoreInstrumentation()`. Runtime and Kestrel connection metrics are not added. The export interval is the SDK's 60 seconds (`OTEL_METRIC_EXPORT_INTERVAL`, above)
+- **No static meter:** `SupportDeskMetrics` is a singleton built from `IMeterFactory` (registered by `AddMetrics()`), which creates the instruments once. Tests build their own from a separate factory and read them with `MetricCollector<T>` (`Microsoft.Extensions.Diagnostics.Testing`). Without a listener, adding to a counter does nothing
+- **Recording** happens after the outcome is known, with methods that only add to counters, outside the code that decides retries, errors and the stream's last event. Counters and the `ModelCalls` table can't drift apart because a call is counted from the `ModelCall` row the middleware has just built, before the row goes to the buffer: a row the buffer drops, or a sink that throws, is still a call that happened. No `Record*` method can throw: each add is guarded and a measurement listener that throws is logged at debug level, so recording never changes an outcome
+
+| Instrument | Unit | Tags | Recorded in |
+| --- | --- | --- | --- |
+| `supportdesk.model_calls` | `{call}` | `feature`, `provider`, `model`, `outcome` (`success`, `error`, `cancelled`), `error.type` (errors only: the reply stream's code, 7) | `UsageLoggingMiddleware`: one per `ModelCalls` row, so a retried call is one, and a call the budget or request cap refuses (no row) is none |
+| `supportdesk.model_calls.tokens` | `{token}` | `feature`, `model`, `direction` (`input`, `output`), `estimated` | the same place, from the row's token counts (estimates included, tagged) |
+| `supportdesk.model_calls.cost` | `USD` | `feature`, `model` | the same place, only for rows with a price (`CostUsd` not null) |
+| `supportdesk.model_calls.dropped` | `{row}` | `reason` (`buffer_full`, `shutdown`, `save_failed`, `drain_deadline`) | `ModelCallBuffer` (full, or closed at shutdown) and `ModelCallWriter` (`save_failed`: a batch that failed to save; `shutdown`: a save the stop signal cut short; `drain_deadline`: rows lost while draining, a save cut off by the deadline or rows left behind it), by row count |
+| `supportdesk.replies` | `{reply}` | `outcome` (`done`, an error code, `cancelled`), `guarded` (the ticket had injection signals) | `ReplyService`, when the stream ends; a call refused by the budget has no model call but is a `budget_exceeded` reply |
+| `supportdesk.tool_calls` | `{call}` | `tool`, `result` (`ran`, `invalid_arguments`, `over_limit`) | the reply tools, once the call's result is known |
+| `supportdesk.injection_guard.hits` | `{ticket}` | `scope` (`reply`, `classification`), `signal` (the signal's name, one count per signal found) | `ReplyService` (every signal, 10) and `ClassificationService` (the strong signals that hold the ticket, 9) |
+| `supportdesk.classifications` | `{classification}` | `status` (`done`, `needs_manual`, `held`), `reason` for `needs_manual` (`invalid_output`, `output_limit`) | `ClassificationService`, after the result is saved; a model error saves nothing and isn't counted here |
+| `supportdesk.follow_ups` | `{proposal}` | `event` (`proposed`, `updated`, `confirmed`, `expired`) | the proposal tool (the run's first saved proposal is `proposed`, later calls in the run `updated`; one already confirmed or expired counts neither), `FollowUpRepository.ConfirmAsync` after the commit (`confirmed` only for the confirm that created the task; `expired` when a confirm finds a pending proposal past its expiry) and `ProposalExpiryService` (`expired`, by rows) |
+
+- **Low cardinality:** a tag is a name from a fixed set or comes from configuration (`model`, `provider`); never an ID, reply run ID, ticket number or text. A unit test records the scenarios of the suite and checks every tag key and value against its set (`MetricTagTests`)
+- **Tests:** unit tests per instrument (`ModelCallMetricsTests`, `ReplyServiceTests`, `ClassificationServiceTests`, `ReplyToolsTests`, `ModelCallWriterTests`, `ProposalExpiryServiceTests`, `TelemetryStartupTests`) and an integration test that the summed `tokens` and `cost` equal the sums of the `ModelCalls` rows the requests wrote (`MetricsTests`)
 
 **Viewing locally:** the optional `telemetry` Compose profile runs the .NET Aspire dashboard (image `mcr.microsoft.com/dotnet/aspire-dashboard:9.5.2`; port 18888 for the UI and 18889 for OTLP, both bound to `127.0.0.1`; no login). `docker compose --profile telemetry up -d telemetry`, then `OTEL_EXPORTER_OTLP_ENDPOINT=http://telemetry:18889` for the API (the dev container and the `api` service reach it by name).
 

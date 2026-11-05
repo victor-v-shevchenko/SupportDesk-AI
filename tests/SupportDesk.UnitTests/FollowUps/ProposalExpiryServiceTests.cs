@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
+using SupportDesk.UnitTests.Telemetry;
 using SupportDesk.Api;
 using SupportDesk.Core.FollowUps;
 using SupportDesk.UnitTests.AI;
@@ -19,7 +20,8 @@ public class ProposalExpiryServiceTests
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var repository = new CountingRepository();
         using var services = Services(repository);
-        using var service = new ProposalExpiryService(services.GetRequiredService<IServiceScopeFactory>(), time, NullLogger<ProposalExpiryService>.Instance);
+        using var metrics = new TestMetrics();
+        using var service = new ProposalExpiryService(services.GetRequiredService<IServiceScopeFactory>(), metrics.Metrics, time, NullLogger<ProposalExpiryService>.Instance);
 
         await service.StartAsync(Ct);
         await WaitForAsync(() => repository.Runs == 1);
@@ -44,7 +46,8 @@ public class ProposalExpiryServiceTests
         using var logs = new CapturingLoggerProvider();
         using var loggerFactory = LoggerFactory.Create(builder => builder.AddProvider(logs));
         using var services = Services(repository);
-        using var service = new ProposalExpiryService(services.GetRequiredService<IServiceScopeFactory>(), time, loggerFactory.CreateLogger<ProposalExpiryService>());
+        using var metrics = new TestMetrics();
+        using var service = new ProposalExpiryService(services.GetRequiredService<IServiceScopeFactory>(), metrics.Metrics, time, loggerFactory.CreateLogger<ProposalExpiryService>());
 
         await service.StartAsync(Ct);
         await WaitForAsync(() => repository.Runs == 1);
@@ -62,7 +65,8 @@ public class ProposalExpiryServiceTests
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var repository = new CountingRepository { FirstFailure = new TaskCanceledException("connection pool timeout") };
         using var services = Services(repository);
-        using var service = new ProposalExpiryService(services.GetRequiredService<IServiceScopeFactory>(), time, NullLogger<ProposalExpiryService>.Instance);
+        using var metrics = new TestMetrics();
+        using var service = new ProposalExpiryService(services.GetRequiredService<IServiceScopeFactory>(), metrics.Metrics, time, NullLogger<ProposalExpiryService>.Instance);
 
         await service.StartAsync(Ct);
         await WaitForAsync(() => repository.Runs == 1);
@@ -71,6 +75,32 @@ public class ProposalExpiryServiceTests
         await service.StopAsync(Ct);
 
         Assert.Null(service.ExecuteTask?.Exception);
+    }
+
+    [Fact]
+    public async Task A_run_adds_the_rows_it_expired_to_the_follow_up_counter()
+    {
+        var repository = new CountingRepository { Expired = 7 };
+        using var services = Services(repository);
+        using var metrics = new TestMetrics();
+        using var service = new ProposalExpiryService(services.GetRequiredService<IServiceScopeFactory>(), metrics.Metrics, TimeProvider.System, NullLogger<ProposalExpiryService>.Instance);
+
+        await service.ExpireAsync(Ct);
+
+        Assert.Equal(7, TestMetrics.Sum(metrics.FollowUps, ("event", "expired")));
+    }
+
+    [Fact]
+    public async Task A_failed_run_adds_nothing_to_the_follow_up_counter()
+    {
+        var repository = new CountingRepository { FailFirst = true };
+        using var services = Services(repository);
+        using var metrics = new TestMetrics();
+        using var service = new ProposalExpiryService(services.GetRequiredService<IServiceScopeFactory>(), metrics.Metrics, TimeProvider.System, NullLogger<ProposalExpiryService>.Instance);
+
+        await service.ExpireAsync(Ct);
+
+        Assert.Empty(metrics.FollowUps.GetMeasurementSnapshot());
     }
 
     private static ServiceProvider Services(IFollowUpRepository repository) =>
@@ -94,6 +124,9 @@ public class ProposalExpiryServiceTests
 
         public bool FailFirst { get; init; }
 
+        /// <summary>How many rows each run says it expired.</summary>
+        public int Expired { get; init; } = 1;
+
         public Exception? FirstFailure { get; init; }
 
         public Task<int> ExpireAsync(CancellationToken cancellationToken)
@@ -104,7 +137,7 @@ public class ProposalExpiryServiceTests
                 throw failure;
             }
 
-            return Task.FromResult(1);
+            return Task.FromResult(Expired);
         }
 
         public Task<FollowUpProposal> UpsertProposalAsync(NewProposal proposal, CancellationToken cancellationToken) => throw new NotSupportedException();

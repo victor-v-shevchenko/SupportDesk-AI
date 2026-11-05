@@ -49,9 +49,9 @@ Open http://localhost:4200 (API health: http://localhost:5080/api/health). The f
    ```
 3. In a second terminal: `npm --prefix web start`, then open http://localhost:4200
 
-### Traces (optional)
+### Traces and metrics (optional)
 
-`docker compose --profile telemetry up -d telemetry` starts the .NET Aspire dashboard, and `OTEL_EXPORTER_OTLP_ENDPOINT=http://telemetry:18889` (in `.env` for Docker Compose, or in front of `dotnet run` in the dev container) makes the API send it traces. Open http://localhost:18888 to follow a reply from the HTTP request through retrieval, each model call and tool call, down to the SQL. Without the variable nothing is exported. Traces hold IDs, counts and token usage, not ticket or prompt text. See PLAN.md 14.
+`docker compose --profile telemetry up -d telemetry` starts the .NET Aspire dashboard, and `OTEL_EXPORTER_OTLP_ENDPOINT=http://telemetry:18889` (in `.env` for Docker Compose, or in front of `dotnet run` in the dev container) makes the API send it traces and metrics. Open http://localhost:18888 to follow a reply from the HTTP request through retrieval, each model call and tool call, down to the SQL. The Metrics page shows counters for model calls, tokens and cost by feature and model, errors by code, injection-guard hits, tool calls and follow-up proposals, plus Microsoft.Extensions.AI's token usage and operation duration and ASP.NET Core's request metrics; they export every 60 seconds (`OTEL_METRIC_EXPORT_INTERVAL=5000`, in milliseconds, makes it faster locally). Without the variable nothing is exported. Traces hold IDs, counts, codes and token usage, and metrics hold counts and codes; neither holds ticket or prompt text. See PLAN.md 14.
 
 ### Switching providers
 

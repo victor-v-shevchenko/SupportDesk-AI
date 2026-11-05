@@ -1,12 +1,14 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 using OpenTelemetry;
+using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using SupportDesk.Core.Telemetry;
 
 namespace SupportDesk.Api.Telemetry;
 
-/// <summary>The composition root for tracing (PLAN.md 14).</summary>
+/// <summary>The composition root for tracing and metrics (PLAN.md 14).</summary>
 public static class TelemetryServiceCollectionExtensions
 {
     public const string EndpointVariable = "OTEL_EXPORTER_OTLP_ENDPOINT";
@@ -26,13 +28,17 @@ public static class TelemetryServiceCollectionExtensions
             .ValidateOnStart();
         services.AddSingleton<Microsoft.Extensions.Options.IValidateOptions<TelemetryOptions>, TelemetryOptionsValidator>();
         services.AddHostedService<TelemetryContentWarning>();
+        // The counters exist whether or not anything listens; with no listener adding to one is a no-op
+        services.AddMetrics();
+        services.TryAddSingleton<SupportDeskMetrics>();
 
         if (!string.IsNullOrWhiteSpace(configuration[EndpointVariable]))
         {
             var serviceName = configuration[ServiceNameVariable];
             services.AddOpenTelemetry()
                 .ConfigureResource(resource => resource.AddService(string.IsNullOrWhiteSpace(serviceName) ? DefaultServiceName : serviceName))
-                .WithTracing(tracing => tracing.AddSupportDeskSources().AddOtlpExporter());
+                .WithTracing(tracing => tracing.AddSupportDeskSources().AddOtlpExporter())
+                .WithMetrics(metrics => metrics.AddSupportDeskMeters().AddOtlpExporter());
         }
 
         return services;
@@ -54,6 +60,20 @@ public static class TelemetryServiceCollectionExtensions
             .AddNpgsql()
             // Before any exporter, so every exporter sees the cleaned span
             .AddProcessor<SpanSanitizer>();
+    }
+
+    /// <summary>
+    /// The meters, without an exporter: the app's (<c>SupportDesk</c>), Microsoft.Extensions.AI's (its token usage and operation
+    /// duration histograms) and ASP.NET Core's built-in ones (request duration, active requests). The export interval is the
+    /// SDK's 60 seconds unless <c>OTEL_METRIC_EXPORT_INTERVAL</c> says otherwise.
+    /// </summary>
+    public static MeterProviderBuilder AddSupportDeskMeters(this MeterProviderBuilder metrics)
+    {
+        ArgumentNullException.ThrowIfNull(metrics);
+
+        return metrics
+            .AddMeter(SupportDeskMetrics.MeterName, SupportDeskTelemetry.AiSourceName)
+            .AddAspNetCoreInstrumentation();
     }
 
     private const string HealthPath = "/api/health";

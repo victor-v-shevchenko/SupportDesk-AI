@@ -15,7 +15,7 @@ public static class AiPipeline
 
     /// <summary>
     /// Wraps <paramref name="provider"/>, outermost first. <paramref name="services"/> supplies <see cref="IOptions{AiOptions}"/>,
-    /// <see cref="TimeProvider"/>, <see cref="IModelCallSink"/>, <see cref="PriceTable"/> and logging.
+    /// <see cref="TimeProvider"/>, <see cref="IModelCallSink"/>, <see cref="PriceTable"/>, <see cref="SupportDeskMetrics"/> and logging.
     /// </summary>
     public static IChatClient Build(IChatClient provider, IModelErrorClassifier? errorClassifier, IServiceProvider services)
     {
@@ -39,6 +39,7 @@ public static class AiPipeline
                 inner,
                 services.GetRequiredService<IModelCallSink>(),
                 services.GetRequiredService<PriceTable>(),
+                services.GetRequiredService<SupportDeskMetrics>(),
                 time,
                 services.GetRequiredService<ILogger<UsageLoggingMiddleware>>()))
             .Use(inner => new RetryTimeoutMiddleware(inner, options, time))

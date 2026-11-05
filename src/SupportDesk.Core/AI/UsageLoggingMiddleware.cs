@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using SupportDesk.Core.AI.Usage;
+using SupportDesk.Core.Telemetry;
 
 namespace SupportDesk.Core.AI;
 
@@ -12,7 +13,7 @@ namespace SupportDesk.Core.AI;
 /// Prompt and ticket text are never logged.
 /// </summary>
 public sealed partial class UsageLoggingMiddleware(
-    IChatClient innerClient, IModelCallSink sink, PriceTable prices, TimeProvider timeProvider, ILogger<UsageLoggingMiddleware> logger)
+    IChatClient innerClient, IModelCallSink sink, PriceTable prices, SupportDeskMetrics metrics, TimeProvider timeProvider, ILogger<UsageLoggingMiddleware> logger)
     : DelegatingChatClient(innerClient)
 {
     public override async Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
@@ -86,13 +87,14 @@ public sealed partial class UsageLoggingMiddleware(
     /// <summary>Runs in the call's <c>finally</c>, so it never throws: a row that can't be built is dropped with a warning.</summary>
     private void Write(Call call)
     {
+        ModelCall row;
         try
         {
             var tokens = CallTokens.Resolve(call.Usage, call.Messages, call.Options, call.OutputCharacters);
             var metadata = InnerClient.GetService<ChatClientMetadata>();
             var model = call.Options?.ModelId ?? metadata?.DefaultModelId ?? "unknown";
 
-            var row = new ModelCall
+            row = new ModelCall
             {
                 Timestamp = call.StartedAt,
                 Feature = call.Context.Feature,
@@ -114,7 +116,19 @@ public sealed partial class UsageLoggingMiddleware(
                 // The type and status only: an SDK's message can echo the request, which holds ticket text
                 LogFailed(call.Context.Feature, call.Context.TicketId, error.GetType().Name, (error as ModelUnavailableException)?.StatusCode);
             }
+        }
+        catch (Exception exception)
+        {
+            LogRowFailed(call.Context.Feature, call.Context.TicketId, exception.GetType().Name);
+            return;
+        }
 
+        // The counters and the sink are separate: neither can stop the other, and neither can reach the call. From the row just
+        // built, so the counters and the table can't drift apart; a row the sink loses is still a call that happened.
+        // This runs in the call's finally outside a try: it relies on SupportDeskMetrics never throwing (MetricsCannotChangeOutcomeTests)
+        metrics.RecordModelCall(row, call.Error);
+        try
+        {
             sink.Add(row);
         }
         catch (Exception exception)

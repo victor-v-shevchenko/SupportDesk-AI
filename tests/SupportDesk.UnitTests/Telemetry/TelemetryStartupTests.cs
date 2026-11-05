@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Hosting.Internal;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using SupportDesk.Api.Telemetry;
 using SupportDesk.UnitTests.AI;
@@ -95,5 +96,47 @@ public class TelemetryStartupTests
         using var ai = new System.Diagnostics.ActivitySource("Experimental.Microsoft.Extensions.AI");
         Assert.True(app.HasListeners());
         Assert.True(ai.HasListeners());
+    }
+
+    [Fact]
+    public void Without_an_endpoint_no_meter_provider_exists_so_nothing_is_exported()
+    {
+        using var services = Build([]);
+
+        Assert.Null(services.GetService<MeterProvider>());
+        // The counters still exist, for the code that records to them
+        Assert.NotNull(services.GetRequiredService<SupportDesk.Core.Telemetry.SupportDeskMetrics>());
+    }
+
+    [Fact]
+    public void A_blank_endpoint_has_no_meter_provider_either()
+    {
+        using var services = Build(new() { ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "" });
+
+        Assert.Null(services.GetService<MeterProvider>());
+    }
+
+    [Theory]
+    [InlineData("SupportDesk")]
+    [InlineData("Experimental.Microsoft.Extensions.AI")]
+    [InlineData("Microsoft.AspNetCore.Hosting")]
+    public void With_an_endpoint_the_meter_provider_listens_to_the_apps_the_ai_and_the_aspnet_core_meters(string meterName)
+    {
+        using var services = Build(new() { ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://localhost:4317" });
+
+        using var provider = Assert.IsAssignableFrom<MeterProvider>(services.GetService<MeterProvider>());
+        using var meter = new System.Diagnostics.Metrics.Meter(meterName);
+        var counter = meter.CreateCounter<int>("test");
+        Assert.True(counter.Enabled);
+    }
+
+    [Fact]
+    public void A_meter_nobody_asked_for_is_not_listened_to()
+    {
+        using var services = Build(new() { ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://localhost:4317" });
+
+        using var provider = Assert.IsAssignableFrom<MeterProvider>(services.GetService<MeterProvider>());
+        using var meter = new System.Diagnostics.Metrics.Meter("SomethingElse");
+        Assert.False(meter.CreateCounter<int>("test").Enabled);
     }
 }

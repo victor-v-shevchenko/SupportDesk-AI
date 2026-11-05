@@ -4,18 +4,19 @@ using System.Text.Json.Serialization;
 using Microsoft.Extensions.AI;
 using SupportDesk.Core.FollowUps;
 using SupportDesk.Core.Orders;
+using SupportDesk.Core.Telemetry;
 using SupportDesk.Core.Tickets;
 
 namespace SupportDesk.Core.Replies.Tools;
 
 /// <summary>Creates the tools of one reply run (PLAN.md 10). Scoped, like the repository the proposal tool saves through.</summary>
-public sealed class ReplyToolFactory(IOrderStatusService orders, IFollowUpRepository followUps)
+public sealed class ReplyToolFactory(IOrderStatusService orders, IFollowUpRepository followUps, SupportDeskMetrics metrics)
 {
     public ReplyTools Create(Ticket ticket, Guid replyRunId)
     {
         ArgumentNullException.ThrowIfNull(ticket);
 
-        return new ReplyTools(orders, followUps, ticket.Id, replyRunId, InjectionSignals.Find(ticket));
+        return new ReplyTools(orders, followUps, metrics, ticket.Id, replyRunId, InjectionSignals.Find(ticket));
     }
 }
 
@@ -39,14 +40,17 @@ public sealed class ReplyTools
     private readonly ConcurrentDictionary<string, ReplyToolCall> _events = new(StringComparer.Ordinal);
     private int _calls;
 
-    internal ReplyTools(IOrderStatusService orders, IFollowUpRepository followUps, int ticketId, Guid replyRunId, IReadOnlyList<string> injectionSignals)
+    internal ReplyTools(IOrderStatusService orders, IFollowUpRepository followUps, SupportDeskMetrics metrics, int ticketId, Guid replyRunId, IReadOnlyList<string> injectionSignals)
     {
+        Metrics = metrics;
         InjectionSignals = injectionSignals;
         // A ticket that tries to steer the model gets no proposal tool; the lookup only reads, so it stays
         Tools = injectionSignals.Count > 0
             ? [new LookupOrderStatusFunction(orders, this)]
             : [new LookupOrderStatusFunction(orders, this), new ProposeFollowUpTaskFunction(followUps, ticketId, replyRunId, this)];
     }
+
+    internal SupportDeskMetrics Metrics { get; }
 
     /// <summary>The injection signals found in the ticket (PLAN.md 10); empty for an ordinary ticket.</summary>
     public IReadOnlyList<string> InjectionSignals { get; }
@@ -97,6 +101,7 @@ internal abstract class ReplyFunction(string name, string description, string sc
         ArgumentNullException.ThrowIfNull(arguments);
         if (!owner.TryStartCall())
         {
+            owner.Metrics.RecordToolCall(name, MetricValues.ToolOverLimit);
             return ToolResult.Error([LimitReached]);
         }
 
@@ -108,9 +113,16 @@ internal abstract class ReplyFunction(string name, string description, string sc
             reader.Errors.Add(unknown);
         }
 
-        return reader.Errors.Count > 0 || run is null
-            ? ToolResult.Error(reader.Errors)
-            : ToolResult.Wrap(await run(cancellationToken));
+        if (reader.Errors.Count > 0 || run is null)
+        {
+            owner.Metrics.RecordToolCall(name, MetricValues.ToolInvalidArguments);
+            return ToolResult.Error(reader.Errors);
+        }
+
+        var result = ToolResult.Wrap(await run(cancellationToken));
+        // After the tool ran, so a tool that threw isn't counted as run
+        owner.Metrics.RecordToolCall(name, MetricValues.ToolRan);
+        return result;
     }
 
     /// <summary>Reads and checks the arguments; returns the tool's work, or null when <see cref="ToolArguments.Errors"/> has errors.</summary>
@@ -172,6 +184,9 @@ internal sealed class ProposeFollowUpTaskFunction(IFollowUpRepository followUps,
 {
     public const string AwaitingConfirmation = "awaiting_user_confirmation";
 
+    // The tool is bound to one run, so a second successful call is an update of the run's proposal
+    private int _saved;
+
     protected override Func<CancellationToken, Task<object>>? Prepare(ToolArguments arguments)
     {
         var title = arguments.RequiredString("title", FollowUpProposal.TitleMaxLength);
@@ -181,6 +196,11 @@ internal sealed class ProposeFollowUpTaskFunction(IFollowUpRepository followUps,
         return title is null || arguments.Errors.Count > 0 ? null : async cancellationToken =>
         {
             var proposal = await followUps.UpsertProposalAsync(new NewProposal(ticketId, replyRunId, title, notes, dueInDays), cancellationToken);
+            if (proposal.Status == ProposalStatus.Pending)
+            {
+                Owner.Metrics.RecordFollowUp(Interlocked.Exchange(ref _saved, 1) == 0 ? MetricValues.Proposed : MetricValues.Updated);
+            }
+
             Owner.Record(new ReplyProposal(new ProposalPayload(proposal.Id, proposal.Title, proposal.Notes, proposal.DueDate, proposal.Status)));
             return new ProposalResult(StatusText(proposal.Status), proposal.Id);
         };

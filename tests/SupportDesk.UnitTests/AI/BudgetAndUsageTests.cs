@@ -306,7 +306,8 @@ public class BudgetAndUsageTests
     public void A_full_buffer_drops_the_row_with_a_warning_and_never_waits()
     {
         using var logs = new CapturingLoggerProvider();
-        var buffer = new ModelCallBuffer(Microsoft.Extensions.Options.Options.Create(TestPipeline.Settings(o => o.Usage.QueueCapacity = 1)), new Logger<ModelCallBuffer>(new LoggerFactory([logs])));
+        using var metrics = new SupportDesk.UnitTests.Telemetry.TestMetrics();
+        var buffer = new ModelCallBuffer(Microsoft.Extensions.Options.Options.Create(TestPipeline.Settings(o => o.Usage.QueueCapacity = 1)), metrics.Metrics, new Logger<ModelCallBuffer>(new LoggerFactory([logs])));
 
         buffer.Add(Row());
         buffer.Add(Row());

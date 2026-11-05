@@ -5,7 +5,7 @@ using SupportDesk.Core.Telemetry;
 
 namespace SupportDesk.Data.Repositories;
 
-internal sealed class FollowUpRepository(SupportDeskDbContext db, TimeProvider time) : IFollowUpRepository
+internal sealed class FollowUpRepository(SupportDeskDbContext db, SupportDeskMetrics metrics, TimeProvider time) : IFollowUpRepository
 {
     public async Task<FollowUpProposal> UpsertProposalAsync(NewProposal proposal, CancellationToken cancellationToken)
     {
@@ -76,6 +76,8 @@ internal sealed class FollowUpRepository(SupportDeskDbContext db, TimeProvider t
             var expiredRows = await db.SaveChangesAsync(cancellationToken);
             activity?.SetTag(SupportDeskTelemetry.RowsChanged, expiredRows);
             await transaction.CommitAsync(cancellationToken);
+            // Only when this call changed the status; an already expired proposal was counted then
+            metrics.RecordFollowUp(MetricValues.Expired, expiredRows);
             return new ConfirmResult(ConfirmOutcome.Expired, null);
         }
 
@@ -93,6 +95,8 @@ internal sealed class FollowUpRepository(SupportDeskDbContext db, TimeProvider t
         var rows = await db.SaveChangesAsync(cancellationToken);
         activity?.SetTag(SupportDeskTelemetry.RowsChanged, rows);
         await transaction.CommitAsync(cancellationToken);
+        // Only the confirm that created the task; a repeat returns the existing one above
+        metrics.RecordFollowUp(MetricValues.Confirmed);
         return new ConfirmResult(ConfirmOutcome.Confirmed, task);
     }
 

@@ -43,6 +43,7 @@ public sealed partial class ReplyService(
     IPromptStore prompts,
     PriceTable prices,
     ReplySettings settings,
+    SupportDeskMetrics metrics,
     ILogger<ReplyService> logger) : IReplyService
 {
     public IAsyncEnumerable<ReplyEvent> StreamAsync(Ticket ticket, CancellationToken cancellationToken)
@@ -64,7 +65,8 @@ public sealed partial class ReplyService(
         activity?.SetTag(SupportDeskTelemetry.ReplyRunId, replyRunId.ToString());
 
         var finished = false;
-        await using var events = RunAsync(ticket, replyRunId, activity, cancellationToken).GetAsyncEnumerator(cancellationToken);
+        var run = new RunState();
+        await using var events = RunAsync(ticket, replyRunId, activity, run, cancellationToken).GetAsyncEnumerator(cancellationToken);
         try
         {
             while (true)
@@ -94,6 +96,11 @@ public sealed partial class ReplyService(
 
                 // Both are last, so a caller that stops reading right after one isn't logged as cancelling
                 finished = EndsStream(next, activity);
+                if (finished)
+                {
+                    // The stream's last event is decided; counting it can't change it
+                    metrics.RecordReply(next is ReplyError error ? error.Code : MetricValues.Done, run.Guarded);
+                }
 
                 yield return next;
                 if (finished)
@@ -109,6 +116,7 @@ public sealed partial class ReplyService(
             {
                 activity?.SetTag(SupportDeskTelemetry.Outcome, "cancelled");
                 activity?.SetTag(SupportDeskTelemetry.Cancelled, true);
+                metrics.RecordReply(MetricValues.Cancelled, run.Guarded);
                 LogCancelled(replyRunId, ticket.Id);
             }
         }
@@ -131,13 +139,15 @@ public sealed partial class ReplyService(
         return outcome is not null;
     }
 
-    private async IAsyncEnumerable<ReplyEvent> RunAsync(Ticket ticket, Guid replyRunId, Activity? activity, [EnumeratorCancellation] CancellationToken cancellationToken)
+    private async IAsyncEnumerable<ReplyEvent> RunAsync(Ticket ticket, Guid replyRunId, Activity? activity, RunState run, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var template = prompts.GetPrompt(PromptNames.Reply);
         var tools = toolFactory.Create(ticket, replyRunId);
         activity?.SetTag("supportdesk.injection_guard_limited", tools.InjectionSignals.Count > 0);
         if (tools.InjectionSignals.Count > 0)
         {
+            run.Guarded = true;
+            metrics.RecordGuardHits(MetricValues.ScopeReply, tools.InjectionSignals);
             // Signal names only: the matched text is ticket text
             activity?.SetTag("supportdesk.injection_signals", tools.InjectionSignals.ToArray());
             LogInjectionSignals(replyRunId, ticket.Id, string.Join(", ", tools.InjectionSignals));
@@ -200,6 +210,12 @@ public sealed partial class ReplyService(
         var model = options.ModelId ?? chat.GetService<ChatClientMetadata>()?.DefaultModelId ?? "unknown";
         yield return new ReplyUsage(used.Input, used.Output, prices.Cost(model, used.Input, used.Output), used.IsEstimated, calls);
         yield return new ReplyDone(replyRunId);
+    }
+
+    /// <summary>What the run tells its caller for the reply counter.</summary>
+    private sealed class RunState
+    {
+        public bool Guarded { get; set; }
     }
 
     private ReplyError Fail(Ticket ticket, Guid replyRunId, Exception exception, Activity? activity)

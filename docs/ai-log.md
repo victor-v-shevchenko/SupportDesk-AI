@@ -334,3 +334,17 @@ Entry format (from CLAUDE.md):
 - What was wrong: Npgsql adds an `exception` event with `exception.message` and `exception.stacktrace` to a failed command's span, and `SpanSanitizer` only rewrote the status description. PostgreSQL's message can quote a value (`invalid input syntax for type integer: "<value>"`), so text could reach a trace.
 - Fix: an `ActivityListener` with an `ExceptionRecorder` puts placeholder `exception.message` and `exception.stacktrace` tags in the event before the library's text is added; the span itself is untouched (step 13, e52e4dc; an earlier version replaced the span with a copy in bf9250a).
 - Test: `TracingTests.A_failed_sql_command_keeps_its_span_and_leaves_no_exception_message_or_stack_in_any_span` (integration) and the unit test `A_failed_outgoing_http_call_leaves_no_exception_message_in_its_span`; both fail without the recorder.
+
+## 2026-11-05 — A throwing metrics listener could drop a model call row or fail a confirm
+- Step: 14
+- Found by: review subagent
+- What was wrong: `Counter.Add` calls measurement listeners synchronously, so a listener that threw made `RecordModelCall` throw inside `UsageLoggingMiddleware.Write`'s try (the row was dropped, the counters half updated), and the same call in `FollowUpRepository` after the commit would have turned a committed confirm into a 500.
+- Fix: every counter add in `SupportDeskMetrics` is guarded and logged at debug level, so no `Record*` method throws; the middleware records the counters and writes to the sink in separate steps (step 14, 2d9ae4c).
+- Test: `MetricsCannotChangeOutcomeTests` (row reaches the sink and the result is unchanged, streaming or not; no `Record*` throws) and the integration `MetricsTests.A_confirm_still_succeeds_while_a_measurement_listener_throws`; both fail with the guard removed.
+
+## 2026-11-05 — A classification that matched no row was still counted
+- Step: 14
+- Found by: review subagent
+- What was wrong: `ClassificationService` recorded `classifications` and the guard hits after `SaveClassificationAsync`, even when it returned null because no row matched, so the counters could exceed what was saved.
+- Fix: the counters are recorded only when the save returned a value (step 14, 2d9ae4c).
+- Test: `ClassificationServiceTests.A_classification_that_matched_no_row_is_not_counted` and `A_held_classification_that_matched_no_row_counts_neither_the_hold_nor_the_hits`.
