@@ -388,7 +388,7 @@ Entry format (from CLAUDE.md):
 - Step: 13 (found in the follow-up whole-project review)
 - Found by: review subagent
 - What was wrong: `ProposalExpiryService` marked a run cut short by shutdown as cancelled only when an `OperationCanceledException` was thrown; a driver that threw its own exception while stopping left an `Error` span with `internal_error`.
-- Fix: once shutdown has begun, the span is tagged cancelled whatever was thrown (`RecordedCancellation`; `fix/review-after-telemetry`).
+- Fix: once shutdown has begun, the span is tagged cancelled whatever was thrown (`RecordedCancellation`; `fix/review-after-telemetry`). The exception still leaves `ExecuteAsync`, so the host still logs it as a failed background service; that predates step 13 and is left as it is.
 - Test: `BackgroundSpanTests.A_driver_error_after_shutdown_began_is_tagged_cancelled_and_is_not_an_error`, which fails without the fix.
 
 ## 2026-11-05 — Integration tests failed to start with the OTLP endpoint in the environment
