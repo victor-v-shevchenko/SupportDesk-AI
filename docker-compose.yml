@@ -40,6 +40,8 @@ services:
       AI__Anthropic__ApiKey: "${ANTHROPIC_API_KEY:-}"
       AI__OpenAI__ApiKey: "${OPENAI_API_KEY:-}"
       AI__Voyage__ApiKey: "${VOYAGE_API_KEY:-}"
+      # Empty means no tracing. With the telemetry profile running: http://telemetry:18889 (PLAN.md 14)
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -58,6 +60,19 @@ services:
       - "127.0.0.1:11434:11434"
     volumes:
       - ollama:/root/.ollama
+
+  # Optional: the .NET Aspire dashboard, which takes OTLP traces and shows them. Only starts with the profile:
+  #   docker compose --profile telemetry up -d telemetry
+  # Containers in this project (api, the dev container) send to http://telemetry:18889; open http://localhost:18888.
+  # Both ports are bound to the host's loopback only, and the dashboard runs without a login, so keep it that way
+  telemetry:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:9.5.2
+    profiles: ["telemetry"]
+    environment:
+      DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
+    ports:
+      - "127.0.0.1:18888:18888"
+      - "127.0.0.1:18889:18889"
 
   web:
     build: ./web

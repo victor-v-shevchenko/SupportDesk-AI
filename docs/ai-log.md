@@ -320,3 +320,17 @@ Entry format (from CLAUDE.md):
 - What was wrong: `web/Dockerfile` created `/app` and installed packages as root, then ran `ng serve` as `node`, which writes its cache under `.angular/` in the workspace.
 - Fix: `/app` belongs to `node` before `npm ci`, and every copy uses `--chown=node:node` (step 12 PR).
 - Test: none (image configuration); the step 12 fresh-clone run served the app from the rebuilt image.
+
+## 2026-11-05 — A span tag call skipped the database save when tracing was off
+- Step: 13
+- Found by: test
+- What was wrong: `activity?.SetTag(RowsChanged, await db.SaveChangesAsync(...))` doesn't evaluate its argument when the activity is null, which is every call without a collector, so confirming a proposal never saved anything.
+- Fix: the save is awaited into a variable first, then tagged (step 13).
+- Test: `FollowUpTests.Confirming_creates_the_task_once_and_a_second_confirm_returns_the_same_task` and the other confirm tests, which run with tracing off; they failed before the fix.
+
+## 2026-11-05 — Npgsql's exception event put the SQL error message in a span
+- Step: 13
+- Found by: review subagent
+- What was wrong: Npgsql adds an `exception` event with `exception.message` and `exception.stacktrace` to a failed command's span, and `SpanSanitizer` only rewrote the status description. PostgreSQL's message can quote a value (`invalid input syntax for type integer: "<value>"`), so text could reach a trace.
+- Fix: an `ActivityListener` with an `ExceptionRecorder` puts placeholder `exception.message` and `exception.stacktrace` tags in the event before the library's text is added; the span itself is untouched (step 13, e52e4dc; an earlier version replaced the span with a copy in bf9250a).
+- Test: `TracingTests.A_failed_sql_command_keeps_its_span_and_leaves_no_exception_message_or_stack_in_any_span` (integration) and the unit test `A_failed_outgoing_http_call_leaves_no_exception_message_in_its_span`; both fail without the recorder.

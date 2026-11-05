@@ -1,6 +1,7 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Options;
 using SupportDesk.Core.AI;
+using SupportDesk.Core.Telemetry;
 
 namespace SupportDesk.Core.Retrieval;
 
@@ -22,6 +23,25 @@ public sealed class RetrievalService(
         ArgumentException.ThrowIfNullOrWhiteSpace(query);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(k);
 
+        // The query is ticket text for a reply: its length only
+        using var activity = SupportDeskTelemetry.Source.StartActivity("retrieval");
+        activity?.SetTag("supportdesk.query_length", query.Length);
+        activity?.SetTag("supportdesk.k", k);
+        activity?.SetTag("supportdesk.min_similarity", retrievalOptions.Value.MinSimilarity);
+        try
+        {
+            var kept = await SearchCoreAsync(query, k, cancellationToken);
+            activity?.SetTag("supportdesk.results_kept", kept.Count);
+            return kept;
+        }
+        catch (Exception exception) when (activity.RecordedFailure(exception, cancellationToken))
+        {
+            throw;
+        }
+    }
+
+    private async Task<IReadOnlyList<RetrievedChunk>> SearchCoreAsync(string query, int k, CancellationToken cancellationToken)
+    {
         var embeddings = aiOptions.Value.Embeddings;
         GeneratedEmbeddings<Embedding<float>> generated;
         try

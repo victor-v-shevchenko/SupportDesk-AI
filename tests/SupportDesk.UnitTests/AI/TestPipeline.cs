@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SupportDesk.Core.AI;
 using SupportDesk.Core.AI.Usage;
+using SupportDesk.Core.Telemetry;
 
 namespace SupportDesk.UnitTests.AI;
 
@@ -29,7 +30,8 @@ internal sealed class TestPipeline : IDisposable
         IModelErrorClassifier? classifier = null,
         Action<AiOptions>? configure = null,
         ILoggerProvider? logger = null,
-        IModelCallSink? sink = null)
+        IModelCallSink? sink = null,
+        bool captureMessageContent = false)
     {
         var rows = new RecordingSink();
         var services = new ServiceCollection()
@@ -44,6 +46,7 @@ internal sealed class TestPipeline : IDisposable
             .AddSingleton(sink ?? rows)
             .AddSingleton<PriceTable>()
             .AddSingleton(Options.Create(Settings(configure)))
+            .AddSingleton(Options.Create(new TelemetryOptions { CaptureMessageContent = captureMessageContent }))
             .BuildServiceProvider();
 
         return new TestPipeline(services, AiPipeline.Build(provider, classifier, services), rows);

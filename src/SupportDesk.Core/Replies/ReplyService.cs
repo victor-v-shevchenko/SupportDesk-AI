@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Microsoft.Extensions.AI;
@@ -8,6 +9,7 @@ using SupportDesk.Core.AI.Prompts;
 using SupportDesk.Core.AI.Usage;
 using SupportDesk.Core.Replies.Tools;
 using SupportDesk.Core.Retrieval;
+using SupportDesk.Core.Telemetry;
 using SupportDesk.Core.Tickets;
 
 namespace SupportDesk.Core.Replies;
@@ -56,8 +58,13 @@ public sealed partial class ReplyService(
     /// </summary>
     private async IAsyncEnumerable<ReplyEvent> StreamEventsAsync(Ticket ticket, Guid replyRunId, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        // Ends when the stream does: done, error, or the caller leaving (disposing the enumerator runs the finally below)
+        using var activity = SupportDeskTelemetry.Source.StartActivity("reply");
+        activity?.SetTag(SupportDeskTelemetry.TicketId, ticket.Id);
+        activity?.SetTag(SupportDeskTelemetry.ReplyRunId, replyRunId.ToString());
+
         var finished = false;
-        await using var events = RunAsync(ticket, replyRunId, cancellationToken).GetAsyncEnumerator(cancellationToken);
+        await using var events = RunAsync(ticket, replyRunId, activity, cancellationToken).GetAsyncEnumerator(cancellationToken);
         try
         {
             while (true)
@@ -76,7 +83,7 @@ public sealed partial class ReplyService(
                 // Once the caller has cancelled, whatever the provider throws (it may wrap the cancellation) ends the stream as cancelled
                 catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
                 {
-                    next = Fail(ticket, replyRunId, exception);
+                    next = Fail(ticket, replyRunId, exception, activity);
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
@@ -86,10 +93,7 @@ public sealed partial class ReplyService(
                 }
 
                 // Both are last, so a caller that stops reading right after one isn't logged as cancelling
-                if (next is ReplyError or ReplyDone)
-                {
-                    finished = true;
-                }
+                finished = EndsStream(next, activity);
 
                 yield return next;
                 if (finished)
@@ -103,17 +107,39 @@ public sealed partial class ReplyService(
             // The caller cancelled or stopped reading; the model call's own row says Cancelled too (UsageLoggingMiddleware)
             if (!finished)
             {
+                activity?.SetTag(SupportDeskTelemetry.Outcome, "cancelled");
+                activity?.SetTag(SupportDeskTelemetry.Cancelled, true);
                 LogCancelled(replyRunId, ticket.Id);
             }
         }
     }
 
-    private async IAsyncEnumerable<ReplyEvent> RunAsync(Ticket ticket, Guid replyRunId, [EnumeratorCancellation] CancellationToken cancellationToken)
+    /// <summary>Whether <paramref name="next"/> is the last event (done or error), recording the outcome on the span if so.</summary>
+    private static bool EndsStream(ReplyEvent next, Activity? activity)
+    {
+        var outcome = next switch
+        {
+            ReplyDone => "done",
+            ReplyError => "error",
+            _ => null,
+        };
+        if (outcome is not null)
+        {
+            activity?.SetTag(SupportDeskTelemetry.Outcome, outcome);
+        }
+
+        return outcome is not null;
+    }
+
+    private async IAsyncEnumerable<ReplyEvent> RunAsync(Ticket ticket, Guid replyRunId, Activity? activity, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var template = prompts.GetPrompt(PromptNames.Reply);
         var tools = toolFactory.Create(ticket, replyRunId);
+        activity?.SetTag("supportdesk.injection_guard_limited", tools.InjectionSignals.Count > 0);
         if (tools.InjectionSignals.Count > 0)
         {
+            // Signal names only: the matched text is ticket text
+            activity?.SetTag("supportdesk.injection_signals", tools.InjectionSignals.ToArray());
             LogInjectionSignals(replyRunId, ticket.Id, string.Join(", ", tools.InjectionSignals));
         }
 
@@ -122,7 +148,9 @@ public sealed partial class ReplyService(
             .ApplyTo(new ChatOptions { Tools = [.. tools.Tools] });
 
         var chunks = await retrieval.SearchAsync(ReplyPromptBuilder.BuildQuery(ticket), settings.ReplyChunks, cancellationToken);
+        activity?.SetTag("supportdesk.chunks_retrieved", chunks.Count);
         var prompt = ReplyPromptBuilder.Build(template, ticket, chunks, options, settings.MaxInputTokensPerCall);
+        activity?.SetTag("supportdesk.chunks_kept", prompt.Sources.Count);
         if (prompt.Dropped > 0)
         {
             LogDropped(replyRunId, ticket.Id, prompt.Dropped, prompt.Sources.Count);
@@ -164,6 +192,8 @@ public sealed partial class ReplyService(
             LogRemoved(replyRunId, ticket.Id, string.Join(", ", citations.Removed), prompt.Sources.Count);
         }
 
+        activity?.SetTag("supportdesk.citations", citations.Citations.Count);
+        activity?.SetTag("supportdesk.citations_removed", citations.Removed.Count);
         yield return citations;
 
         var used = tokens.Resolve(prompt.Messages, options);
@@ -172,8 +202,10 @@ public sealed partial class ReplyService(
         yield return new ReplyDone(replyRunId);
     }
 
-    private ReplyError Fail(Ticket ticket, Guid replyRunId, Exception exception)
+    private ReplyError Fail(Ticket ticket, Guid replyRunId, Exception exception, Activity? activity)
     {
+        // Not cancelled: the caller of Fail has checked its token
+        activity.RecordFailure(exception, CancellationToken.None);
         var error = ReplyErrors.From(exception);
         if (error.Code == ReplyErrorCodes.InternalError)
         {

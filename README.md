@@ -49,6 +49,10 @@ Open http://localhost:4200 (API health: http://localhost:5080/api/health). The f
    ```
 3. In a second terminal: `npm --prefix web start`, then open http://localhost:4200
 
+### Traces (optional)
+
+`docker compose --profile telemetry up -d telemetry` starts the .NET Aspire dashboard, and `OTEL_EXPORTER_OTLP_ENDPOINT=http://telemetry:18889` (in `.env` for Docker Compose, or in front of `dotnet run` in the dev container) makes the API send it traces. Open http://localhost:18888 to follow a reply from the HTTP request through retrieval, each model call and tool call, down to the SQL. Without the variable nothing is exported. Traces hold IDs, counts and token usage, not ticket or prompt text. See PLAN.md 14.
+
 ### Switching providers
 
 | Provider | Dev container (`dotnet run`) | Docker Compose (`.env`) |

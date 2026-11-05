@@ -31,7 +31,7 @@ internal sealed class ReplyRig : IDisposable
     private readonly ILoggerFactory _loggerFactory;
     private readonly TestPipeline _pipeline;
 
-    private ReplyRig(TrackedFakeTime time, SpyChatClient spy, IRetrievalService retrieval, StubOrders orders, RecordingFollowUps followUps, Action<AiOptions>? configure)
+    private ReplyRig(TrackedFakeTime time, SpyChatClient spy, IRetrievalService retrieval, StubOrders orders, RecordingFollowUps followUps, Action<AiOptions>? configure, bool captureMessageContent)
     {
         Time = time;
         Spy = spy;
@@ -48,7 +48,7 @@ internal sealed class ReplyRig : IDisposable
             configure?.Invoke(options);
         }
 
-        _pipeline = TestPipeline.Create(spy, time, new FakeErrorClassifier(), Configure);
+        _pipeline = TestPipeline.Create(spy, time, new FakeErrorClassifier(), Configure, captureMessageContent: captureMessageContent);
         var settings = Options.Create(TestPipeline.Settings(Configure));
         Service = new ReplyService(
             _pipeline.Client,
@@ -77,11 +77,11 @@ internal sealed class ReplyRig : IDisposable
 
     /// <summary>Builds a rig whose provider plays <paramref name="turns"/> for <see cref="TicketNumber"/>'s reply.</summary>
     public static ReplyRig Create(
-        string turns, IRetrievalService? retrieval = null, Action<AiOptions>? configure = null, StubOrders? orders = null, RecordingFollowUps? followUps = null, TimeSpan? callbackLatency = null, TrackedFakeTime? time = null)
+        string turns, IRetrievalService? retrieval = null, Action<AiOptions>? configure = null, StubOrders? orders = null, RecordingFollowUps? followUps = null, TimeSpan? callbackLatency = null, TrackedFakeTime? time = null, bool captureMessageContent = false)
     {
         time ??= new TrackedFakeTime(new DateTimeOffset(2026, 11, 1, 9, 0, 0, TimeSpan.Zero), callbackLatency);
         var fake = new FakeChatClient(FakeScenarioSet.Parse(Scenario(turns)), time);
-        return new ReplyRig(time, new SpyChatClient(fake, time), retrieval ?? new StubRetrieval(), orders ?? new StubOrders(), followUps ?? new RecordingFollowUps(), configure);
+        return new ReplyRig(time, new SpyChatClient(fake, time), retrieval ?? new StubRetrieval(), orders ?? new StubOrders(), followUps ?? new RecordingFollowUps(), configure, captureMessageContent);
     }
 
     /// <summary>

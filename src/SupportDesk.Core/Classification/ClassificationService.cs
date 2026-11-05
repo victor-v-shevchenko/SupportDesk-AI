@@ -1,8 +1,10 @@
+using System.Diagnostics;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using SupportDesk.Core.AI;
 using SupportDesk.Core.AI.Prompts;
 using SupportDesk.Core.Replies.Tools;
+using SupportDesk.Core.Telemetry;
 using SupportDesk.Core.Tickets;
 
 namespace SupportDesk.Core.Classification;
@@ -47,6 +49,22 @@ public sealed partial class ClassificationService(
 
     public async Task<TicketClassification?> ClassifyAsync(int ticketId, CancellationToken cancellationToken)
     {
+        using var activity = SupportDeskTelemetry.Source.StartActivity("classification");
+        activity?.SetTag(SupportDeskTelemetry.TicketId, ticketId);
+        try
+        {
+            var saved = await ClassifyCoreAsync(ticketId, activity, cancellationToken);
+            activity?.SetTag(SupportDeskTelemetry.Outcome, saved?.Status.ToString());
+            return saved;
+        }
+        catch (Exception exception) when (activity.RecordedFailure(exception, cancellationToken))
+        {
+            throw;
+        }
+    }
+
+    private async Task<TicketClassification?> ClassifyCoreAsync(int ticketId, Activity? activity, CancellationToken cancellationToken)
+    {
         var ticket = await tickets.FindAsync(ticketId, cancellationToken);
         if (ticket is null)
         {
@@ -61,6 +79,9 @@ public sealed partial class ClassificationService(
         if (signals.Count > 0)
         {
             LogInjectionSignals(ticket.Id, string.Join(", ", signals));
+            // Held without a model call: the strong signal names, never the matched text
+            activity?.SetTag("supportdesk.held", true);
+            activity?.SetTag("supportdesk.injection_signals", signals.ToArray());
             var held = new TicketClassification
             {
                 Status = ClassificationStatus.NeedsManual,

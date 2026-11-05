@@ -1,4 +1,5 @@
 using SupportDesk.Core.FollowUps;
+using SupportDesk.Core.Telemetry;
 
 namespace SupportDesk.Api;
 
@@ -28,18 +29,29 @@ public sealed partial class ProposalExpiryService(IServiceScopeFactory scopes, T
     /// <summary>One run; public so tests can run it without waiting for the timer.</summary>
     public async Task ExpireAsync(CancellationToken cancellationToken)
     {
+        // The timer starts it, so it is a trace of its own
+        using var root = SupportDeskTelemetry.StartRoot("proposal_expiry");
+        var activity = root.Span;
         try
         {
             await using var scope = scopes.CreateAsyncScope();
             var expired = await scope.ServiceProvider.GetRequiredService<IFollowUpRepository>().ExpireAsync(cancellationToken);
+            activity?.SetTag(SupportDeskTelemetry.RowsChanged, expired);
             if (expired > 0)
             {
                 LogExpired(expired);
             }
         }
+        // Shutdown is a cancellation, not an error; the span says so and the exception goes on
+        catch (Exception exception) when (cancellationToken.IsCancellationRequested && activity.RecordedFailure(exception, cancellationToken))
+        {
+            throw;
+        }
+
         // Only shutdown ends the service; any other failure, a cancellation the driver raised included, waits for the next run
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
+            activity.RecordFailure(exception, cancellationToken);
             LogFailed(exception);
         }
     }

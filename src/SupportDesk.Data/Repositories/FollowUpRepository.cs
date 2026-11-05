@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using System.Diagnostics;
 using SupportDesk.Core.FollowUps;
+using SupportDesk.Core.Telemetry;
 
 namespace SupportDesk.Data.Repositories;
 
@@ -31,6 +33,23 @@ internal sealed class FollowUpRepository(SupportDeskDbContext db, TimeProvider t
 
     public async Task<ConfirmResult> ConfirmAsync(Guid proposalId, CancellationToken cancellationToken)
     {
+        using var activity = SupportDeskTelemetry.Source.StartActivity("confirm_follow_up");
+        activity?.SetTag("supportdesk.proposal_id", proposalId.ToString());
+        try
+        {
+            var result = await ConfirmCoreAsync(proposalId, activity, cancellationToken);
+            activity?.SetTag(SupportDeskTelemetry.Outcome, result.Outcome.ToString());
+            return result;
+        }
+        catch (Exception exception) when (activity.RecordedFailure(exception, cancellationToken))
+        {
+            throw;
+        }
+    }
+
+    private async Task<ConfirmResult> ConfirmCoreAsync(Guid proposalId, Activity? activity, CancellationToken cancellationToken)
+    {
+        activity?.SetTag(SupportDeskTelemetry.RowsChanged, 0);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
         // Locks the row until the commit, so two confirms at once take turns and the second finds the first one's task.
@@ -54,7 +73,8 @@ internal sealed class FollowUpRepository(SupportDeskDbContext db, TimeProvider t
         if (proposal.Status == ProposalStatus.Expired || proposal.ExpiresAt <= now)
         {
             proposal.Status = ProposalStatus.Expired;
-            await db.SaveChangesAsync(cancellationToken);
+            var expiredRows = await db.SaveChangesAsync(cancellationToken);
+            activity?.SetTag(SupportDeskTelemetry.RowsChanged, expiredRows);
             await transaction.CommitAsync(cancellationToken);
             return new ConfirmResult(ConfirmOutcome.Expired, null);
         }
@@ -70,7 +90,8 @@ internal sealed class FollowUpRepository(SupportDeskDbContext db, TimeProvider t
         };
         proposal.Status = ProposalStatus.Confirmed;
         db.FollowUpTasks.Add(task);
-        await db.SaveChangesAsync(cancellationToken);
+        var rows = await db.SaveChangesAsync(cancellationToken);
+        activity?.SetTag(SupportDeskTelemetry.RowsChanged, rows);
         await transaction.CommitAsync(cancellationToken);
         return new ConfirmResult(ConfirmOutcome.Confirmed, task);
     }
