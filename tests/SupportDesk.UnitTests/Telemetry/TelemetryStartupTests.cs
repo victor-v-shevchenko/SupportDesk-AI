@@ -152,7 +152,7 @@ public class TelemetryStartupTests
     }
 
     [Fact]
-    public void Log_export_fails_at_startup_when_OpenTelemetry_logging_is_registered_again_after_it()
+    public async Task Log_export_fails_at_startup_when_OpenTelemetry_logging_is_registered_again_after_it()
     {
         // A later registration (builder.Logging.AddOpenTelemetry, service defaults) adds a second provider that isn't wrapped,
         // so content events would reach the export through it
@@ -160,29 +160,40 @@ public class TelemetryStartupTests
         services.AddLogging(logging => logging.AddOpenTelemetry());
         using var provider = services.BuildServiceProvider();
 
-        var error = Assert.Throws<OptionsValidationException>(provider.ValidateOnStart);
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => StartLogExportCheck(provider));
 
-        Assert.Contains("OpenTelemetry logger provider", Assert.Single(error.Failures), StringComparison.Ordinal);
+        Assert.Equal(LogExportCheck.Failure, error.Message);
     }
 
     [Fact]
-    public void Log_export_fails_at_startup_when_it_is_set_up_twice()
+    public async Task Log_export_fails_at_startup_when_it_is_set_up_twice()
     {
         // Each call wraps its own provider, so every record would be exported twice
         var services = BuildCollection(new() { ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://localhost:4317" });
         services.AddOpenTelemetry().WithSupportDeskLogging(_ => { });
         using var provider = services.BuildServiceProvider();
 
-        Assert.Throws<OptionsValidationException>(provider.ValidateOnStart);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => StartLogExportCheck(provider));
     }
 
     [Fact]
-    public void Log_export_set_up_once_passes_the_startup_check()
+    public async Task Log_export_set_up_once_passes_the_startup_check()
     {
         using var services = Build(new() { ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://localhost:4317" });
 
-        services.ValidateOnStart();
+        await StartLogExportCheck(services);
     }
+
+    [Fact]
+    public void Without_an_endpoint_there_is_no_log_export_check()
+    {
+        using var services = Build(new() { ["OTEL_EXPORTER_OTLP_ENDPOINT"] = null });
+
+        Assert.Empty(services.GetServices<IHostedService>().OfType<LogExportCheck>());
+    }
+
+    private static Task StartLogExportCheck(ServiceProvider services) =>
+        Assert.Single(services.GetServices<IHostedService>().OfType<LogExportCheck>()).StartAsync(TestContext.Current.CancellationToken);
 
     private static bool IsOpenTelemetryProvider(ILoggerProvider provider) =>
         provider.GetType().GetCustomAttributes(typeof(ProviderAliasAttribute), inherit: false).Cast<ProviderAliasAttribute>().Any(a => a.Alias == "OpenTelemetry");

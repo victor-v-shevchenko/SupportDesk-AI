@@ -116,24 +116,10 @@ public static class TelemetryServiceCollectionExtensions
         }
 
         // A registration after this one, or a second call, adds a provider this loop can't see: checked at startup instead
-        AddLogExportCheck(services);
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, LogExportCheck>());
 
         return builder;
     }
-
-    internal const string LogExportCheckFailure =
-        "The log export needs exactly one OpenTelemetry logger provider, wrapped by WithSupportDeskLogging; OpenTelemetry logging was registered again or set up twice, so content events could be exported unfiltered or every record twice.";
-
-    private static void AddLogExportCheck(IServiceCollection services) =>
-        services.AddOptions<LogExportCheck>()
-            .Validate<IEnumerable<ILoggerProvider>>(
-                (_, providers) =>
-                {
-                    var list = providers.ToList();
-                    return list.Count(p => p is ContentLogFilteringProvider) == 1 && !list.Any(p => p is OpenTelemetryLoggerProvider);
-                },
-                LogExportCheckFailure)
-            .ValidateOnStart();
 
     /// <summary>
     /// The meters, without an exporter: the app's (<c>SupportDesk</c>), Microsoft.Extensions.AI's (its token usage and operation
