@@ -73,7 +73,8 @@ internal sealed class FollowUpRepository(SupportDeskDbContext db, TimeProvider t
         if (proposal.Status == ProposalStatus.Expired || proposal.ExpiresAt <= now)
         {
             proposal.Status = ProposalStatus.Expired;
-            activity?.SetTag(SupportDeskTelemetry.RowsChanged, await db.SaveChangesAsync(cancellationToken));
+            var expiredRows = await db.SaveChangesAsync(cancellationToken);
+            activity?.SetTag(SupportDeskTelemetry.RowsChanged, expiredRows);
             await transaction.CommitAsync(cancellationToken);
             return new ConfirmResult(ConfirmOutcome.Expired, null);
         }
@@ -89,7 +90,8 @@ internal sealed class FollowUpRepository(SupportDeskDbContext db, TimeProvider t
         };
         proposal.Status = ProposalStatus.Confirmed;
         db.FollowUpTasks.Add(task);
-        activity?.SetTag(SupportDeskTelemetry.RowsChanged, await db.SaveChangesAsync(cancellationToken));
+        var rows = await db.SaveChangesAsync(cancellationToken);
+        activity?.SetTag(SupportDeskTelemetry.RowsChanged, rows);
         await transaction.CommitAsync(cancellationToken);
         return new ConfirmResult(ConfirmOutcome.Confirmed, task);
     }
