@@ -181,7 +181,7 @@ internal sealed class LogCapture : IDisposable
 {
     private readonly ServiceProvider _services;
 
-    public LogCapture(LogLevel level = LogLevel.Information, bool captureContent = false, HttpStatusCode sinkStatus = HttpStatusCode.OK)
+    public LogCapture(LogLevel level = LogLevel.Information, bool captureContent = false, HttpStatusCode sinkStatus = HttpStatusCode.OK, Action<IServiceCollection>? configure = null)
     {
         Sink = new OtlpSink(sinkStatus);
         var settings = Sink.Settings();
@@ -190,13 +190,17 @@ internal sealed class LogCapture : IDisposable
         var services = new ServiceCollection();
         services.AddSingleton<IConfiguration>(configuration);
         services.AddSingleton<IHostEnvironment>(new HostingEnvironment { EnvironmentName = "Development", ApplicationName = "SupportDesk.Api" });
-        services.AddLogging(builder => builder.SetMinimumLevel(level));
+        services.AddLogging(builder => builder.SetMinimumLevel(level).AddProvider(Console));
+        configure?.Invoke(services);
         services.AddSupportDeskTelemetry(configuration);
         services.ConfigureOpenTelemetryLoggerProvider(builder => builder.AddProcessor(new SimpleLogRecordExportProcessor(Exporter)));
         _services = services.BuildServiceProvider();
     }
 
     public OtlpSink Sink { get; }
+
+    /// <summary>What a console-like provider next to the export sees: every line, whatever the export drops.</summary>
+    public CategoryLoggerProvider Console { get; } = new();
 
     public CapturingLogExporter Exporter { get; } = new();
 
@@ -216,5 +220,45 @@ internal sealed class LogCapture : IDisposable
     {
         _services.Dispose();
         Sink.Dispose();
+    }
+}
+
+/// <summary>Keeps every log line with its category, level and text, as a console provider would see it.</summary>
+internal sealed class CategoryLoggerProvider : ILoggerProvider
+{
+    private readonly List<(string Category, LogLevel Level, string Text)> _lines = [];
+
+    public IReadOnlyList<(string Category, LogLevel Level, string Text)> Lines
+    {
+        get
+        {
+            lock (_lines)
+            {
+                return [.. _lines];
+            }
+        }
+    }
+
+    public ILogger CreateLogger(string categoryName) => new Logger(this, categoryName);
+
+    public void Dispose()
+    {
+        // Nothing to release
+    }
+
+    private sealed class Logger(CategoryLoggerProvider owner, string category) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            lock (owner._lines)
+            {
+                owner._lines.Add((category, logLevel, formatter(state, exception) + " " + exception));
+            }
+        }
     }
 }

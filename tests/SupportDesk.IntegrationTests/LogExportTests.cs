@@ -52,35 +52,75 @@ public class LogExportTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task A_classification_on_a_ticket_with_a_marker_body_leaves_the_marker_and_the_raw_model_output_out_of_every_exported_record()
+    public async Task A_classifications_lines_are_selected_by_their_request_and_sit_in_the_classification_span_and_the_raw_output_stays_out()
     {
         const string RawOutput = "Sure! Here is the classification";
-        var marker = $"BODYMARKER-{Guid.NewGuid():N}";
         var spans = new List<Activity>();
         var exporter = new CapturingExporter();
         using var console = new LogCollector();
         await using var api = await StartAsync(spans, exporter, console);
-        using var created = await api.Client.PostAsJsonAsync(
-            new Uri("/api/tickets", UriKind.Relative), new CreateTicketRequest($"Subject {marker}", $"Body {marker}", "Ana Silva", null), JsonDefaults.Options, Ct);
-        created.EnsureSuccessStatusCode();
-        var markerTicket = (await created.Content.ReadFromJsonAsync<TicketDetailResponse>(JsonDefaults.Options, Ct))!.Id;
         var rejectedTicket = await TicketIdAsync(api, "T-1024");
+        var path = $"/api/tickets/{rejectedTicket}/classification";
 
-        using var first = await api.Client.PostAsync(new Uri($"/api/tickets/{markerTicket}/classification", UriKind.Relative), null, Ct);
-        using var second = await api.Client.PostAsync(new Uri($"/api/tickets/{rejectedTicket}/classification", UriKind.Relative), null, Ct);
-        await first.Content.ReadAsStringAsync(Ct);
-        await second.Content.ReadAsStringAsync(Ct);
+        using var response = await api.Client.PostAsync(new Uri(path, UriKind.Relative), null, Ct);
+        await response.Content.ReadAsStringAsync(Ct);
 
         // T-1024's scenario answers with rejected text: the console log has the debug line, the export has not
         Assert.Contains(RawOutput, console.All, StringComparison.Ordinal);
         var classification = await WaitForAsync(() => spans.ToList().FirstOrDefault(a => a.OperationName == "classification" && Equals(a.GetTagItem("supportdesk.ticket_id"), rejectedTicket)));
-        var lines = await WaitForAsync(() => exporter.Records.Where(r => r.Category.EndsWith(".ClassificationService", StringComparison.Ordinal) && r.TraceId == classification.TraceId).ToList() is { Count: > 0 } found ? found : null);
-        // The classification's lines are inside its trace, under its own span, and the content line isn't among them
-        Assert.All(lines, r => Assert.Equal(classification.SpanId, r.SpanId));
+        // Chosen by the request that wrote them (the path scope ASP.NET Core adds), not by the trace they claim
+        var lines = await WaitForAsync(() => exporter.Records.Where(r => r.Category.EndsWith(".ClassificationService", StringComparison.Ordinal) && r.Scopes.Contains($"RequestPath={path}")).ToList() is { Count: > 0 } found ? found : null);
+        Assert.All(lines, r => Assert.Equal((classification.TraceId, classification.SpanId), (r.TraceId, r.SpanId)));
         Assert.Contains(lines, r => r.Text.Contains("needs manual classification", StringComparison.Ordinal));
         Assert.DoesNotContain(exporter.Records.SelectMany(r => r.AllText), text => text.Contains(RawOutput, StringComparison.Ordinal));
-        Assert.DoesNotContain(exporter.Records.SelectMany(r => r.AllText), text => text.Contains(marker, StringComparison.Ordinal));
         Assert.DoesNotContain(exporter.Records, r => r.EventId.Id == SupportDesk.Core.Telemetry.ContentLogEvents.ClassificationRejected);
+    }
+
+    [Fact]
+    public async Task A_search_query_stays_out_of_every_exported_record_while_the_request_lines_are_still_exported()
+    {
+        var marker = $"SEARCHMARKER-{Guid.NewGuid():N}";
+        var spans = new List<Activity>();
+        var exporter = new CapturingExporter();
+        using var console = new LogCollector();
+        await using var api = await StartAsync(spans, exporter, console);
+
+        using var response = await api.Client.GetAsync(new Uri($"/api/search?q={marker}", UriKind.Relative), Ct);
+        await response.Content.ReadAsStringAsync(Ct);
+
+        var server = await WaitForAsync(() => spans.ToList().FirstOrDefault(a => a.Kind == ActivityKind.Server && a.DisplayName.Contains("/api/search", StringComparison.Ordinal)));
+        var lines = await WaitForAsync(() => exporter.Records.Where(r => r.Scopes.Contains("RequestPath=/api/search")).ToList() is { Count: >= 2 } found ? found : null);
+        // The console-like log has the raw query (the control), the export has the lines with the query redacted
+        Assert.Contains(marker, console.All, StringComparison.Ordinal);
+        Assert.All(lines, r => Assert.Equal(server.TraceId, r.TraceId));
+        Assert.Contains(lines, r => r.Text.StartsWith("Request starting", StringComparison.Ordinal) && r.Text.Contains("/api/search?Redacted", StringComparison.Ordinal));
+        Assert.Contains(lines, r => r.Text.StartsWith("Request finished", StringComparison.Ordinal));
+        await Task.Delay(300, Ct);
+        Assert.DoesNotContain(exporter.Records.SelectMany(r => r.AllText), text => text.Contains(marker, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_failed_ef_query_leaves_the_database_error_text_out_of_every_exported_record()
+    {
+        var marker = $"QRYMARKER-{Guid.NewGuid():N}";
+        var spans = new List<Activity>();
+        var exporter = new CapturingExporter();
+        using var console = new LogCollector();
+        await using var api = await StartAsync(spans, exporter, console);
+
+        // A cast that fails: PostgreSQL's message quotes the value ('invalid input syntax for type integer: "..."'), and EF Core
+        // logs the exception as a template value (QueryIterationFailed: "...{newline}{error}")
+        using (var scope = api.Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SupportDesk.Data.SupportDeskDbContext>();
+            await Assert.ThrowsAnyAsync<Exception>(() => db.Database.SqlQuery<int>($"SELECT {marker}::int AS \"Value\"").ToListAsync(Ct));
+        }
+
+        // The control: EF logged the failure with the text in it, and the export has the record without it
+        Assert.Contains(marker, console.All, StringComparison.Ordinal);
+        var failure = await WaitForAsync(() => exporter.Records.FirstOrDefault(r => r.Category == "Microsoft.EntityFrameworkCore.Query" && r.Attributes.Any(a => a.StartsWith("error=", StringComparison.Ordinal) && !a.Contains(marker, StringComparison.Ordinal))));
+        Assert.DoesNotContain(exporter.Records.SelectMany(r => r.AllText), text => text.Contains(marker, StringComparison.Ordinal));
+        Assert.DoesNotContain(failure.Text, "invalid input syntax", StringComparison.Ordinal);
     }
 
     private Task<SeededApi> StartAsync(List<Activity> spans, CapturingExporter exporter, ILoggerProvider console) =>

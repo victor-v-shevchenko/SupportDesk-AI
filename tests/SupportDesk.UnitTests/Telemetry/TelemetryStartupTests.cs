@@ -125,7 +125,10 @@ public class TelemetryStartupTests
         using var services = Build(new() { ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://localhost:4317" }, logger: new CapturingLoggerProvider());
 
         Assert.NotNull(services.GetService<OpenTelemetry.Logs.LoggerProvider>());
-        Assert.Single(services.GetServices<ILoggerProvider>(), IsOpenTelemetryProvider);
+        // The wrapper is what the container hands out; the SDK's own provider is only inside it
+        var providers = services.GetServices<ILoggerProvider>().ToList();
+        Assert.IsType<ContentLogFilteringProvider>(Assert.Single(providers, IsOpenTelemetryProvider));
+        Assert.DoesNotContain(providers, p => p.GetType().Name == "OpenTelemetryLoggerProvider");
         Assert.Contains(services.GetServices<ILoggerProvider>(), p => p is CapturingLoggerProvider);
     }
 

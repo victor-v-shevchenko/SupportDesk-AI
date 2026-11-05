@@ -93,16 +93,26 @@ public static class TelemetryServiceCollectionExtensions
                 options.ParseStateValues = true;
             });
 
-        // WithLogging registers the provider as a factory; wrap what this call added
+        // WithLogging registers the provider as a factory, whose type can't be read from the descriptor: wrap what this call
+        // added, and fail at startup if that isn't exactly one provider rather than export unfiltered
+        var wrapped = 0;
         for (var i = before; i < services.Count; i++)
         {
             var descriptor = services[i];
             if (descriptor.ServiceType == typeof(ILoggerProvider) && descriptor.ImplementationFactory is { } factory)
             {
-                services[i] = ServiceDescriptor.Singleton<ILoggerProvider>(sp => new ContentLogFilteringProvider(
-                    (ILoggerProvider)factory(sp),
-                    () => sp.GetRequiredService<IOptions<TelemetryOptions>>().Value.CaptureMessageContent));
+                services[i] = ServiceDescriptor.Singleton<ILoggerProvider>(sp =>
+                {
+                    var options = new Lazy<TelemetryOptions>(() => sp.GetRequiredService<IOptions<TelemetryOptions>>().Value);
+                    return new ContentLogFilteringProvider((ILoggerProvider)factory(sp), () => options.Value.CaptureMessageContent);
+                });
+                wrapped++;
             }
+        }
+
+        if (wrapped != 1)
+        {
+            throw new InvalidOperationException($"Expected WithLogging to register one logger provider to wrap, found {wrapped}; call WithSupportDeskLogging once.");
         }
 
         return builder;

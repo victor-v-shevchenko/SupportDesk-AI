@@ -14,28 +14,63 @@ internal sealed class LogSanitizer : BaseProcessor<LogRecord>
 {
     public const string ExceptionType = "exception.type";
     public const string InnerExceptionType = "supportdesk.inner_exception.type";
+    public const string QueryStringKey = "QueryString";
+    public const string RedactedQuery = "?Redacted";
 
     public override void OnEnd(LogRecord data)
     {
         ArgumentNullException.ThrowIfNull(data);
 
+        var hadException = data.Exception is not null;
+        var attributes = new List<KeyValuePair<string, object?>>(data.Attributes?.Count ?? 0);
+        string? redactedQuery = null;
+        foreach (var attribute in data.Attributes ?? [])
+        {
+            switch (attribute.Value)
+            {
+                // EF Core's SaveChangesFailed and QueryIterationFailed pass the exception as a template value ({error}), so
+                // its ToString() is in the attribute and in the formatted message
+                case Exception argument:
+                    hadException = true;
+                    attributes.Add(new(attribute.Key, argument.GetType().FullName));
+                    break;
+                // The hosting "Request starting" and "Request finished" lines carry the raw query string, which holds user text
+                case string query when attribute.Key == QueryStringKey && query.Length > 0:
+                    redactedQuery = query;
+                    attributes.Add(new(attribute.Key, RedactedQuery));
+                    break;
+                default:
+                    attributes.Add(attribute);
+                    break;
+            }
+        }
+
         var exception = data.Exception;
-        if (exception is null)
+        if (exception is not null)
         {
-            return;
+            attributes.Add(new(ExceptionType, exception.GetType().FullName));
+            var innermost = exception.GetBaseException();
+            if (!ReferenceEquals(innermost, exception))
+            {
+                attributes.Add(new(InnerExceptionType, innermost.GetType().FullName));
+            }
+
+            data.Exception = null;
         }
 
-        var attributes = new List<KeyValuePair<string, object?>>(data.Attributes ?? [])
+        if (hadException)
         {
-            new(ExceptionType, exception.GetType().FullName),
-        };
-        var innermost = exception.GetBaseException();
-        if (!ReferenceEquals(innermost, exception))
+            // The formatted message could hold exception.ToString(); the body is then the template
+            data.FormattedMessage = null;
+        }
+        else if (redactedQuery is not null && data.FormattedMessage is { } message)
         {
-            attributes.Add(new(InnerExceptionType, innermost.GetType().FullName));
+            data.FormattedMessage = message.Replace(redactedQuery, RedactedQuery, StringComparison.Ordinal);
         }
 
-        data.Attributes = attributes;
-        data.Exception = null;
+        if (hadException || redactedQuery is not null)
+        {
+            data.Attributes = attributes;
+        }
     }
 }

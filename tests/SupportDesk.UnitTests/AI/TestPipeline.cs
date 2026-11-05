@@ -39,12 +39,13 @@ internal sealed class TestPipeline : IDisposable
         ILoggerProvider? logger = null,
         IModelCallSink? sink = null,
         bool captureMessageContent = false,
-        TestMetrics? metrics = null)
+        TestMetrics? metrics = null,
+        ILoggerFactory? loggerFactory = null)
     {
         var rows = new RecordingSink();
         var ownsMetrics = metrics is null;
         metrics ??= new TestMetrics();
-        var services = new ServiceCollection()
+        var collection = new ServiceCollection()
             .AddLogging(builder =>
             {
                 if (logger is not null)
@@ -57,8 +58,14 @@ internal sealed class TestPipeline : IDisposable
             .AddSingleton<PriceTable>()
             .AddSingleton(metrics.Metrics)
             .AddSingleton(Options.Create(Settings(configure)))
-            .AddSingleton(Options.Create(new TelemetryOptions { CaptureMessageContent = captureMessageContent }))
-            .BuildServiceProvider();
+            .AddSingleton(Options.Create(new TelemetryOptions { CaptureMessageContent = captureMessageContent }));
+        if (loggerFactory is not null)
+        {
+            // The caller's factory replaces the container's own, so a test sees what the pipeline's clients log
+            collection.AddSingleton(loggerFactory);
+        }
+
+        var services = collection.BuildServiceProvider();
 
         return new TestPipeline(services, AiPipeline.Build(provider, classifier, services), rows, metrics, ownsMetrics);
     }
