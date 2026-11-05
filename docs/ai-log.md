@@ -369,3 +369,10 @@ Entry format (from CLAUDE.md):
 - What was wrong: `FunctionInvokingChatClient` logs tool arguments and results at Trace under a Microsoft.Extensions.AI category, which the content rule (an event ID only) didn't cover; the ID also matched across categories.
 - Fix: content rules are on category, level and event ID, checked where the category is known (`ContentLogFilteringProvider`) (step 15, 6db36c3).
 - Test: `LogExportTests.A_tool_calls_arguments_and_result_logged_at_trace_by_the_library_are_not_exported_unless_content_capture_is_on` and `The_content_rules_apply_to_their_category_only`; both fail without the fix.
+
+## 2026-11-05 — A later OpenTelemetry logging registration added an unfiltered provider
+- Step: 15
+- Found by: review subagent
+- What was wrong: the wrapped logger provider's descriptor no longer names the SDK's type, so OpenTelemetry logging registered after `WithSupportDeskLogging` added a second, unwrapped provider that would export content events, and a second call exported every record twice; the registration-time guard only caught an earlier registration.
+- Fix: `LogExportCheck` validates at startup that the resolved logger providers hold exactly one wrapper and no `OpenTelemetryLoggerProvider` (step 15, this commit).
+- Test: `TelemetryStartupTests.Log_export_fails_at_startup_when_OpenTelemetry_logging_is_registered_again_after_it` and `Log_export_fails_at_startup_when_it_is_set_up_twice`; both fail without the fix.

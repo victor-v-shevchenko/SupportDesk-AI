@@ -112,8 +112,11 @@ public static class TelemetryServiceCollectionExtensions
 
         if (wrapped != 1)
         {
-            throw new InvalidOperationException($"Expected WithLogging to register one logger provider to wrap, found {wrapped}; call WithSupportDeskLogging once.");
+            throw new InvalidOperationException($"Expected WithLogging to register one logger provider to wrap, found {wrapped}; OpenTelemetry logging was registered before WithSupportDeskLogging.");
         }
+
+        // A registration after this one, or a second call, adds a provider this loop can't see: checked at startup instead
+        LogExportCheck.Register(services);
 
         return builder;
     }

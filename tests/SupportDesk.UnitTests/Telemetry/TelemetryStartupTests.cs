@@ -17,7 +17,10 @@ namespace SupportDesk.UnitTests.Telemetry;
 [Collection(FakeClockGroup.Name)]
 public class TelemetryStartupTests
 {
-    private static ServiceProvider Build(Dictionary<string, string?> settings, string environment = "Development", ILoggerProvider? logger = null)
+    private static ServiceProvider Build(Dictionary<string, string?> settings, string environment = "Development", ILoggerProvider? logger = null) =>
+        BuildCollection(settings, environment, logger).BuildServiceProvider();
+
+    private static ServiceCollection BuildCollection(Dictionary<string, string?> settings, string environment = "Development", ILoggerProvider? logger = null)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
         var services = new ServiceCollection();
@@ -31,7 +34,7 @@ public class TelemetryStartupTests
             }
         });
         services.AddSupportDeskTelemetry(configuration);
-        return services.BuildServiceProvider();
+        return services;
     }
 
     [Fact]
@@ -146,6 +149,39 @@ public class TelemetryStartupTests
             () => services.AddOpenTelemetry().WithSupportDeskLogging(_ => { }));
 
         Assert.Contains("found 0", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Log_export_fails_at_startup_when_OpenTelemetry_logging_is_registered_again_after_it()
+    {
+        // A later registration (builder.Logging.AddOpenTelemetry, service defaults) adds a second provider that isn't wrapped,
+        // so content events would reach the export through it
+        var services = BuildCollection(new() { ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://localhost:4317" });
+        services.AddLogging(logging => logging.AddOpenTelemetry());
+        using var provider = services.BuildServiceProvider();
+
+        var error = Assert.Throws<OptionsValidationException>(provider.ValidateOnStart);
+
+        Assert.Contains("OpenTelemetry logger provider", Assert.Single(error.Failures), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Log_export_fails_at_startup_when_it_is_set_up_twice()
+    {
+        // Each call wraps its own provider, so every record would be exported twice
+        var services = BuildCollection(new() { ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://localhost:4317" });
+        services.AddOpenTelemetry().WithSupportDeskLogging(_ => { });
+        using var provider = services.BuildServiceProvider();
+
+        Assert.Throws<OptionsValidationException>(provider.ValidateOnStart);
+    }
+
+    [Fact]
+    public void Log_export_set_up_once_passes_the_startup_check()
+    {
+        using var services = Build(new() { ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://localhost:4317" });
+
+        services.ValidateOnStart();
     }
 
     private static bool IsOpenTelemetryProvider(ILoggerProvider provider) =>
