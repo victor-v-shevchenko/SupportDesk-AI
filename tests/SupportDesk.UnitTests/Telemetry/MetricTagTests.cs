@@ -23,7 +23,7 @@ namespace SupportDesk.UnitTests.Telemetry;
 public class MetricTagTests
 {
     private static readonly string[] Features = ["Reply", "Summary", "Classification"];
-    private static readonly string[] ErrorCodes = ["timeout", "model_unavailable", "budget_exceeded", "model_refused", "internal_error", "invalid_output"];
+    private static readonly string[] ErrorCodes = ["timeout", "model_unavailable", "budget_exceeded", "model_refused", "internal_error"];
 
     // The instrument, then each tag key with the values it may take. A value outside its set fails, and so does a key outside the list
     private static readonly Dictionary<string, Dictionary<string, string[]>> Allowed = new()

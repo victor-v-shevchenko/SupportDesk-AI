@@ -11,7 +11,7 @@ The running app reports counters for what matters when it's used: model calls, t
 ## Scope
 
 **Wiring**
-- Metrics are added to step 13's OpenTelemetry setup: the app's meter `SupportDesk`, Microsoft.Extensions.AI's meter `Experimental.Microsoft.Extensions.AI` (its default name; its `gen_ai.client.token.usage` and `gen_ai.client.operation.duration` histograms come from the `UseOpenTelemetry()` clients step 13 adds), and ASP.NET Core's built-in meters (request duration and active requests)
+- Metrics are added to step 13's OpenTelemetry setup: the app's meter `SupportDesk`, Microsoft.Extensions.AI's meter `Experimental.Microsoft.Extensions.AI` (its default name; its `gen_ai.client.token.usage` and `gen_ai.client.operation.duration` histograms come from the `UseOpenTelemetry()` clients step 13 adds), and ASP.NET Core's built-in meters (request duration and active requests, from `AddAspNetCoreInstrumentation()` on the meter provider)
 - Exported over OTLP with the traces, only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. The Aspire dashboard from step 13 shows them, so nothing is added to Compose
 - The meter comes from `IMeterFactory` through DI (`SupportDeskMetrics`, a singleton that creates the instruments once), not a static `Meter`, so tests get their own (CLAUDE.md: no static mutable state)
 
@@ -19,15 +19,15 @@ The running app reports counters for what matters when it's used: model calls, t
 
 | Instrument | Unit | Tags | Recorded where |
 | --- | --- | --- | --- |
-| `supportdesk.model_calls` | `{call}` | `feature`, `provider`, `model`, `outcome` (`success`, `error`, `cancelled`), `error.type` (on errors: the reply stream's code, or `invalid_output`) | `UsageLoggingMiddleware`, when it builds the row: one per `ModelCalls` row |
+| `supportdesk.model_calls` | `{call}` | `feature`, `provider`, `model`, `outcome` (`success`, `error`, `cancelled`), `error.type` (on errors: the reply stream's code; `invalid_output` is raised by the services after a call, so a model call never has it) | `UsageLoggingMiddleware`, when it builds the row, before the row goes to the sink: one per `ModelCalls` row |
 | `supportdesk.model_calls.tokens` | `{token}` | `feature`, `model`, `direction` (`input`, `output`), `estimated` | the same place, from the row's token counts |
 | `supportdesk.model_calls.cost` | `USD` (`double`) | `feature`, `model` | the same place, only for rows with a price (`CostUsd` not null) |
-| `supportdesk.model_calls.dropped` | `{row}` | `reason` (`buffer_full`, `shutdown`, `save_failed`, `drain_deadline`) | `ModelCallBuffer` and `ModelCallWriter`, where they log the drop today |
+| `supportdesk.model_calls.dropped` | `{row}` | `reason` (`buffer_full`, `shutdown`, `save_failed`, `drain_deadline`) | `ModelCallBuffer` (`buffer_full`, and `shutdown` once it's closed) and `ModelCallWriter` (`save_failed`, `shutdown` for a save cut short, `drain_deadline`), where they log the drop today, by the number of rows |
 | `supportdesk.replies` | `{reply}` | `outcome` (`done`, the error code, `cancelled`), `guarded` | `ReplyService`, when the stream ends |
-| `supportdesk.tool_calls` | `{call}` | `tool`, `result` (`ran`, `invalid_arguments`, `over_limit`) | `ReplyTools` |
-| `supportdesk.injection_guard.hits` | `{ticket}` | `scope` (`reply`, `classification`), `signal` (one count per signal name found) | the reply guard and `ClassificationService` |
-| `supportdesk.classifications` | `{classification}` | `status` (`done`, `needs_manual`, `held`), `reason` for `needs_manual` (`invalid_output`, `output_limit`) | `ClassificationService` |
-| `supportdesk.follow_ups` | `{proposal}` | `event` (`proposed`, `updated`, `confirmed`, `expired`) | the proposal tool, the Confirm endpoint, `ProposalExpiryService` |
+| `supportdesk.tool_calls` | `{call}` | `tool`, `result` (`ran`, `invalid_arguments`, `over_limit`) | `ReplyFunction`, the base of both tools, once the call's result is known (a tool that throws isn't counted) |
+| `supportdesk.injection_guard.hits` | `{ticket}` | `scope` (`reply`, `classification`), `signal` (one count per signal name found; for `classification`, only the strong signals that hold the ticket) | `ReplyService`, where it finds the signals and removes the proposal tool; `ClassificationService`, once the held result is saved |
+| `supportdesk.classifications` | `{classification}` | `status` (`done`, `needs_manual`, `held`), `reason` for `needs_manual` (`invalid_output`, `output_limit`) | `ClassificationService`, after the result is saved. A model error is thrown and saves nothing, so it isn't counted here (the failed call is in `model_calls`) |
+| `supportdesk.follow_ups` | `{proposal}` | `event` (`proposed`, `updated`, `confirmed`, `expired`) | the proposal tool (`proposed` the run's first saved proposal, `updated` each later call in the run; a proposal already confirmed or expired counts neither); `FollowUpRepository.ConfirmAsync` after the transaction commits (`confirmed` only for the confirm that created the task, a repeat returns the existing task and counts nothing; `expired` when a confirm finds a pending proposal past its expiry); `ProposalExpiryService` (`expired`, by the number of rows it marked) |
 
 - **Low cardinality only:** no ticket ID, reply run ID, ticket number or any text as a tag. `model` comes from configuration (one value per setup), and `signal` and `error.type` are fixed sets. A test checks every tag value against its allowed set
 - **One source of truth:** tokens and cost are recorded from the values written to the `ModelCalls` row (estimated where the row is estimated), so the sums over a period equal the table's sums for that period. A row that's dropped is still counted in `model_calls` (it happened) and also in `dropped`
@@ -37,7 +37,7 @@ The running app reports counters for what matters when it's used: model calls, t
 - No new settings: the export interval stays the SDK default (60 s, `OTEL_METRIC_EXPORT_INTERVAL`), documented in PLAN.md for anyone who wants it faster locally
 
 **Tests** (`Microsoft.Extensions.Diagnostics.Testing`'s `MetricCollector<T>`; CI needs no collector)
-- Unit: a reply with one tool round adds 2 to `model_calls` (feature `Reply`, outcome `success`), the row's tokens to `tokens`, 1 to `tool_calls` (`ran`) and 1 to `replies` (`done`); a retried call adds 1, not 2; a refused budget, a refusal and a timeout add `error` calls with the right `error.type`; a caller's cancellation is `cancelled`, not `error`
+- Unit: a reply with one tool round adds 2 to `model_calls` (feature `Reply`, outcome `success`), the row's tokens to `tokens`, 1 to `tool_calls` (`ran`) and 1 to `replies` (`done`); a retried call adds 1, not 2; a refusal and a timeout add `error` calls with the right `error.type`; a call the budget refuses writes no row, so it adds no `model_calls` (the reply's `replies` counts `budget_exceeded`); a caller's cancellation is `cancelled`, not `error`
 - Unit: an unpriced model adds tokens but no cost; an estimated row records `estimated=true`
 - Unit: a ticket the classification guard holds adds 1 to `classifications` (`held`) and one `injection_guard.hits` per strong signal, and no `model_calls`
 - Unit: a full buffer and a drain past its deadline add to `dropped` with the right reason and count
