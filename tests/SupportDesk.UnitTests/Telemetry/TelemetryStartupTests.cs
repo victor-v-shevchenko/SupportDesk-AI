@@ -108,6 +108,30 @@ public class TelemetryStartupTests
         Assert.NotNull(services.GetRequiredService<SupportDesk.Core.Telemetry.SupportDeskMetrics>());
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void Without_an_endpoint_no_OpenTelemetry_logger_provider_is_registered(string? endpoint)
+    {
+        using var services = Build(new() { ["OTEL_EXPORTER_OTLP_ENDPOINT"] = endpoint }, logger: new CapturingLoggerProvider());
+
+        Assert.Null(services.GetService<OpenTelemetry.Logs.LoggerProvider>());
+        Assert.DoesNotContain(services.GetServices<ILoggerProvider>(), IsOpenTelemetryProvider);
+    }
+
+    [Fact]
+    public void With_an_endpoint_one_OpenTelemetry_logger_provider_is_registered_next_to_the_others()
+    {
+        using var services = Build(new() { ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://localhost:4317" }, logger: new CapturingLoggerProvider());
+
+        Assert.NotNull(services.GetService<OpenTelemetry.Logs.LoggerProvider>());
+        Assert.Single(services.GetServices<ILoggerProvider>(), IsOpenTelemetryProvider);
+        Assert.Contains(services.GetServices<ILoggerProvider>(), p => p is CapturingLoggerProvider);
+    }
+
+    private static bool IsOpenTelemetryProvider(ILoggerProvider provider) =>
+        provider.GetType().GetCustomAttributes(typeof(ProviderAliasAttribute), inherit: false).Cast<ProviderAliasAttribute>().Any(a => a.Alias == "OpenTelemetry");
+
     [Fact]
     public void A_blank_endpoint_has_no_meter_provider_either()
     {
