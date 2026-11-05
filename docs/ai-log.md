@@ -327,3 +327,10 @@ Entry format (from CLAUDE.md):
 - What was wrong: `activity?.SetTag(RowsChanged, await db.SaveChangesAsync(...))` doesn't evaluate its argument when the activity is null, which is every call without a collector, so confirming a proposal never saved anything.
 - Fix: the save is awaited into a variable first, then tagged (step 13).
 - Test: `FollowUpTests.Confirming_creates_the_task_once_and_a_second_confirm_returns_the_same_task` and the other confirm tests, which run with tracing off; they failed before the fix.
+
+## 2026-11-05 — Npgsql's exception event put the SQL error message in a span
+- Step: 13
+- Found by: review subagent
+- What was wrong: Npgsql adds an `exception` event with `exception.message` and `exception.stacktrace` to a failed command's span, and `SpanSanitizer` only rewrote the status description. PostgreSQL's message can quote a value (`invalid input syntax for type integer: "<value>"`), so text could reach a trace.
+- Fix: the sanitizer keeps a span with an `exception` event out of the export and exports a copy without the event, with the exception type as its description (step 13).
+- Test: `TracingTests.A_failed_sql_command_leaves_no_exception_message_or_stack_in_any_span` (integration); it failed before the fix.
