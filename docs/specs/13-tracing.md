@@ -63,7 +63,7 @@ Options with `ValidateOnStart`, documented in PLAN.md's new Telemetry section. N
 
 - [ ] With `OTEL_EXPORTER_OTLP_ENDPOINT` unset, the app and every test behave as before, and no exporter runs
 - [ ] With the `telemetry` profile up, a reply on T-1002 and T-1008 shows in the dashboard as one trace: HTTP request → `reply` → `retrieval` → `embeddings`, `chat` spans with token usage, `execute_tool` spans, and SQL spans (screenshot in the PR)
-- [ ] `chat` spans match `ModelCalls` rows one to one; retries don't add `chat` spans
+- [ ] `chat` spans match `ModelCalls` rows one to one, plus an `Error` `chat` span with no row for a call the budget guard or request cap refused before it reached the provider (the telemetry client sits above them, as the spec's pipeline position requires); retries don't add `chat` spans
 - [ ] No span holds prompt, ticket, reply or tool-argument text unless `Telemetry:CaptureMessageContent` is `true`, whatever `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` says; `true` is refused in `Production`
 - [ ] Errors and cancellations are reported as described, without exception messages
 - [ ] The middleware order in PLAN.md 6.2, its test, and the new PLAN.md Telemetry section match the code

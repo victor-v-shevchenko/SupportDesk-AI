@@ -214,7 +214,7 @@ provider IChatClient          Anthropic (wrapped in AnthropicOptionsMiddleware) 
 - **The request cap has two parts.** Outside the tool loop a middleware can't see the inner calls, and inside it doesn't know where a request starts. So `RequestCapMiddleware` puts a new `RequestTally` in `ChatOptions.AdditionalProperties` (in a copy of the caller's options), and `RequestCapCounterMiddleware`, right under the tool loop, reads it
 - `UsageLoggingMiddleware` sits above the retries, so a retried call is one row with the whole latency. Its tokens and cost are the successful attempt's: a failed attempt's usage is held back with its other updates and discarded, so retries that a provider bills for are under-counted
 - `BudgetExceededException` and the missing-context check are thrown when the call is made, not on the first read of a stream, so nothing reaches the provider
-- **The telemetry client sits directly under the tool loop** (14): that makes one `chat` span per inner model call, which is the unit of a `ModelCalls` row, so a retried call (its attempts are inside it) is one span and its HTTP attempts are child spans. Under the tool loop is also where `FunctionInvokingChatClient` needs a telemetry client in order to emit its `execute_tool` spans. Above the request cap counter, a refused budget is an error span too
+- **The telemetry client sits directly under the tool loop** (14): that makes one `chat` span per inner model call, which is the unit of a `ModelCalls` row, so a retried call (its attempts are inside it) is one span and its HTTP attempts are child spans. Under the tool loop is also where `FunctionInvokingChatClient` needs a telemetry client in order to emit its `execute_tool` spans. Above the request cap counter, so a call the budget guard or request cap refuses before it reaches the provider is an `Error` `chat` span with no `ModelCalls` row (the usage logging is below them): the one exception to one span per row
 - The order is checked by a test that walks the built chain (`The_middleware_order_matches_the_plan`)
 - Provider SDK retries are turned off (Anthropic SDK: max retries 0), so only `RetryTimeoutMiddleware` retries
 - `HttpClient` keeps only a connect timeout
@@ -499,7 +499,7 @@ Step 13. A request can be followed end to end in a trace; metrics are [step 14](
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` (environment) | none | Where to send traces (OTLP over gRPC). Unset or empty means no tracer provider at all: nothing listens to the sources and nothing is exported |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` (environment) | none | Where to send traces (OTLP over gRPC). Unset or empty means no tracer provider at all: nothing listens to the sources and nothing is exported. Only this variable turns export on; `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` alone doesn't |
 | `OTEL_SERVICE_NAME` (environment) | `supportdesk-api` | Service name on every span |
 | `Telemetry:CaptureMessageContent` | `false` | Put prompts, replies, tool arguments and results in the model-call spans. Refused at startup in `Production` (`TelemetryOptionsValidator`), logged at warning level when on |
 
@@ -508,7 +508,8 @@ Step 13. A request can be followed end to end in a trace; metrics are [step 14](
 **Wiring** (`SupportDesk.Api`, `AddSupportDeskTelemetry`)
 
 - Sources: `SupportDesk` (the app's) and `Experimental.Microsoft.Extensions.AI` (the library's default name; without subscribing to it the `chat`, `embeddings` and `execute_tool` spans are created but never exported). Instrumentation for ASP.NET Core (`GET /api/health` is filtered out, since it is polled), `HttpClient` and Npgsql (its spans show each SQL command; EF Core's instrumentation is still prerelease). Logs already carry `TraceId` and `SpanId` in their scopes, so a log line matches its trace; exporting logs is out of scope
-- `SpanSanitizer` runs before any exporter, on every span as it ends. A failed span's status description becomes the app's error code, because instrumentation libraries put the exception message there, and a provider's message can echo the request. A span tagged `supportdesk.cancelled` is set back to `Unset`: a caller's cancellation is not an error
+- **Without a collector** no span is created (`StartActivity` returns null), so the app's own spans cost a null check. The library's clients still run: `OpenTelemetryChatClient` may keep a stopwatch and track streamed updates for its token-usage and duration histograms, which exist whether or not anything listens; this wasn't checked in its source, so don't read it as zero cost
+- `SpanSanitizer` runs before any exporter, on every span as it ends. A span with an `exception` event (Npgsql adds one with the message and stack trace, which PostgreSQL's message can fill with a quoted value, and an event can't be removed) is kept out of the export and replaced by a copy without the event: same name, parent, times and tags, status `Error` with the exception type as its description. A failed span's status description becomes the app's error code, because instrumentation libraries put the exception message there, and a provider's message can echo the request. A span tagged `supportdesk.cancelled` is set back to `Unset`: a caller's cancellation is not an error
 - `UseOpenTelemetry()` on the chat pipeline (6.2) and on the embedding generator, with no logger factory, since the client would log a failure's exception
 
 **Spans**
@@ -521,13 +522,13 @@ Step 13. A request can be followed end to end in a trace; metrics are [step 14](
 | `retrieval` | `RetrievalService` | `supportdesk.query_length` (not the query), `supportdesk.k`, `supportdesk.min_similarity`, `supportdesk.results_kept` |
 | `embeddings <model>`, `chat <model>`, `execute_tool <name>` | Microsoft.Extensions.AI (Gen AI conventions v1.41) | the library's `gen_ai.*` tags (model, token usage, finish reason); a `chat` span also gets `supportdesk.feature`, `supportdesk.prompt_version`, `supportdesk.ticket_id`, `supportdesk.reply_run_id` from `AiCallContext` |
 | `confirm_follow_up` | `FollowUpRepository` | `supportdesk.proposal_id`, `supportdesk.outcome`, `supportdesk.rows_changed` |
-| `proposal_expiry` | `ProposalExpiryService` (a root span) | `supportdesk.rows_changed` |
-| `model_calls.save` | `ModelCallWriter` (a root span per batch) | `supportdesk.row_count` |
+| `proposal_expiry` | `ProposalExpiryService` (a real root span: `StartRoot` clears the ambient activity first, since a default parent context still falls back to it) | `supportdesk.rows_changed` |
+| `model_calls.save` | `ModelCallWriter` (a root span per batch, started the same way) | `supportdesk.row_count` |
 | SQL | Npgsql | `db.*` tags and the parameterized statement |
 
 - **Errors:** a failed span has status `Error`, its description is the code the client sees (`timeout`, `model_unavailable`, `budget_exceeded`, `model_refused`, `internal_error`), and it has the tags `error.type` (the exception type) and `supportdesk.error_code`. Exception messages are never recorded. A caller's cancellation, or a stream the caller stops reading, leaves status `Unset` and the tag `supportdesk.cancelled`
 - **Streams:** the `reply` span, and so its model-call spans, end when the stream ends: `done`, `error`, or the caller leaving
-- **One `chat` span per `ModelCalls` row**, because both sit at the same place in the pipeline
+- **One `chat` span per `ModelCalls` row**, because both sit at the same place in the pipeline, with one exception: a call the budget guard or request cap refuses (6.4) is an `Error` `chat` span (`budget_exceeded`) and writes no row, since the telemetry client is above those guards and the usage logging below them. Library child spans (Npgsql, `HttpClient`) of a request the caller cancelled can still show `Error`; `SpanSanitizer` only removes their descriptions
 
 **Viewing locally:** the optional `telemetry` Compose profile runs the .NET Aspire dashboard (image `mcr.microsoft.com/dotnet/aspire-dashboard:9.5.2`; port 18888 for the UI and 18889 for OTLP, both bound to `127.0.0.1`; no login). `docker compose --profile telemetry up -d telemetry`, then `OTEL_EXPORTER_OTLP_ENDPOINT=http://telemetry:18889` for the API (the dev container and the `api` service reach it by name).
 

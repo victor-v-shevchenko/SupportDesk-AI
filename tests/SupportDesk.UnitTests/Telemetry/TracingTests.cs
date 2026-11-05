@@ -15,7 +15,7 @@ namespace SupportDesk.UnitTests.Telemetry;
 
 /// <summary>
 /// The spans a request leaves (PLAN.md 14), through the real pipeline and reply service with an in-memory exporter. In the
-/// fake-clock collection, which runs alone: the content-capture variable is process-wide.
+/// fake-clock collection, which runs alone, because the fake clock needs it and because TraceCapture's listeners are process-wide.
 /// </summary>
 [Collection(FakeClockGroup.Name)]
 public sealed class TracingTests
