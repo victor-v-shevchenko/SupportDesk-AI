@@ -7,8 +7,10 @@ namespace SupportDesk.Api.Telemetry;
 /// Keeps exception text out of exported logs (PLAN.md 14). The OTLP exporter writes a logged exception's type, message and
 /// <c>ToString()</c> (the stack trace and every inner message), and a provider's or PostgreSQL's message can echo the request,
 /// which holds ticket text. This processor runs before the exporter and replaces <see cref="LogRecord.Exception"/> with
-/// attributes that name only the type, and the innermost type when the exception wraps another. The console log is a
-/// different provider and keeps the full exception.
+/// attributes that name only the type, and the innermost type when the exception wraps another. An exception given as a
+/// template value (EF Core's <c>{error}</c>) becomes its type name, and a record that had an exception either way is exported
+/// with its template as the body. A <c>QueryString</c> attribute (ASP.NET Core's request lines) becomes <c>?Redacted</c>, in the
+/// attribute and the formatted message. The console log is a different provider and keeps everything.
 /// </summary>
 internal sealed class LogSanitizer : BaseProcessor<LogRecord>
 {
