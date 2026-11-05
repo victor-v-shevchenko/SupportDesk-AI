@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using SupportDesk.Core.AI.Usage;
 using SupportDesk.Core.Telemetry;
 
@@ -56,7 +55,7 @@ public sealed partial class ModelCallWriter(ModelCallBuffer queue, IServiceScope
         }
 
         // A background service, so each batch is a trace of its own
-        using var activity = SupportDeskTelemetry.Source.StartActivity("model_calls.save", ActivityKind.Internal, parentContext: default);
+        using var activity = SupportDeskTelemetry.StartRoot("model_calls.save");
         activity?.SetTag("supportdesk.row_count", batch.Count);
         try
         {

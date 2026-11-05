@@ -125,6 +125,40 @@ public class TracingTests(PostgresFixture postgres)
         Assert.NotNull(expiry.GetTagItem("supportdesk.rows_changed"));
     }
 
+    [Fact]
+    public async Task A_failed_sql_command_leaves_no_exception_message_or_stack_in_any_span()
+    {
+        const string Marker = "SQLMARKER-4d2e";
+        var spans = new List<Activity>();
+        await using var api = await StartAsync(spans);
+
+        // Sent as a parameter, so only the error message quotes it: invalid input syntax for type integer: "SQLMARKER-4d2e"
+        using (var scope = api.Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SupportDesk.Data.SupportDeskDbContext>();
+            await Assert.ThrowsAnyAsync<Exception>(() => db.Database.ExecuteSqlAsync($"SELECT {Marker}::int", Ct));
+        }
+
+        var failed = await WaitForAsync(spans, a => a.Status == ActivityStatusCode.Error && a.TagObjects.Any(t => t.Key.StartsWith("db.", StringComparison.Ordinal)));
+        Assert.DoesNotContain(Snapshot(spans).SelectMany(AllText), text => text.Contains(Marker, StringComparison.Ordinal));
+        Assert.All(Snapshot(spans), span => Assert.DoesNotContain(span.Events, e => e.Tags.Any(t => t.Key is "exception.message" or "exception.stacktrace")));
+        Assert.NotNull(failed.StatusDescription);
+    }
+
+    [Fact]
+    public async Task A_search_query_stays_out_of_every_span()
+    {
+        const string Marker = "QUERYMARKER-77aa";
+        var spans = new List<Activity>();
+        await using var api = await StartAsync(spans);
+
+        using var response = await api.Client.GetAsync(new Uri($"/api/search?q={Marker}", UriKind.Relative), Ct);
+        await WaitForAsync(spans, a => a.Kind == ActivityKind.Server && a.DisplayName.Contains("/api/search", StringComparison.Ordinal));
+        await Task.Delay(300, Ct);
+
+        Assert.DoesNotContain(Snapshot(spans).SelectMany(AllText), text => text.Contains(Marker, StringComparison.Ordinal));
+    }
+
     /// <summary>The API in Development with the fake providers, tracing on, spans into <paramref name="spans"/>.</summary>
     private Task<SeededApi> StartAsync(List<Activity> spans) =>
         SeededApi.StartAsync(

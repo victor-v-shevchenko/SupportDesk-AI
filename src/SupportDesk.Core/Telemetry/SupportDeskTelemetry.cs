@@ -32,6 +32,17 @@ public static class SupportDeskTelemetry
     public static readonly ActivitySource Source = new(SourceName);
 
     /// <summary>
+    /// Starts a span with no parent, for work a timer or a queue starts. <c>StartActivity</c> with a default parent context still
+    /// falls back to <see cref="Activity.Current"/>, so that is cleared first. Call it from an async method, whose caller doesn't
+    /// see the change: the new span is current for the rest of the method, so its SQL spans are its children.
+    /// </summary>
+    public static Activity? StartRoot(string name)
+    {
+        Activity.Current = null;
+        return Source.StartActivity(name);
+    }
+
+    /// <summary>
     /// Records how an operation failed: status <c>Error</c> with the code the client sees (<see cref="ReplyErrors"/>) as its
     /// description, the exception's type, and never its message, which can echo the request and so the ticket. A caller's own
     /// cancellation isn't an error: the status stays <c>Unset</c> and the span says so with <see cref="Cancelled"/>.

@@ -124,6 +124,26 @@ public sealed class TracingTests
         await Assert.ThrowsAsync<BudgetExceededException>(() => pipeline.Client.GetResponseAsync(new string('a', 400), Options(), Ct));
 
         AssertError(Assert.Single(trace.Chat), ReplyErrorCodes.BudgetExceeded, typeof(BudgetExceededException));
+        // The one case where a chat span has no ModelCalls row: the refusal is above the usage logging (PLAN.md 6.2)
+        Assert.Empty(pipeline.Rows.All);
+    }
+
+    [Fact]
+    public async Task A_call_refused_by_the_request_cap_is_an_error_chat_span_with_no_row()
+    {
+        using var trace = new TraceCapture();
+        using var rig = Create(
+            Turns(Turn(Lookup("KO-205002"), Usage(2000, 100)), Turn(Text("never sent"), Usage())),
+            orders: KnownOrder(),
+            configure: o => o.Budget.MaxTokensPerRequest = 1000);
+
+        var events = await rig.RunAsync(Ticket(), Ct);
+
+        Assert.Equal(ReplyErrorCodes.BudgetExceeded, Assert.IsType<ReplyError>(events[^1]).Code);
+        Assert.Equal(2, trace.Chat.Count);
+        Assert.Single(rig.Rows);
+        Assert.Single(trace.Chat, c => c.Status == ActivityStatusCode.Error);
+        AssertError(trace.Chat.Single(c => c.Status == ActivityStatusCode.Error), ReplyErrorCodes.BudgetExceeded, typeof(BudgetExceededException));
     }
 
     [Fact]
@@ -218,6 +238,21 @@ public sealed class TracingTests
         var chat = Assert.Single(trace.Chat);
         Assert.Equal(ActivityStatusCode.Unset, chat.Status);
         Assert.Equal(true, chat.GetTagItem(SupportDeskTelemetry.Cancelled));
+    }
+
+    [Fact]
+    public async Task A_failed_outgoing_http_call_leaves_no_exception_message_in_its_span()
+    {
+        using var trace = new TraceCapture();
+        // Nothing listens on port 1; the connection error's message names the host
+        using var client = new HttpClient();
+
+        await Assert.ThrowsAnyAsync<HttpRequestException>(() => client.GetAsync(new Uri("http://refused-host-marker.invalid:1/path?q=HTTPMARKER"), Ct));
+
+        var span = Assert.Single(trace.Spans, a => a.Kind == ActivityKind.Client);
+        Assert.DoesNotContain(span.Events, e => e.Name == "exception");
+        Assert.DoesNotContain(TraceCapture.AllText(span), text => text.Contains("HTTPMARKER", StringComparison.Ordinal));
+        Assert.Equal(span.GetTagItem("error.type"), span.StatusDescription ?? span.GetTagItem("error.type"));
     }
 
     // No text in spans

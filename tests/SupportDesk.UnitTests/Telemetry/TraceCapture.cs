@@ -40,6 +40,21 @@ internal sealed class TraceCapture : IDisposable
         }
     }
 
+    /// <summary>The trace this capture's own root span started, to tell it from traces of their own.</summary>
+    public ActivityTraceId TraceId => _root.TraceId;
+
+    /// <summary>Every ended span the provider exported, of any trace.</summary>
+    public IReadOnlyList<Activity> AllSpans
+    {
+        get
+        {
+            lock (_exported)
+            {
+                return [.. _exported];
+            }
+        }
+    }
+
     public IReadOnlyList<Activity> Named(string name) => [.. Spans.Where(a => a.OperationName == name)];
 
     public IReadOnlyList<Activity> Chat => [.. Spans.Where(a => a.OperationName.StartsWith("chat", StringComparison.Ordinal))];
