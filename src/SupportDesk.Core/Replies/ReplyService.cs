@@ -72,13 +72,6 @@ public sealed partial class ReplyService(
                 ReplyEvent next;
                 try
                 {
-                    // An iterator doesn't keep Activity.Current between calls, so the model calls and tools below would
-                    // otherwise attach to the HTTP span instead of this one
-                    if (activity is not null)
-                    {
-                        Activity.Current = activity;
-                    }
-
                     if (!await events.MoveNextAsync())
                     {
                         finished = true;

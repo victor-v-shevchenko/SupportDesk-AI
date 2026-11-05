@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 using SupportDesk.Core.AI;
 using SupportDesk.Core.FollowUps;
 using SupportDesk.Core.Orders;
@@ -59,6 +60,24 @@ public sealed class TracingTests
             Assert.Equal(500, chat.GetTagItem("gen_ai.usage.input_tokens"));
             Assert.Equal(40, chat.GetTagItem("gen_ai.usage.output_tokens"));
         });
+    }
+
+    [Fact]
+    public async Task Work_after_the_first_streamed_text_is_still_under_the_reply_span()
+    {
+        using var trace = new TraceCapture();
+        using var rig = Create(
+            Turns(Turn(Text("Let me check the order. ", delayMs: 10), Lookup("KO-205002"), Usage()), Turn(Text("It is delayed.", delayMs: 10), Usage())),
+            orders: KnownOrder());
+
+        var events = await rig.RunAsync(Ticket(id: 7), Ct);
+
+        Assert.IsType<ReplyDone>(events[^1]);
+        var reply = Assert.Single(trace.Named("reply"));
+        // The tool call and the second model call both start after the stream has handed text to its reader
+        Assert.True(trace.IsDescendant(Assert.Single(trace.Tools), reply));
+        Assert.Equal(2, trace.Chat.Count);
+        Assert.All(trace.Chat, chat => Assert.True(trace.IsDescendant(chat, reply)));
     }
 
     [Fact]
@@ -242,6 +261,23 @@ public sealed class TracingTests
 
         var chat = Assert.Single(trace.Chat);
         Assert.DoesNotContain(TraceCapture.AllText(chat), text => text.Contains(Marker, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task The_embedding_span_exists_and_does_not_hold_the_text()
+    {
+        // Microsoft.Extensions.AI 10.11 doesn't put embedding input in a span even with capture on; this guards a later version that does
+        const string Marker = "EMBEDMARKER-3c77";
+        using var trace = new TraceCapture();
+        using var services = AiTestServices.Build(
+            new Dictionary<string, string?> { ["AI:Chat:Provider"] = "Fake", ["AI:Embeddings:Provider"] = "Fake" },
+            configure: s => s.AddOptions<TelemetryOptions>().Configure(o => o.CaptureMessageContent = false));
+        var generator = services.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
+
+        await generator.GenerateAsync(["Where is my parcel? " + Marker], cancellationToken: Ct);
+
+        var span = Assert.Single(trace.Spans, a => a.OperationName.StartsWith("embeddings", StringComparison.Ordinal));
+        Assert.DoesNotContain(TraceCapture.AllText(span), text => text.Contains(Marker, StringComparison.Ordinal));
     }
 
     private static async Task<IReadOnlyList<Activity>> RunAsync(bool capture, string ticketMarker, string replyMarker, string toolMarker)
