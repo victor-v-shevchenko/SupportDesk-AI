@@ -202,6 +202,24 @@ public sealed class TracingTests
         Assert.Equal("cancelled", reply.GetTagItem(SupportDeskTelemetry.Outcome));
     }
 
+    [Fact]
+    public async Task A_stream_the_caller_stops_reading_is_cancelled_not_an_error()
+    {
+        using var trace = new TraceCapture();
+        var time = new TrackedFakeTime();
+        using var pipeline = TestPipeline.Create(new ScriptedChatClient(time, Scripted.Steps(Scripted.Text("First"), Scripted.Text("Second"), Scripted.Usage(10, 2))), time);
+
+        await foreach (var update in pipeline.Client.GetStreamingResponseAsync("hi", Options(), Ct))
+        {
+            Assert.Equal("First", update.Text);
+            break;
+        }
+
+        var chat = Assert.Single(trace.Chat);
+        Assert.Equal(ActivityStatusCode.Unset, chat.Status);
+        Assert.Equal(true, chat.GetTagItem(SupportDeskTelemetry.Cancelled));
+    }
+
     // No text in spans
 
     [Fact]
