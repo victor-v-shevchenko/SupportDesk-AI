@@ -469,6 +469,8 @@ These come from the current API and must be checked against the SDK version in u
 | 10 | [Evaluation](docs/specs/10-evaluation.md) | `step/10-evaluation` |
 | 11 | [UI polish and end-to-end tests](docs/specs/11-ui-e2e.md) | `step/11-ui-e2e` |
 | 12 | [Final review and README](docs/specs/12-readme.md) | `step/12-readme` |
+| 13 | [OpenTelemetry tracing](docs/specs/13-tracing.md) | `step/13-tracing` |
+| 14 | [OpenTelemetry metrics](docs/specs/14-metrics.md) | `step/14-metrics` |
 
 ## 13. Decisions
 
