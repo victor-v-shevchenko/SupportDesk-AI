@@ -164,8 +164,9 @@ public class TracingTests(PostgresFixture postgres)
         var tags = Assert.Single(failed.Events, e => e.Name == "exception").Tags.ToDictionary(t => t.Key, t => t.Value as string);
         Assert.Equal(tags["exception.type"], tags["exception.message"]);
         Assert.Equal("", tags["exception.stacktrace"]);
-        // Npgsql's own description is the SQLSTATE, a code
+        // For a server error Npgsql's description is the SQLSTATE, a code, and the sanitizer's rewrite keeps it as error.type
         Assert.Equal("22P02", failed.StatusDescription);
+        Assert.Equal(failed.GetTagItem("error.type"), failed.StatusDescription);
     }
 
     [Fact]

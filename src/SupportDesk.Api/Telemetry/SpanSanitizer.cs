@@ -49,6 +49,8 @@ internal sealed class SpanSanitizer : BaseProcessor<Activity>
 
     protected override void Dispose(bool disposing)
     {
+        // AddProcessor<T> also registers the processor in DI, so both the provider and the container dispose it;
+        // detaching the listener a second time does nothing
         if (disposing)
         {
             _listener.Dispose();
@@ -57,9 +59,15 @@ internal sealed class SpanSanitizer : BaseProcessor<Activity>
         base.Dispose(disposing);
     }
 
-    /// <summary>The sources that record exceptions on their spans: Npgsql, and the HTTP and ASP.NET Core libraries and their instrumentation.</summary>
+    /// <summary>
+    /// The sources that record exceptions on their spans: Npgsql, and the HTTP and ASP.NET Core libraries and their instrumentation.
+    /// The app's and Microsoft.Extensions.AI's sources don't record any today; they're included so a later exception event on
+    /// them is scrubbed too, and since the provider already listens to them, this changes nothing else.
+    /// </summary>
     private static bool Instrumented(string name) =>
         name == "Npgsql"
+        || name == SupportDeskTelemetry.SourceName
+        || name == SupportDeskTelemetry.AiSourceName
         || name.StartsWith("System.Net.", StringComparison.Ordinal)
         || name.StartsWith("Microsoft.AspNetCore", StringComparison.Ordinal)
         || name.StartsWith("OpenTelemetry.Instrumentation.", StringComparison.Ordinal);
