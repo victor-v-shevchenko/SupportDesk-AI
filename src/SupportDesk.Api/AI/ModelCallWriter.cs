@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using SupportDesk.Core.AI.Usage;
+using SupportDesk.Core.Telemetry;
 
 namespace SupportDesk.Api.AI;
 
@@ -53,13 +55,17 @@ public sealed partial class ModelCallWriter(ModelCallBuffer queue, IServiceScope
             return;
         }
 
+        // A background service, so each batch is a trace of its own
+        using var activity = SupportDeskTelemetry.Source.StartActivity("model_calls.save", ActivityKind.Internal, parentContext: default);
+        activity?.SetTag("supportdesk.row_count", batch.Count);
         try
         {
             await using var scope = scopes.CreateAsyncScope();
             await scope.ServiceProvider.GetRequiredService<IModelCallRepository>().AddRangeAsync(batch, cancellationToken);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException exception) when (cancellationToken.IsCancellationRequested)
         {
+            activity.RecordFailure(exception, cancellationToken);
             // Shutdown cut the save short; say so rather than losing the rows silently
             // While draining, nothing will save what is still queued behind this batch
             LogSaveCancelled(draining ? batch.Count + queue.Reader.Count : batch.Count);
@@ -67,6 +73,7 @@ public sealed partial class ModelCallWriter(ModelCallBuffer queue, IServiceScope
         }
         catch (Exception exception)
         {
+            activity.RecordFailure(exception, cancellationToken);
             LogSaveFailed(exception, batch.Count);
         }
     }

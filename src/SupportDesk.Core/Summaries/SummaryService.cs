@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SupportDesk.Core.AI;
 using SupportDesk.Core.AI.Prompts;
+using SupportDesk.Core.Telemetry;
 using SupportDesk.Core.Tickets;
 
 namespace SupportDesk.Core.Summaries;
@@ -27,6 +28,20 @@ public sealed partial class SummaryService(
     ILogger<SummaryService> logger) : ISummaryService
 {
     public async Task<TicketSummary?> GenerateAsync(int ticketId, CancellationToken cancellationToken)
+    {
+        using var activity = SupportDeskTelemetry.Source.StartActivity("summary");
+        activity?.SetTag(SupportDeskTelemetry.TicketId, ticketId);
+        try
+        {
+            return await GenerateCoreAsync(ticketId, cancellationToken);
+        }
+        catch (Exception exception) when (activity.RecordedFailure(exception, cancellationToken))
+        {
+            throw;
+        }
+    }
+
+    private async Task<TicketSummary?> GenerateCoreAsync(int ticketId, CancellationToken cancellationToken)
     {
         var ticket = await tickets.FindAsync(ticketId, cancellationToken);
         if (ticket is null)

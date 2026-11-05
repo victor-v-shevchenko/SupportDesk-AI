@@ -37,6 +37,8 @@ public class BudgetAndUsageTests
             [
                 typeof(RequestCapMiddleware),
                 typeof(FunctionInvokingChatClient),
+                typeof(OpenTelemetryChatClient),
+                typeof(TraceTagsMiddleware),
                 typeof(RequestCapCounterMiddleware),
                 typeof(BudgetGuardMiddleware),
                 typeof(UsageLoggingMiddleware),

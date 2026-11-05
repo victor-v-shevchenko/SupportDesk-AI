@@ -1,11 +1,13 @@
 using SupportDesk.Api;
 using SupportDesk.Api.AI;
 using SupportDesk.Api.Endpoints;
+using SupportDesk.Api.Telemetry;
 using SupportDesk.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSupportDeskApi();
+builder.Services.AddSupportDeskTelemetry(builder.Configuration);
 builder.Services.AddSupportDeskData();
 builder.Services.AddSupportDeskAi();
 builder.Services.AddSupportDeskRetrieval();

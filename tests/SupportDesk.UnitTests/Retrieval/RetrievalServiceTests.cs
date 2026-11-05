@@ -1,8 +1,12 @@
+using System.Diagnostics;
 using System.Net;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Options;
 using SupportDesk.Core.AI;
+using SupportDesk.Core.Replies;
 using SupportDesk.Core.Retrieval;
+using SupportDesk.Core.Telemetry;
+using SupportDesk.UnitTests.Telemetry;
 
 namespace SupportDesk.UnitTests.Retrieval;
 
@@ -75,6 +79,51 @@ public class RetrievalServiceTests
         var service = Service(new ThrowingGenerator(new OperationCanceledException(cts.Token)));
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.SearchAsync("refund", 5, cts.Token));
+    }
+
+    [Fact]
+    public async Task A_search_has_a_span_with_the_query_length_k_and_results_but_not_the_query()
+    {
+        using var trace = new TraceCapture();
+        const string Query = "QUERYMARKER-90ab where is my refund";
+
+        await Service(new FixedGenerator(new float[1024])).SearchAsync(Query, 5, Ct);
+
+        var span = Assert.Single(trace.Named("retrieval"));
+        Assert.Equal(Query.Length, span.GetTagItem("supportdesk.query_length"));
+        Assert.Equal(5, span.GetTagItem("supportdesk.k"));
+        Assert.Equal(0, span.GetTagItem("supportdesk.results_kept"));
+        Assert.Equal(new RetrievalOptions().MinSimilarity, span.GetTagItem("supportdesk.min_similarity"));
+        Assert.DoesNotContain(trace.Spans.SelectMany(TraceCapture.AllText), text => text.Contains("QUERYMARKER", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_failed_search_is_an_error_span_with_the_code_and_not_the_providers_message()
+    {
+        using var trace = new TraceCapture();
+        var service = Service(new ThrowingGenerator(new HttpRequestException("echo of QUERYMARKER-90ab", null, HttpStatusCode.BadGateway)));
+
+        await Assert.ThrowsAsync<ModelUnavailableException>(() => service.SearchAsync("refund", 5, Ct));
+
+        var span = Assert.Single(trace.Named("retrieval"));
+        Assert.Equal(ActivityStatusCode.Error, span.Status);
+        Assert.Equal(ReplyErrorCodes.ModelUnavailable, span.StatusDescription);
+        Assert.DoesNotContain(trace.Spans.SelectMany(TraceCapture.AllText), text => text.Contains("QUERYMARKER", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_search_the_caller_cancelled_is_not_an_error_span()
+    {
+        using var trace = new TraceCapture();
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        var service = Service(new ThrowingGenerator(new OperationCanceledException(cts.Token)));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.SearchAsync("refund", 5, cts.Token));
+
+        var span = Assert.Single(trace.Named("retrieval"));
+        Assert.Equal(ActivityStatusCode.Unset, span.Status);
+        Assert.Equal(true, span.GetTagItem(SupportDeskTelemetry.Cancelled));
     }
 
     private static RetrievalService Service(IEmbeddingGenerator<string, Embedding<float>> generator) =>

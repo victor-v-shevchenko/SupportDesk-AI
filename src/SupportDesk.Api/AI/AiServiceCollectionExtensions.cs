@@ -4,6 +4,7 @@ using Anthropic;
 using Anthropic.Core;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using OllamaSharp;
 using OpenAI;
@@ -11,6 +12,7 @@ using SupportDesk.Core.AI;
 using SupportDesk.Core.AI.Fake;
 using SupportDesk.Core.AI.Prompts;
 using SupportDesk.Core.AI.Usage;
+using SupportDesk.Core.Telemetry;
 
 namespace SupportDesk.Api.AI;
 
@@ -88,7 +90,7 @@ public static class AiServiceCollectionExtensions
         var keys = services.GetRequiredService<IOptions<ProviderKeys>>().Value;
         var embeddings = options.Embeddings;
 
-        return embeddings.Provider switch
+        var generator = embeddings.Provider switch
         {
             EmbeddingProvider.Fake => new FakeEmbeddingGenerator(embeddings.Dimensions),
             EmbeddingProvider.Ollama => new OllamaApiClient(CreateHttpClient(services, options, options.Ollama.Endpoint), embeddings.ResolvedModel),
@@ -97,6 +99,13 @@ public static class AiServiceCollectionExtensions
             EmbeddingProvider.OpenAI => CreateOpenAIClient(services, options, keys).GetEmbeddingClient(embeddings.ResolvedModel).AsIEmbeddingGenerator(embeddings.Dimensions),
             _ => throw new InvalidOperationException($"AI:Embeddings:Provider '{embeddings.Provider}' isn't supported."),
         };
+
+        // Retrieval and the startup sync show embeddings spans. Content capture is set explicitly (PLAN.md 14), so the
+        // environment variable can't turn it on; no logger factory, since the client would log a failure's exception
+        var captureContent = services.GetService<IOptions<TelemetryOptions>>()?.Value.CaptureMessageContent ?? false;
+        return new EmbeddingGeneratorBuilder<string, Embedding<float>>(generator)
+            .UseOpenTelemetry(NullLoggerFactory.Instance, SupportDeskTelemetry.AiSourceName, client => client.EnableSensitiveData = captureContent)
+            .Build(services);
     }
 
     private static OpenAIClient CreateOpenAIClient(IServiceProvider services, AiOptions options, ProviderKeys keys) =>

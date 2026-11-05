@@ -1,8 +1,10 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SupportDesk.Core.AI.Usage;
+using SupportDesk.Core.Telemetry;
 
 namespace SupportDesk.Core.AI;
 
@@ -21,10 +23,16 @@ public static class AiPipeline
 
         var options = services.GetRequiredService<IOptions<AiOptions>>().Value;
         var time = services.GetRequiredService<TimeProvider>();
+        // Set on the client whatever it is, so OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT can't turn capture on (PLAN.md 14)
+        var captureContent = services.GetService<IOptions<TelemetryOptions>>()?.Value.CaptureMessageContent ?? false;
 
         return new ChatClientBuilder(provider)
             .Use(inner => new RequestCapMiddleware(inner))
             .UseFunctionInvocation(configure: client => client.MaximumIterationsPerRequest = MaxToolIterations)
+            // Directly under the tool loop: one chat span per inner call, and the loop's execute_tool spans (it makes them only when a telemetry client is below it)
+            // No logger factory: the client would log the failure's exception, whose message can echo the request
+            .UseOpenTelemetry(NullLoggerFactory.Instance, SupportDeskTelemetry.AiSourceName, client => client.EnableSensitiveData = captureContent)
+            .Use(inner => new TraceTagsMiddleware(inner))
             .Use(inner => new RequestCapCounterMiddleware(inner, options.Budget))
             .Use(inner => new BudgetGuardMiddleware(inner, options.Budget))
             .Use(inner => new UsageLoggingMiddleware(
