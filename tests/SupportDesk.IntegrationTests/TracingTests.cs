@@ -126,23 +126,46 @@ public class TracingTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task A_failed_sql_command_leaves_no_exception_message_or_stack_in_any_span()
+    public async Task A_failed_sql_command_keeps_its_span_and_leaves_no_exception_message_or_stack_in_any_span()
     {
         const string Marker = "SQLMARKER-4d2e";
         var spans = new List<Activity>();
         await using var api = await StartAsync(spans);
+        using var enclosing = new ActivitySource("SupportDesk.IntegrationTests");
+        using var tracing = new ActivityListener { ShouldListenTo = s => s.Name == enclosing.Name, Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded };
+        ActivitySource.AddActivityListener(tracing);
 
-        // Sent as a parameter, so only the error message quotes it: invalid input syntax for type integer: "SQLMARKER-4d2e"
+        Activity? parent;
+        using (parent = enclosing.StartActivity("enclosing"))
         using (var scope = api.Factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<SupportDesk.Data.SupportDeskDbContext>();
+            // A good command first, to compare names with; the bad one sends the marker as a parameter, so only PostgreSQL's
+            // message quotes it: invalid input syntax for type integer: "SQLMARKER-4d2e"
+            await db.Database.ExecuteSqlAsync($"SELECT 1", Ct);
             await Assert.ThrowsAnyAsync<Exception>(() => db.Database.ExecuteSqlAsync($"SELECT {Marker}::int", Ct));
         }
 
-        var failed = await WaitForAsync(spans, a => a.Status == ActivityStatusCode.Error && a.TagObjects.Any(t => t.Key.StartsWith("db.", StringComparison.Ordinal)));
-        Assert.DoesNotContain(Snapshot(spans).SelectMany(AllText), text => text.Contains(Marker, StringComparison.Ordinal));
-        Assert.All(Snapshot(spans), span => Assert.DoesNotContain(span.Events, e => e.Tags.Any(t => t.Key is "exception.message" or "exception.stacktrace")));
-        Assert.NotNull(failed.StatusDescription);
+        Assert.NotNull(parent);
+        await WaitForAsync(spans, a => a.Status == ActivityStatusCode.Error && a.TagObjects.Any(t => t.Key.StartsWith("db.", StringComparison.Ordinal)));
+        var all = Snapshot(spans);
+        var failed = Assert.Single(all, a => a.Status == ActivityStatusCode.Error && a.TagObjects.Any(t => t.Key.StartsWith("db.", StringComparison.Ordinal)));
+        var good = all.First(a => a.Status != ActivityStatusCode.Error && a.Source.Name == "Npgsql" && a.ParentSpanId == parent.SpanId);
+
+        // The span is Npgsql's own, with its place in the trace
+        Assert.Equal("Npgsql", failed.Source.Name);
+        Assert.Equal(parent.TraceId, failed.TraceId);
+        Assert.Equal(parent.SpanId, failed.ParentSpanId);
+        Assert.Equal(good.DisplayName, failed.DisplayName);
+        Assert.Equal(good.Kind, failed.Kind);
+
+        // The message and stack are placeholders, and the status holds no text
+        Assert.DoesNotContain(all.SelectMany(AllText), text => text.Contains(Marker, StringComparison.Ordinal));
+        var tags = Assert.Single(failed.Events, e => e.Name == "exception").Tags.ToDictionary(t => t.Key, t => t.Value as string);
+        Assert.Equal(tags["exception.type"], tags["exception.message"]);
+        Assert.Equal("", tags["exception.stacktrace"]);
+        // Npgsql's own description is the SQLSTATE, a code
+        Assert.Equal("22P02", failed.StatusDescription);
     }
 
     [Fact]

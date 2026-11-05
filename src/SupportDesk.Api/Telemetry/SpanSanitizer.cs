@@ -5,22 +5,36 @@ using SupportDesk.Core.Telemetry;
 namespace SupportDesk.Api.Telemetry;
 
 /// <summary>
-/// Runs on every span as it ends, before the exporters (PLAN.md 14). Instrumentation libraries put an exception's message in
-/// a failed span's status, and a provider's message can echo the request, which holds ticket text; so the status description
-/// becomes the app's error code, or the exception type (never the message). A span of a call the caller cancelled isn't an error, whatever the library
-/// that wrote it thought.
+/// Keeps exception text out of spans (PLAN.md 14). Instrumentation libraries put an exception's message in a failed span's
+/// status and in an <c>exception</c> event (with the stack trace), and a provider's or database's message can echo the
+/// request, which holds ticket text.
+/// <list type="bullet">
+/// <item>The event: while this processor lives, an <see cref="ActivityListener"/> with an <c>ExceptionRecorder</c> adds
+/// placeholder <c>exception.message</c> and <c>exception.stacktrace</c> tags. <see cref="Activity.AddException(Exception, in TagList, DateTimeOffset)"/>
+/// runs the recorders first and skips keys already there, so the real text is never written. The listener samples nothing, so it
+/// changes no span.</item>
+/// <item>The status: on every span as it ends, before the exporters, the description becomes the app's error code, or the
+/// exception type, never the message.</item>
+/// <item>A span of a call the caller cancelled isn't an error, whatever the library that wrote it thought.</item>
+/// </list>
 /// </summary>
 internal sealed class SpanSanitizer : BaseProcessor<Activity>
 {
+    private readonly ActivityListener _listener = new()
+    {
+        ShouldListenTo = source => Instrumented(source.Name),
+        Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.None,
+        ExceptionRecorder = Scrub,
+    };
+
+    public SpanSanitizer()
+    {
+        ActivitySource.AddActivityListener(_listener);
+    }
+
     public override void OnEnd(Activity data)
     {
         ArgumentNullException.ThrowIfNull(data);
-
-        if (data.Events.Any(e => e.Name == "exception"))
-        {
-            ReplaceWithoutExceptionEvent(data);
-            return;
-        }
 
         if (data.GetTagItem(SupportDeskTelemetry.Cancelled) is true)
         {
@@ -33,27 +47,26 @@ internal sealed class SpanSanitizer : BaseProcessor<Activity>
         }
     }
 
-    /// <summary>
-    /// Npgsql adds an <c>exception</c> event with the exception's message and stack trace to a failed command's span, and an
-    /// event can't be removed. PostgreSQL's message can quote a value from the statement, so the span is kept out of the export
-    /// and a copy without the event takes its place (same name, parent, times, tags and status; the type and code only).
-    /// </summary>
-    private static void ReplaceWithoutExceptionEvent(Activity original)
+    protected override void Dispose(bool disposing)
     {
-        var type = original.Events.First(e => e.Name == "exception").Tags.FirstOrDefault(t => t.Key == "exception.type").Value as string;
-        original.ActivityTraceFlags &= ~ActivityTraceFlags.Recorded;
-
-        var parent = new ActivityContext(original.TraceId, original.ParentSpanId, ActivityTraceFlags.Recorded);
-        using var copy = SupportDeskTelemetry.Source.StartActivity(
-            original.OperationName, original.Kind, parent, original.TagObjects.Where(t => !t.Key.StartsWith("exception.", StringComparison.Ordinal)), startTime: original.StartTimeUtc);
-        if (copy is null)
+        if (disposing)
         {
-            return;
+            _listener.Dispose();
         }
 
-        copy.SetTag("error.type", type);
-        copy.SetTag("db.original_source", original.Source.Name);
-        copy.SetStatus(ActivityStatusCode.Error, type);
-        copy.SetEndTime(original.StartTimeUtc + original.Duration);
+        base.Dispose(disposing);
+    }
+
+    /// <summary>The sources that record exceptions on their spans: Npgsql, and the HTTP and ASP.NET Core libraries and their instrumentation.</summary>
+    private static bool Instrumented(string name) =>
+        name == "Npgsql"
+        || name.StartsWith("System.Net.", StringComparison.Ordinal)
+        || name.StartsWith("Microsoft.AspNetCore", StringComparison.Ordinal)
+        || name.StartsWith("OpenTelemetry.Instrumentation.", StringComparison.Ordinal);
+
+    private static void Scrub(Activity activity, Exception exception, ref TagList tags)
+    {
+        tags.Add("exception.message", exception.GetType().FullName);
+        tags.Add("exception.stacktrace", "");
     }
 }
