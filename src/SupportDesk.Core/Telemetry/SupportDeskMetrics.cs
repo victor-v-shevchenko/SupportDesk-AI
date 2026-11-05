@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Metrics;
+using Microsoft.Extensions.Logging;
 using SupportDesk.Core.AI;
 using SupportDesk.Core.AI.Usage;
 using SupportDesk.Core.Replies;
@@ -11,8 +13,10 @@ namespace SupportDesk.Core.Telemetry;
 /// dashboard shows them over time without querying <c>ModelCalls</c>. A singleton built from <see cref="IMeterFactory"/>, so
 /// tests get a meter of their own (no static state). Every tag value comes from a fixed set or from configuration (the model
 /// name); there is never an ID, a ticket number or text. Methods are called after the outcome is known and only add to counters.
+/// None of them can throw: a measurement listener that throws (counters call listeners synchronously) is caught and logged at
+/// debug level, so recording can never change a call's outcome.
 /// </summary>
-public sealed class SupportDeskMetrics
+public sealed partial class SupportDeskMetrics
 {
     /// <summary>The name of the app's meter, which the API subscribes to.</summary>
     public const string MeterName = "SupportDesk";
@@ -37,9 +41,14 @@ public sealed class SupportDeskMetrics
     private readonly Counter<long> _classifications;
     private readonly Counter<long> _followUps;
 
-    public SupportDeskMetrics(IMeterFactory meterFactory)
+    private readonly ILogger<SupportDeskMetrics> _logger;
+
+    public SupportDeskMetrics(IMeterFactory meterFactory, ILogger<SupportDeskMetrics> logger)
     {
         ArgumentNullException.ThrowIfNull(meterFactory);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        _logger = logger;
 
         // The factory owns the meter and disposes it with the container
         var meter = meterFactory.Create(MeterName);
@@ -59,27 +68,36 @@ public sealed class SupportDeskMetrics
     {
         ArgumentNullException.ThrowIfNull(row);
 
-        var feature = row.Feature.ToString();
-        var calls = new TagList
+        TagList calls;
+        try
         {
-            { "feature", feature },
-            { "provider", row.Provider },
-            { "model", row.Model },
-            { "outcome", OutcomeName(row.Outcome) },
-        };
-        if (error is not null)
+            calls = new TagList
+            {
+                { "feature", row.Feature.ToString() },
+                { "provider", row.Provider },
+                { "model", row.Model },
+                { "outcome", OutcomeName(row.Outcome) },
+            };
+            if (error is not null)
+            {
+                calls.Add("error.type", ReplyErrors.From(error).Code);
+            }
+        }
+        catch (ArgumentOutOfRangeException exception)
         {
-            calls.Add("error.type", ReplyErrors.From(error).Code);
+            // An outcome this code doesn't know is a programming error; it must not reach the call
+            LogFailed(exception);
+            return;
         }
 
-        _modelCalls.Add(1, calls);
-
+        var feature = row.Feature.ToString();
+        Add(_modelCalls, 1, calls);
         var estimated = row.IsEstimated;
-        _tokens.Add(row.InputTokens, new TagList { { "feature", feature }, { "model", row.Model }, { "direction", "input" }, { "estimated", estimated } });
-        _tokens.Add(row.OutputTokens, new TagList { { "feature", feature }, { "model", row.Model }, { "direction", "output" }, { "estimated", estimated } });
+        Add(_tokens, row.InputTokens, new TagList { { "feature", feature }, { "model", row.Model }, { "direction", "input" }, { "estimated", estimated } });
+        Add(_tokens, row.OutputTokens, new TagList { { "feature", feature }, { "model", row.Model }, { "direction", "output" }, { "estimated", estimated } });
         if (row.CostUsd is { } cost)
         {
-            _cost.Add((double)cost, new TagList { { "feature", feature }, { "model", row.Model } });
+            Add(_cost, (double)cost, new TagList { { "feature", feature }, { "model", row.Model } });
         }
     }
 
@@ -88,16 +106,16 @@ public sealed class SupportDeskMetrics
     {
         if (count > 0)
         {
-            _dropped.Add(count, new TagList { { "reason", reason } });
+            Add(_dropped, count, new TagList { { "reason", reason } });
         }
     }
 
     /// <summary>A reply stream ended: <paramref name="outcome"/> is <c>done</c>, an error code or <c>cancelled</c>.</summary>
     public void RecordReply(string outcome, bool guarded) =>
-        _replies.Add(1, new TagList { { "outcome", outcome }, { "guarded", guarded } });
+        Add(_replies, 1, new TagList { { "outcome", outcome }, { "guarded", guarded } });
 
     public void RecordToolCall(string tool, string result) =>
-        _toolCalls.Add(1, new TagList { { "tool", tool }, { "result", result } });
+        Add(_toolCalls, 1, new TagList { { "tool", tool }, { "result", result } });
 
     /// <summary>One count per signal name found in a ticket.</summary>
     public void RecordGuardHits(string scope, IEnumerable<string> signals)
@@ -106,7 +124,7 @@ public sealed class SupportDeskMetrics
 
         foreach (var signal in signals)
         {
-            _guardHits.Add(1, new TagList { { "scope", scope }, { "signal", signal } });
+            Add(_guardHits, 1, new TagList { { "scope", scope }, { "signal", signal } });
         }
     }
 
@@ -119,14 +137,29 @@ public sealed class SupportDeskMetrics
             tags.Add("reason", reason);
         }
 
-        _classifications.Add(1, tags);
+        Add(_classifications, 1, tags);
     }
 
     public void RecordFollowUp(string followUpEvent, int count = 1)
     {
         if (count > 0)
         {
-            _followUps.Add(count, new TagList { { "event", followUpEvent } });
+            Add(_followUps, count, new TagList { { "event", followUpEvent } });
+        }
+    }
+
+    /// <summary>One guarded add: a listener that throws is logged and the next measurement still goes in.</summary>
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Measurement listeners run inside Counter.Add; whatever one throws must never change the outcome of the call being counted.")]
+    private void Add<T>(Counter<T> counter, T value, TagList tags)
+        where T : struct
+    {
+        try
+        {
+            counter.Add(value, tags);
+        }
+        catch (Exception exception)
+        {
+            LogFailed(exception);
         }
     }
 
@@ -134,8 +167,13 @@ public sealed class SupportDeskMetrics
     {
         ModelCallOutcome.Success => "success",
         ModelCallOutcome.Error => "error",
-        _ => "cancelled",
+        ModelCallOutcome.Cancelled => "cancelled",
+        _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Unknown model call outcome."),
     };
+
+    // Debug level: a metric is never worth a warning, and the exception comes from a listener or from this code, not from a call
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Recording a metric failed")]
+    private partial void LogFailed(Exception exception);
 }
 
 /// <summary>The fixed tag values of <see cref="SupportDeskMetrics"/>; the tests check every recorded value against these.</summary>

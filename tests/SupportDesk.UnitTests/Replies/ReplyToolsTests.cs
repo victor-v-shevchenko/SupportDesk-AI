@@ -278,6 +278,29 @@ public sealed class ReplyToolsTests : IDisposable
     }
 
     [Fact]
+    public async Task A_lookup_that_throws_is_not_counted_as_a_tool_call()
+    {
+        _orders.Throw = new InvalidOperationException("orders are down");
+        var lookup = (AIFunction)Tools().Tools[0];
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await lookup.InvokeAsync(Arguments("""{ "orderNumber": "KO-205002" }"""), Ct));
+
+        Assert.Empty(_metrics.ToolCalls.GetMeasurementSnapshot());
+    }
+
+    [Fact]
+    public async Task A_proposal_that_fails_to_save_is_not_counted_as_a_tool_call_or_a_proposal()
+    {
+        _followUps.Throw = new InvalidOperationException("database is down");
+        var propose = (AIFunction)Tools().Tools[1];
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await propose.InvokeAsync(Arguments("""{ "title": "Trace it" }"""), Ct));
+
+        Assert.Empty(_metrics.ToolCalls.GetMeasurementSnapshot());
+        Assert.Empty(_metrics.FollowUps.GetMeasurementSnapshot());
+    }
+
+    [Fact]
     public async Task A_proposal_that_was_already_decided_is_not_counted()
     {
         _followUps.StoredStatus = ProposalStatus.Confirmed;
@@ -317,8 +340,16 @@ internal sealed class StubOrders(params OrderStatus[] orders) : IOrderStatusServ
 {
     public List<string> Lookups { get; } = [];
 
+    /// <summary>Thrown by every lookup when set.</summary>
+    public Exception? Throw { get; set; }
+
     public Task<OrderStatus?> FindAsync(string orderNumber, CancellationToken cancellationToken)
     {
+        if (Throw is { } failure)
+        {
+            throw failure;
+        }
+
         lock (Lookups)
         {
             Lookups.Add(orderNumber);
@@ -337,6 +368,9 @@ internal sealed class RecordingFollowUps : IFollowUpRepository
 
     public int Confirms { get; private set; }
 
+    /// <summary>Thrown by every upsert when set.</summary>
+    public Exception? Throw { get; set; }
+
     /// <summary>The status every stored proposal has, as when it was confirmed or expired before a retry.</summary>
     public ProposalStatus StoredStatus { get; set; } = ProposalStatus.Pending;
 
@@ -346,6 +380,11 @@ internal sealed class RecordingFollowUps : IFollowUpRepository
 
     public Task<FollowUpProposal> UpsertProposalAsync(NewProposal proposal, CancellationToken cancellationToken)
     {
+        if (Throw is { } failure)
+        {
+            throw failure;
+        }
+
         // Replies run at the same time in some tests, like requests do
         lock (_proposals)
         {

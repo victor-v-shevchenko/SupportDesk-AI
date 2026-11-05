@@ -493,7 +493,7 @@ These come from the current API and must be checked against the SDK version in u
 
 ## 14. Telemetry
 
-Steps 13 and 14. A request can be followed end to end in a trace, and counters ([step 14](docs/specs/14-metrics.md), below) show usage, cost and failures over time. Traces and metrics carry IDs (traces only), counts and codes, never prompt, ticket, reply or tool text. With no collector configured nothing changes.
+Steps 13 and 14. A request can be followed end to end in a trace, and counters ([step 14](docs/specs/14-metrics.md), below) show usage, cost and failures over time. Traces carry IDs, counts and codes; metrics carry counts and codes, never prompt, ticket, reply or tool text. With no collector configured nothing changes.
 
 **Config**
 
@@ -535,14 +535,14 @@ Steps 13 and 14. A request can be followed end to end in a trace, and counters (
 
 - **Wiring:** the meter provider is built beside the tracer provider, only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, with the same OTLP exporter. It listens to the app's meter `SupportDesk`, Microsoft.Extensions.AI's `Experimental.Microsoft.Extensions.AI` (its `gen_ai.client.token.usage` and `gen_ai.client.operation.duration` histograms come from the two `UseOpenTelemetry()` clients) and ASP.NET Core's built-in meters (`http.server.request.duration`, active requests), through `AddAspNetCoreInstrumentation()`. Runtime and Kestrel connection metrics are not added. The export interval is the SDK's 60 seconds (`OTEL_METRIC_EXPORT_INTERVAL`, above)
 - **No static meter:** `SupportDeskMetrics` is a singleton built from `IMeterFactory` (registered by `AddMetrics()`), which creates the instruments once. Tests build their own from a separate factory and read them with `MetricCollector<T>` (`Microsoft.Extensions.Diagnostics.Testing`). Without a listener, adding to a counter does nothing
-- **Recording** happens after the outcome is known, with methods that only add to counters, outside the code that decides retries, errors and the stream's last event. Counters and the `ModelCalls` table can't drift apart because a call is counted from the `ModelCall` row the middleware has just built, before the row goes to the buffer: a row the buffer drops, or a sink that throws, is still a call that happened
+- **Recording** happens after the outcome is known, with methods that only add to counters, outside the code that decides retries, errors and the stream's last event. Counters and the `ModelCalls` table can't drift apart because a call is counted from the `ModelCall` row the middleware has just built, before the row goes to the buffer: a row the buffer drops, or a sink that throws, is still a call that happened. No `Record*` method can throw: each add is guarded and a measurement listener that throws is logged at debug level, so recording never changes an outcome
 
 | Instrument | Unit | Tags | Recorded in |
 | --- | --- | --- | --- |
 | `supportdesk.model_calls` | `{call}` | `feature`, `provider`, `model`, `outcome` (`success`, `error`, `cancelled`), `error.type` (errors only: the reply stream's code, 7) | `UsageLoggingMiddleware`: one per `ModelCalls` row, so a retried call is one, and a call the budget or request cap refuses (no row) is none |
 | `supportdesk.model_calls.tokens` | `{token}` | `feature`, `model`, `direction` (`input`, `output`), `estimated` | the same place, from the row's token counts (estimates included, tagged) |
 | `supportdesk.model_calls.cost` | `USD` | `feature`, `model` | the same place, only for rows with a price (`CostUsd` not null) |
-| `supportdesk.model_calls.dropped` | `{row}` | `reason` (`buffer_full`, `shutdown`, `save_failed`, `drain_deadline`) | `ModelCallBuffer` (full, or closed at shutdown) and `ModelCallWriter` (a batch that failed to save, one cut short by shutdown, rows left past the drain deadline), by row count |
+| `supportdesk.model_calls.dropped` | `{row}` | `reason` (`buffer_full`, `shutdown`, `save_failed`, `drain_deadline`) | `ModelCallBuffer` (full, or closed at shutdown) and `ModelCallWriter` (`save_failed`: a batch that failed to save; `shutdown`: a save the stop signal cut short; `drain_deadline`: rows lost while draining, a save cut off by the deadline or rows left behind it), by row count |
 | `supportdesk.replies` | `{reply}` | `outcome` (`done`, an error code, `cancelled`), `guarded` (the ticket had injection signals) | `ReplyService`, when the stream ends; a call refused by the budget has no model call but is a `budget_exceeded` reply |
 | `supportdesk.tool_calls` | `{call}` | `tool`, `result` (`ran`, `invalid_arguments`, `over_limit`) | the reply tools, once the call's result is known |
 | `supportdesk.injection_guard.hits` | `{ticket}` | `scope` (`reply`, `classification`), `signal` (the signal's name, one count per signal found) | `ReplyService` (every signal, 10) and `ClassificationService` (the strong signals that hold the ticket, 9) |

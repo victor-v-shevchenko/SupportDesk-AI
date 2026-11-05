@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.Metrics.Testing;
 using SupportDesk.Api.Endpoints;
+using SupportDesk.Core.FollowUps;
 using SupportDesk.Core.Telemetry;
 
 namespace SupportDesk.IntegrationTests;
@@ -39,10 +40,11 @@ public class MetricsTests(PostgresFixture postgres)
         var first = await TicketIdAsync(api, "T-1002");
         var second = await TicketIdAsync(api, "T-1008");
 
-        await ReplyAsync(api, first);
-        await ReplyAsync(api, second);
+        // How many model calls the replies made, as their own usage events say: independent of the counters and of the table
+        var expectedCalls = await ReplyAsync(api, first) + await ReplyAsync(api, second);
 
-        var rows = await RowsAsync(api, [first, second], calls);
+        var rows = await RowsAsync(api, [first, second], expectedCalls);
+        Assert.Equal(expectedCalls, rows.Count);
         Assert.Equal(rows.Count, calls.GetMeasurementSnapshot().Sum(m => m.Value));
         Assert.Equal(rows.Sum(r => r.InputTokens), Sum(tokens, "direction", "input"));
         Assert.Equal(rows.Sum(r => r.OutputTokens), Sum(tokens, "direction", "output"));
@@ -85,22 +87,46 @@ public class MetricsTests(PostgresFixture postgres)
         Assert.Equal(0, Sum(followUps, "event", "confirmed"));
     }
 
+    [Fact]
+    public async Task A_confirm_still_succeeds_while_a_measurement_listener_throws()
+    {
+        await using var api = await SeededApi.StartAsync(postgres, Ct, Settings);
+        var ticketId = await TicketIdAsync(api, "T-1008");
+        FollowUpProposal proposal;
+        await using (var scope = api.Factory.Services.CreateAsyncScope())
+        {
+            proposal = await scope.ServiceProvider.GetRequiredService<IFollowUpRepository>()
+                .UpsertProposalAsync(new NewProposal(ticketId, Guid.NewGuid(), "Open a carrier trace", "", 2), Ct);
+        }
+
+        using var listener = new ThrowingMeterListener(api.Factory.Services.GetRequiredService<IMeterFactory>());
+        using var confirmed = await FollowUpTests.PostConfirmAsync(api, proposal.Id);
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, confirmed.StatusCode);
+        await using var db = api.CreateDbContext();
+        Assert.Equal(1, await db.FollowUpTasks.CountAsync(t => t.ProposalId == proposal.Id, Ct));
+    }
+
     private static MetricCollector<T> Collector<T>(IMeterFactory factory, string instrument)
         where T : struct => new(factory, SupportDeskMetrics.MeterName, instrument);
 
     private static long Sum(MetricCollector<long> collector, string key, string value) =>
         collector.GetMeasurementSnapshot().Where(m => Equals(m.Tags[key], value)).Sum(m => m.Value);
 
-    private static async Task ReplyAsync(SeededApi api, int ticketId)
+    /// <summary>Streams the reply to its end and returns the number of model calls its usage event reports.</summary>
+    private static async Task<int> ReplyAsync(SeededApi api, int ticketId)
     {
         using var response = await api.Client.PostAsync(new Uri($"/api/tickets/{ticketId}/reply", UriKind.Relative), null, Ct);
         response.EnsureSuccessStatusCode();
         // The stream is read to its end, so the reply has finished and recorded its outcome
-        await response.Content.ReadAsStringAsync(Ct);
+        var body = await response.Content.ReadAsStringAsync(Ct);
+        var usage = System.Text.RegularExpressions.Regex.Match(body, "\"calls\"\\s*:\\s*(\\d+)", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromSeconds(5));
+        Assert.True(usage.Success, "The reply stream should end with a usage event that has the number of calls.");
+        return int.Parse(usage.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
     }
 
-    /// <summary>The rows are saved by a background writer, so wait until there are as many as the counter has seen calls.</summary>
-    private static async Task<List<ModelCallResponse>> RowsAsync(SeededApi api, int[] ticketIds, MetricCollector<long> calls)
+    /// <summary>The rows are saved by a background writer, so wait until there are as many as the replies made calls.</summary>
+    private static async Task<List<ModelCallResponse>> RowsAsync(SeededApi api, int[] ticketIds, int expectedCalls)
     {
         var deadline = DateTime.UtcNow.AddSeconds(15);
         while (true)
@@ -111,7 +137,7 @@ public class MetricsTests(PostgresFixture postgres)
                 rows.AddRange((await api.Client.GetFromJsonAsync<List<ModelCallResponse>>(new Uri($"/api/model-calls?ticketId={id}", UriKind.Relative), JsonDefaults.Options, Ct))!);
             }
 
-            if (rows.Count >= calls.GetMeasurementSnapshot().Sum(m => m.Value) || DateTime.UtcNow > deadline)
+            if (rows.Count >= expectedCalls || DateTime.UtcNow > deadline)
             {
                 return rows;
             }

@@ -24,12 +24,16 @@ internal sealed class TestMetrics : IDisposable
     {
         _services = new ServiceCollection().AddMetrics().BuildServiceProvider();
         var factory = _services.GetRequiredService<IMeterFactory>();
-        Metrics = new SupportDeskMetrics(factory);
+        Factory = factory;
+        Metrics = new SupportDeskMetrics(factory, Microsoft.Extensions.Logging.Abstractions.NullLogger<SupportDeskMetrics>.Instance);
         _counters = CounterNames.ToDictionary(name => name, name => new MetricCollector<long>(factory, SupportDeskMetrics.MeterName, name));
         Cost = new MetricCollector<double>(factory, SupportDeskMetrics.MeterName, SupportDeskMetrics.CostName);
     }
 
     public SupportDeskMetrics Metrics { get; }
+
+    /// <summary>The factory that owns the meter; a measurement listener filters on it to stay out of other tests' counters.</summary>
+    public IMeterFactory Factory { get; }
 
     public MetricCollector<double> Cost { get; }
 

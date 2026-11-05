@@ -71,7 +71,8 @@ public sealed partial class ModelCallWriter(ModelCallBuffer queue, IServiceScope
             // Shutdown cut the save short; say so rather than losing the rows silently
             // While draining, nothing will save what is still queued behind this batch
             var lost = draining ? batch.Count + queue.Reader.Count : batch.Count;
-            metrics.RecordDropped(MetricValues.DropShutdown, lost);
+            // While draining, the deadline is what cut it short; otherwise the stop signal came during a normal save
+            metrics.RecordDropped(draining ? MetricValues.DropDrainDeadline : MetricValues.DropShutdown, lost);
             LogSaveCancelled(lost);
             throw;
         }

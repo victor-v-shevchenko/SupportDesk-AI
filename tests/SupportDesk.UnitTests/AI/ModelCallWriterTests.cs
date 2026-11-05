@@ -102,8 +102,22 @@ public sealed class ModelCallWriterTests : IDisposable
         await stopping.WaitAsync(TimeSpan.FromSeconds(30), Ct);
 
         Assert.Contains(_logs.Messages, m => m.Contains("Shutdown interrupted saving 50 model call rows", StringComparison.Ordinal));
-        Assert.Equal(50, TestMetrics.Sum(_metrics.Dropped, ("reason", "shutdown")));
+        Assert.Equal(50, TestMetrics.Sum(_metrics.Dropped, ("reason", "drain_deadline")));
         Assert.Equal(100, _repository.SavedRows);
+    }
+
+    [Fact]
+    public async Task A_save_the_stop_signal_cuts_short_counts_as_shutdown_not_drain_deadline()
+    {
+        _repository.HangFirstSave = true;
+        Enqueue(30);
+        await _writer.StartAsync(Ct);
+        await _repository.FirstSaveStarted;
+
+        await _writer.StopAsync(Ct);
+
+        Assert.Equal(30, TestMetrics.Sum(_metrics.Dropped, ("reason", "shutdown")));
+        Assert.Equal(0, TestMetrics.Sum(_metrics.Dropped, ("reason", "drain_deadline")));
     }
 
     [Fact]
@@ -123,7 +137,7 @@ public sealed class ModelCallWriterTests : IDisposable
 
         // The batch in flight (100) and the 50 behind it; the 100 saved first are not lost
         Assert.Contains(_logs.Messages, m => m.Contains("Shutdown interrupted saving 150 model call rows", StringComparison.Ordinal));
-        Assert.Equal(150, TestMetrics.Sum(_metrics.Dropped, ("reason", "shutdown")));
+        Assert.Equal(150, TestMetrics.Sum(_metrics.Dropped, ("reason", "drain_deadline")));
         Assert.Equal(100, _repository.SavedRows);
     }
 
@@ -169,6 +183,9 @@ public sealed class ModelCallWriterTests : IDisposable
         public TaskCompletionSource? HoldFirstSave { get; set; }
 
         public bool HangSecondSave { get; set; }
+
+        /// <summary>The first save waits until it is cancelled, as a slow database call does when the app stops.</summary>
+        public bool HangFirstSave { get; set; }
 
         /// <summary>Runs inside the second save, before it completes.</summary>
         public Action? DuringSecondSave { get; set; }
@@ -233,6 +250,11 @@ public sealed class ModelCallWriterTests : IDisposable
                 if (FailNext)
                 {
                     throw new InvalidOperationException("The database is down");
+                }
+
+                if (HangFirstSave)
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
                 }
 
                 if (HoldFirstSave is { } hold)

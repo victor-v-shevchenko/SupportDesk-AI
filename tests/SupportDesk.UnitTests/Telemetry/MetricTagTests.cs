@@ -186,9 +186,11 @@ public class MetricTagTests
         buffer.Complete();
         buffer.Reader.TryRead(out _);
         buffer.Add(row);
-        metrics.Metrics.RecordDropped("save_failed", 1);
-        metrics.Metrics.RecordDropped("drain_deadline", 1);
-        metrics.Metrics.RecordFollowUp("confirmed");
-        metrics.Metrics.RecordFollowUp("expired");
+        // These four happen in the writer and the follow-up repository, which this test doesn't run. They are recorded directly so
+        // their tag values are checked too; the real paths are covered by ModelCallWriterTests and the integration MetricsTests
+        metrics.Metrics.RecordDropped(MetricValues.DropSaveFailed, 1);
+        metrics.Metrics.RecordDropped(MetricValues.DropDrainDeadline, 1);
+        metrics.Metrics.RecordFollowUp(MetricValues.Confirmed);
+        metrics.Metrics.RecordFollowUp(MetricValues.Expired);
     }
 }
