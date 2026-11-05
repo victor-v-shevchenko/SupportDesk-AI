@@ -198,6 +198,8 @@ Built once with `ChatClientBuilder`, outermost first:
 ```
 RequestCapMiddleware          starts the request's token tally
 FunctionInvokingChatClient    the tool loop, MaximumIterationsPerRequest = 3
+OpenTelemetryChatClient       one chat span per inner call; lets the tool loop emit execute_tool spans (14)
+TraceTagsMiddleware           adds the feature, prompt version and IDs, and the error code, to that span (14)
 RequestCapCounterMiddleware   adds each call's tokens to the tally, refuses the next call once it's over the cap
 BudgetGuardMiddleware         per-call input estimate, sets MaxOutputTokens
 UsageLoggingMiddleware        one ModelCalls row per inner call
@@ -212,6 +214,7 @@ provider IChatClient          Anthropic (wrapped in AnthropicOptionsMiddleware) 
 - **The request cap has two parts.** Outside the tool loop a middleware can't see the inner calls, and inside it doesn't know where a request starts. So `RequestCapMiddleware` puts a new `RequestTally` in `ChatOptions.AdditionalProperties` (in a copy of the caller's options), and `RequestCapCounterMiddleware`, right under the tool loop, reads it
 - `UsageLoggingMiddleware` sits above the retries, so a retried call is one row with the whole latency. Its tokens and cost are the successful attempt's: a failed attempt's usage is held back with its other updates and discarded, so retries that a provider bills for are under-counted
 - `BudgetExceededException` and the missing-context check are thrown when the call is made, not on the first read of a stream, so nothing reaches the provider
+- **The telemetry client sits directly under the tool loop** (14): that makes one `chat` span per inner model call, which is the unit of a `ModelCalls` row, so a retried call (its attempts are inside it) is one span and its HTTP attempts are child spans. Under the tool loop is also where `FunctionInvokingChatClient` needs a telemetry client in order to emit its `execute_tool` spans. Above the request cap counter, a refused budget is an error span too
 - The order is checked by a test that walks the built chain (`The_middleware_order_matches_the_plan`)
 - Provider SDK retries are turned off (Anthropic SDK: max retries 0), so only `RetryTimeoutMiddleware` retries
 - `HttpClient` keeps only a connect timeout
@@ -487,3 +490,45 @@ These come from the current API and must be checked against the SDK version in u
 | Ollama for development | Free, local; one named model that supports tools and JSON output |
 | SonarQube Cloud, not self-hosted SonarQube | Free for public repositories with pull request analysis; the free self-hosted edition only analyzes the main branch, and running it adds a server and database to the dev container |
 | Sonar gate required only from step 3b | A strict gate on an empty skeleton blocks on noise; by step 3b there's real code to tune the rules against |
+
+## 14. Telemetry
+
+Step 13. A request can be followed end to end in a trace; metrics are [step 14](docs/specs/14-metrics.md). Traces carry IDs, counts and codes, never prompt, ticket, reply or tool text. With no collector configured nothing changes.
+
+**Config**
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` (environment) | none | Where to send traces (OTLP over gRPC). Unset or empty means no tracer provider at all: nothing listens to the sources and nothing is exported |
+| `OTEL_SERVICE_NAME` (environment) | `supportdesk-api` | Service name on every span |
+| `Telemetry:CaptureMessageContent` | `false` | Put prompts, replies, tool arguments and results in the model-call spans. Refused at startup in `Production` (`TelemetryOptionsValidator`), logged at warning level when on |
+
+`Telemetry:CaptureMessageContent` is set explicitly on both Microsoft.Extensions.AI clients. Their own default follows the `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` environment variable, which the library reads once per process; setting the property in code is what keeps that variable from turning capture on. The test projects set the variable for their whole process (`HostileTelemetryEnvironment`), so every pipeline test runs against it.
+
+**Wiring** (`SupportDesk.Api`, `AddSupportDeskTelemetry`)
+
+- Sources: `SupportDesk` (the app's) and `Experimental.Microsoft.Extensions.AI` (the library's default name; without subscribing to it the `chat`, `embeddings` and `execute_tool` spans are created but never exported). Instrumentation for ASP.NET Core (`GET /api/health` is filtered out, since it is polled), `HttpClient` and Npgsql (its spans show each SQL command; EF Core's instrumentation is still prerelease). Logs already carry `TraceId` and `SpanId` in their scopes, so a log line matches its trace; exporting logs is out of scope
+- `SpanSanitizer` runs before any exporter, on every span as it ends. A failed span's status description becomes the app's error code, because instrumentation libraries put the exception message there, and a provider's message can echo the request. A span tagged `supportdesk.cancelled` is set back to `Unset`: a caller's cancellation is not an error
+- `UseOpenTelemetry()` on the chat pipeline (6.2) and on the embedding generator, with no logger factory, since the client would log a failure's exception
+
+**Spans**
+
+| Span | Made by | Tags (IDs and counts only) |
+| --- | --- | --- |
+| HTTP server | ASP.NET Core | route, status |
+| `reply` | `ReplyService` | `supportdesk.ticket_id`, `supportdesk.reply_run_id`, `supportdesk.injection_guard_limited` and `supportdesk.injection_signals` (names), `supportdesk.chunks_retrieved`, `supportdesk.chunks_kept`, `supportdesk.citations`, `supportdesk.citations_removed`, `supportdesk.outcome` (`done`, `error`, `cancelled`) |
+| `summary`, `classification` | the services | `supportdesk.ticket_id`; a classification also `supportdesk.outcome` (its status), and when held `supportdesk.held` and the strong signal names, with no model call under it |
+| `retrieval` | `RetrievalService` | `supportdesk.query_length` (not the query), `supportdesk.k`, `supportdesk.min_similarity`, `supportdesk.results_kept` |
+| `embeddings <model>`, `chat <model>`, `execute_tool <name>` | Microsoft.Extensions.AI (Gen AI conventions v1.41) | the library's `gen_ai.*` tags (model, token usage, finish reason); a `chat` span also gets `supportdesk.feature`, `supportdesk.prompt_version`, `supportdesk.ticket_id`, `supportdesk.reply_run_id` from `AiCallContext` |
+| `confirm_follow_up` | `FollowUpRepository` | `supportdesk.proposal_id`, `supportdesk.outcome`, `supportdesk.rows_changed` |
+| `proposal_expiry` | `ProposalExpiryService` (a root span) | `supportdesk.rows_changed` |
+| `model_calls.save` | `ModelCallWriter` (a root span per batch) | `supportdesk.row_count` |
+| SQL | Npgsql | `db.*` tags and the parameterized statement |
+
+- **Errors:** a failed span has status `Error`, its description is the code the client sees (`timeout`, `model_unavailable`, `budget_exceeded`, `model_refused`, `internal_error`), and it has the tags `error.type` (the exception type) and `supportdesk.error_code`. Exception messages are never recorded. A caller's cancellation, or a stream the caller stops reading, leaves status `Unset` and the tag `supportdesk.cancelled`
+- **Streams:** the `reply` span, and so its model-call spans, end when the stream ends: `done`, `error`, or the caller leaving
+- **One `chat` span per `ModelCalls` row**, because both sit at the same place in the pipeline
+
+**Viewing locally:** the optional `telemetry` Compose profile runs the .NET Aspire dashboard (image `mcr.microsoft.com/dotnet/aspire-dashboard:9.5.2`; port 18888 for the UI and 18889 for OTLP, both bound to `127.0.0.1`; no login). `docker compose --profile telemetry up -d telemetry`, then `OTEL_EXPORTER_OTLP_ENDPOINT=http://telemetry:18889` for the API (the dev container and the `api` service reach it by name).
+
+**Tests:** CI needs no collector; tests use `OpenTelemetry.Exporter.InMemory`. Unit tests check the span tree through the real pipeline and reply service, the error and cancellation rules, and that no marker text from a ticket, reply, tool result or `ChatOptions.AdditionalProperties` reaches a span; integration tests check one trace from the HTTP request to the SQL, `chat` spans equal to `ModelCalls` rows, and no span for `GET /api/health`.

@@ -18,19 +18,21 @@ A request to the API can be followed end to end in a trace: the HTTP request, th
 
 **Model calls and embeddings**
 - `UseOpenTelemetry()` from Microsoft.Extensions.AI 10.11 (Gen AI semantic conventions v1.41) goes into the chat pipeline **directly under `FunctionInvokingChatClient`**, above `RequestCapCounterMiddleware`. That gives one `chat` span per inner model call (the same unit as a `ModelCalls` row: retries stay inside it, and their HTTP attempts show as child spans), and lets the tool loop emit `execute_tool` spans, which `FunctionInvokingChatClient` creates only when a telemetry client sits under it. The order test (`The_middleware_order_matches_the_plan`) and PLAN.md 6.2 change with it
-- The embedding generator gets `UseOpenTelemetry()` too, so retrieval and the startup sync show `embeddings` spans
+- The embedding generator gets `UseOpenTelemetry()` too, so retrieval and the startup sync show `embeddings` spans. In 10.11 its span never holds the input text, even with capture on; the explicit setting is kept in case a later version changes that, and a test checks the text isn't in the span
 - Tracing subscribes to Microsoft.Extensions.AI's source by its default name, `Experimental.Microsoft.Extensions.AI` (`AddSource`), as well as the app's own; without it the `chat` and `embeddings` spans are created but never exported
 - **No message content:** `EnableSensitiveData` is set explicitly from `Telemetry:CaptureMessageContent` (default `false`) on both clients. Setting it in code matters: otherwise the `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` environment variable would turn on capture of prompts, ticket text, tool arguments and tool results. `true` is refused at startup in `Production`, like the fake provider, and logged at warning level when on (it's the "debug setting" CLAUDE.md allows for prompt text)
+- `TraceTagsMiddleware`, directly under the telemetry client, adds the app's tags to the `chat` span and records the error code of a failure on it (the library records the exception type and message; the next bullet's sanitizer removes the message). With no `chat` span it passes the call through
 - Each `chat` span also gets the app's own tags from `AiCallContext`: `supportdesk.feature`, `supportdesk.prompt_version`, `supportdesk.ticket_id`, `supportdesk.reply_run_id` (IDs only: no subject, customer name or other ticket field)
 
 **App spans (`ActivitySource` "SupportDesk")**
 - One span per feature operation, parent of its model calls: `reply` (ticket ID, reply run ID, whether the injection guard limited the tools and the signal names that caused it, chunks retrieved and kept, citations and removed markers, outcome), `summary`, `classification` (including a held one, with the strong signal names and no model call under it), `retrieval` (query length, `k`, results kept, minimum similarity; not the query)
 - `confirm_follow_up` and `proposal_expiry` (rows changed); `model_calls.save` for each batch the writer saves (row count), as a root span, since the writer runs in the background
+- `SpanSanitizer`, a span processor that runs before any exporter, replaces the status description of every failed span with the error code (instrumentation libraries put the exception message there) and turns a span tagged `supportdesk.cancelled` back to `Unset`
 - Errors set the span status to `Error` with the exception type and the error code the client sees (`timeout`, `model_unavailable`, …); a caller's cancellation is `Unset` with a `supportdesk.cancelled` tag, not an error. Exception messages aren't recorded, for the same reason they aren't logged (PLAN.md 6.6)
 - A streamed reply's spans end when the stream ends, with `done`, `error`, or the caller's disconnect
 
 **Local viewing**
-- An optional `telemetry` profile in `docker-compose.yml` runs the .NET Aspire dashboard (pinned image tag), which takes OTLP and shows traces, on `127.0.0.1` only. Run with `docker compose --profile telemetry up -d telemetry` and `OTEL_EXPORTER_OTLP_ENDPOINT=http://telemetry:18889` (dev container) or the Compose variable `OTEL_EXPORTER_OTLP_ENDPOINT` for the `api` service
+- An optional `telemetry` profile in `docker-compose.yml` runs the .NET Aspire dashboard (`mcr.microsoft.com/dotnet/aspire-dashboard:9.5.2`, no login), which takes OTLP over gRPC on port 18889 and shows traces on port 18888, both bound to `127.0.0.1` only. Run with `docker compose --profile telemetry up -d telemetry` and `OTEL_EXPORTER_OTLP_ENDPOINT=http://telemetry:18889` (dev container) or the Compose variable `OTEL_EXPORTER_OTLP_ENDPOINT` for the `api` service
 - The CLAUDE.md commands table and the README's quick start get one line each
 
 **Config**
@@ -45,7 +47,7 @@ Options with `ValidateOnStart`, documented in PLAN.md's new Telemetry section. N
 
 **Tests** (CI needs no collector: tests use the in-memory exporter, `OpenTelemetry.Exporter.InMemory`)
 - Unit: through the pipeline with the fake provider, a reply with one tool round gives two `chat` spans and one `execute_tool` span under one `reply` span; a retried call is still one `chat` span; a refused budget, a refusal and a timeout give `Error` spans with the right code; a caller's cancellation isn't an error
-- Unit: no span attribute or event holds ticket text, prompt text, tool arguments or results, checked with a ticket whose text is a unique marker, including with `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` set for the test (a non-parallel collection that restores the variable)
+- Unit: no span attribute or event holds ticket text, prompt text, tool arguments or results, checked with a ticket whose text is a unique marker, with `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` set. The library reads that variable once per process, so a test can't set it itself: the test projects set it for the whole process in a module initializer (`HostileTelemetryEnvironment`), and a test checks that an unconfigured client really follows it, so the check isn't vacuous. A positive control shows the markers do appear when `Telemetry:CaptureMessageContent` is `true`
 - Unit: `Telemetry:CaptureMessageContent=true` fails startup in `Production`
 - Integration: `POST /api/tickets/{id}/reply` for T-1002 gives one trace from the HTTP span down to the SQL spans, and the number of `chat` spans equals the `ModelCalls` rows it wrote; `GET /api/health` gives no span
 - Each test is shown to fail when its behaviour is broken (say how in the PR)
