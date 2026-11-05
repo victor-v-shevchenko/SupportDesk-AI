@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using SupportDesk.Core.AI;
 using SupportDesk.Core.AI.Usage;
 using SupportDesk.Core.Telemetry;
+using SupportDesk.UnitTests.Telemetry;
 
 namespace SupportDesk.UnitTests.AI;
 
@@ -12,9 +13,12 @@ namespace SupportDesk.UnitTests.AI;
 internal sealed class TestPipeline : IDisposable
 {
     private readonly ServiceProvider _services;
+    private readonly bool _ownsMetrics;
 
-    private TestPipeline(ServiceProvider services, IChatClient client, RecordingSink rows)
+    private TestPipeline(ServiceProvider services, IChatClient client, RecordingSink rows, TestMetrics metrics, bool ownsMetrics)
     {
+        Metrics = metrics;
+        _ownsMetrics = ownsMetrics;
         _services = services;
         Client = client;
         Rows = rows;
@@ -24,6 +28,9 @@ internal sealed class TestPipeline : IDisposable
 
     public RecordingSink Rows { get; }
 
+    /// <summary>The counters the pipeline (and any service built over it) records to.</summary>
+    public TestMetrics Metrics { get; }
+
     public static TestPipeline Create(
         IChatClient provider,
         TimeProvider? time = null,
@@ -31,9 +38,12 @@ internal sealed class TestPipeline : IDisposable
         Action<AiOptions>? configure = null,
         ILoggerProvider? logger = null,
         IModelCallSink? sink = null,
-        bool captureMessageContent = false)
+        bool captureMessageContent = false,
+        TestMetrics? metrics = null)
     {
         var rows = new RecordingSink();
+        var ownsMetrics = metrics is null;
+        metrics ??= new TestMetrics();
         var services = new ServiceCollection()
             .AddLogging(builder =>
             {
@@ -45,11 +55,12 @@ internal sealed class TestPipeline : IDisposable
             .AddSingleton(time ?? TimeProvider.System)
             .AddSingleton(sink ?? rows)
             .AddSingleton<PriceTable>()
+            .AddSingleton(metrics.Metrics)
             .AddSingleton(Options.Create(Settings(configure)))
             .AddSingleton(Options.Create(new TelemetryOptions { CaptureMessageContent = captureMessageContent }))
             .BuildServiceProvider();
 
-        return new TestPipeline(services, AiPipeline.Build(provider, classifier, services), rows);
+        return new TestPipeline(services, AiPipeline.Build(provider, classifier, services), rows, metrics, ownsMetrics);
     }
 
     /// <summary>The code defaults, the prices from appsettings.json that tests rely on, and the test's changes.</summary>
@@ -70,6 +81,11 @@ internal sealed class TestPipeline : IDisposable
     public void Dispose()
     {
         Client.Dispose();
+        if (_ownsMetrics)
+        {
+            Metrics.Dispose();
+        }
+
         _services.Dispose();
     }
 }

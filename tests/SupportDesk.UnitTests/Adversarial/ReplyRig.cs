@@ -15,6 +15,7 @@ using SupportDesk.Core.Retrieval;
 using SupportDesk.Core.Tickets;
 using SupportDesk.UnitTests.AI;
 using SupportDesk.UnitTests.Replies;
+using SupportDesk.UnitTests.Telemetry;
 
 namespace SupportDesk.UnitTests.Adversarial;
 
@@ -31,7 +32,7 @@ internal sealed class ReplyRig : IDisposable
     private readonly ILoggerFactory _loggerFactory;
     private readonly TestPipeline _pipeline;
 
-    private ReplyRig(TrackedFakeTime time, SpyChatClient spy, IRetrievalService retrieval, StubOrders orders, RecordingFollowUps followUps, Action<AiOptions>? configure, bool captureMessageContent)
+    private ReplyRig(TrackedFakeTime time, SpyChatClient spy, IRetrievalService retrieval, StubOrders orders, RecordingFollowUps followUps, Action<AiOptions>? configure, bool captureMessageContent, TestMetrics? metrics)
     {
         Time = time;
         Spy = spy;
@@ -48,15 +49,16 @@ internal sealed class ReplyRig : IDisposable
             configure?.Invoke(options);
         }
 
-        _pipeline = TestPipeline.Create(spy, time, new FakeErrorClassifier(), Configure, captureMessageContent: captureMessageContent);
+        _pipeline = TestPipeline.Create(spy, time, new FakeErrorClassifier(), Configure, captureMessageContent: captureMessageContent, metrics: metrics);
         var settings = Options.Create(TestPipeline.Settings(Configure));
         Service = new ReplyService(
             _pipeline.Client,
             retrieval,
-            new ReplyToolFactory(orders, followUps),
+            new ReplyToolFactory(orders, followUps, _pipeline.Metrics.Metrics),
             new PromptStore(settings),
             new PriceTable(settings, NullLogger<PriceTable>.Instance),
             new ReplySettings(settings, Options.Create(new RetrievalOptions { ReplyChunks = 10 })),
+            _pipeline.Metrics.Metrics,
             _loggerFactory.CreateLogger<ReplyService>());
     }
 
@@ -77,11 +79,11 @@ internal sealed class ReplyRig : IDisposable
 
     /// <summary>Builds a rig whose provider plays <paramref name="turns"/> for <see cref="TicketNumber"/>'s reply.</summary>
     public static ReplyRig Create(
-        string turns, IRetrievalService? retrieval = null, Action<AiOptions>? configure = null, StubOrders? orders = null, RecordingFollowUps? followUps = null, TimeSpan? callbackLatency = null, TrackedFakeTime? time = null, bool captureMessageContent = false)
+        string turns, IRetrievalService? retrieval = null, Action<AiOptions>? configure = null, StubOrders? orders = null, RecordingFollowUps? followUps = null, TimeSpan? callbackLatency = null, TrackedFakeTime? time = null, bool captureMessageContent = false, TestMetrics? metrics = null)
     {
         time ??= new TrackedFakeTime(new DateTimeOffset(2026, 11, 1, 9, 0, 0, TimeSpan.Zero), callbackLatency);
         var fake = new FakeChatClient(FakeScenarioSet.Parse(Scenario(turns)), time);
-        return new ReplyRig(time, new SpyChatClient(fake, time), retrieval ?? new StubRetrieval(), orders ?? new StubOrders(), followUps ?? new RecordingFollowUps(), configure, captureMessageContent);
+        return new ReplyRig(time, new SpyChatClient(fake, time), retrieval ?? new StubRetrieval(), orders ?? new StubOrders(), followUps ?? new RecordingFollowUps(), configure, captureMessageContent, metrics);
     }
 
     /// <summary>

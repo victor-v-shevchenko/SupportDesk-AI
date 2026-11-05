@@ -19,7 +19,8 @@ public class BackgroundSpanTests
     {
         using var trace = new TraceCapture();
         using var services = Services(new Repository(Expired: 4242));
-        var service = new ProposalExpiryService(services.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System, NullLogger<ProposalExpiryService>.Instance);
+        using var metrics = new TestMetrics();
+        var service = new ProposalExpiryService(services.GetRequiredService<IServiceScopeFactory>(), metrics.Metrics, TimeProvider.System, NullLogger<ProposalExpiryService>.Instance);
 
         // TraceCapture's own span is current here, as a request's would be
         Assert.NotNull(Activity.Current);
@@ -38,7 +39,8 @@ public class BackgroundSpanTests
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
         using var services = Services(new Repository(Expired: 0) { Failure = new OperationCanceledException(cts.Token) });
-        var service = new ProposalExpiryService(services.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System, NullLogger<ProposalExpiryService>.Instance);
+        using var metrics = new TestMetrics();
+        var service = new ProposalExpiryService(services.GetRequiredService<IServiceScopeFactory>(), metrics.Metrics, TimeProvider.System, NullLogger<ProposalExpiryService>.Instance);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.ExpireAsync(cts.Token));
 

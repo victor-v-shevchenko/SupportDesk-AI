@@ -8,7 +8,7 @@ namespace SupportDesk.Api.AI;
 /// that fails to save is logged and dropped, so a database outage can't back up into the pipeline. On shutdown it
 /// saves what's left, for a few seconds at most.
 /// </summary>
-public sealed partial class ModelCallWriter(ModelCallBuffer queue, IServiceScopeFactory scopes, ILogger<ModelCallWriter> logger, TimeProvider time) : BackgroundService
+public sealed partial class ModelCallWriter(ModelCallBuffer queue, IServiceScopeFactory scopes, SupportDeskMetrics metrics, ILogger<ModelCallWriter> logger, TimeProvider time) : BackgroundService
 {
     private const int BatchSize = 100;
     private static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(5);
@@ -37,7 +37,9 @@ public sealed partial class ModelCallWriter(ModelCallBuffer queue, IServiceScope
         // The deadline passed between batches
         if (queue.Reader.Count > 0)
         {
-            LogDrainLeftRows(queue.Reader.Count);
+            var left = queue.Reader.Count;
+            metrics.RecordDropped(MetricValues.DropDrainDeadline, left);
+            LogDrainLeftRows(left);
         }
     }
 
@@ -68,12 +70,15 @@ public sealed partial class ModelCallWriter(ModelCallBuffer queue, IServiceScope
             activity.RecordFailure(exception, cancellationToken);
             // Shutdown cut the save short; say so rather than losing the rows silently
             // While draining, nothing will save what is still queued behind this batch
-            LogSaveCancelled(draining ? batch.Count + queue.Reader.Count : batch.Count);
+            var lost = draining ? batch.Count + queue.Reader.Count : batch.Count;
+            metrics.RecordDropped(MetricValues.DropShutdown, lost);
+            LogSaveCancelled(lost);
             throw;
         }
         catch (Exception exception)
         {
             activity.RecordFailure(exception, cancellationToken);
+            metrics.RecordDropped(MetricValues.DropSaveFailed, batch.Count);
             LogSaveFailed(exception, batch.Count);
         }
     }

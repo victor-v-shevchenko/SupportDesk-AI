@@ -39,6 +39,9 @@ public static class AiServiceCollectionExtensions
             });
 
         services.TryAddSingleton(TimeProvider.System);
+        // AddMetrics registers IMeterFactory and does nothing the second time; the host adds it as well
+        services.AddMetrics();
+        services.TryAddSingleton<SupportDeskMetrics>();
         services.AddSingleton<IPromptStore, PromptStore>();
         services.AddSingleton<PriceTable>();
         services.AddSingleton<ModelCallBuffer>();

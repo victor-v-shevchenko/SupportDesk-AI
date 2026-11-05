@@ -6,6 +6,7 @@ using Microsoft.Extensions.Time.Testing;
 using SupportDesk.Api.AI;
 using SupportDesk.Core.AI;
 using SupportDesk.Core.AI.Usage;
+using SupportDesk.UnitTests.Telemetry;
 
 namespace SupportDesk.UnitTests.AI;
 
@@ -15,16 +16,18 @@ public sealed class ModelCallWriterTests : IDisposable
     private readonly FakeTimeProvider _time = new();
     private readonly CapturingLoggerProvider _logs = new();
     private readonly ScriptedRepository _repository = new();
-    private readonly ModelCallBuffer _buffer = new(Options.Create(new AiOptions()), NullLogger<ModelCallBuffer>.Instance);
+    private readonly TestMetrics _metrics = new();
+    private readonly ModelCallBuffer _buffer;
     private readonly ServiceProvider _services;
     private readonly LoggerFactory _loggers;
     private readonly ModelCallWriter _writer;
 
     public ModelCallWriterTests()
     {
+        _buffer = new(Options.Create(new AiOptions()), _metrics.Metrics, NullLogger<ModelCallBuffer>.Instance);
         _services = new ServiceCollection().AddSingleton<IModelCallRepository>(_repository).BuildServiceProvider();
         _loggers = new LoggerFactory([_logs]);
-        _writer = new ModelCallWriter(_buffer, _services.GetRequiredService<IServiceScopeFactory>(), _loggers.CreateLogger<ModelCallWriter>(), _time);
+        _writer = new ModelCallWriter(_buffer, _services.GetRequiredService<IServiceScopeFactory>(), _metrics.Metrics, _loggers.CreateLogger<ModelCallWriter>(), _time);
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -32,6 +35,7 @@ public sealed class ModelCallWriterTests : IDisposable
     public void Dispose()
     {
         _writer.Dispose();
+        _metrics.Dispose();
         _loggers.Dispose();
         _services.Dispose();
         _logs.Dispose();
@@ -61,6 +65,8 @@ public sealed class ModelCallWriterTests : IDisposable
 
         Assert.Equal([50], _repository.SavedBatchSizes);
         Assert.Contains(_logs.Messages, m => m.Contains("Couldn't save 100 model call rows", StringComparison.Ordinal));
+        Assert.Equal(100, TestMetrics.Sum(_metrics.Dropped, ("reason", "save_failed")));
+        Assert.Single(_metrics.Dropped.GetMeasurementSnapshot());
     }
 
     [Fact]
@@ -77,6 +83,7 @@ public sealed class ModelCallWriterTests : IDisposable
 
         Assert.Equal(150, _repository.SavedRows);
         Assert.DoesNotContain(_logs.Messages, m => m.Contains("dropped", StringComparison.Ordinal));
+        Assert.Empty(_metrics.Dropped.GetMeasurementSnapshot());
     }
 
     [Fact]
@@ -95,6 +102,7 @@ public sealed class ModelCallWriterTests : IDisposable
         await stopping.WaitAsync(TimeSpan.FromSeconds(30), Ct);
 
         Assert.Contains(_logs.Messages, m => m.Contains("Shutdown interrupted saving 50 model call rows", StringComparison.Ordinal));
+        Assert.Equal(50, TestMetrics.Sum(_metrics.Dropped, ("reason", "shutdown")));
         Assert.Equal(100, _repository.SavedRows);
     }
 
@@ -115,6 +123,7 @@ public sealed class ModelCallWriterTests : IDisposable
 
         // The batch in flight (100) and the 50 behind it; the 100 saved first are not lost
         Assert.Contains(_logs.Messages, m => m.Contains("Shutdown interrupted saving 150 model call rows", StringComparison.Ordinal));
+        Assert.Equal(150, TestMetrics.Sum(_metrics.Dropped, ("reason", "shutdown")));
         Assert.Equal(100, _repository.SavedRows);
     }
 
@@ -134,6 +143,7 @@ public sealed class ModelCallWriterTests : IDisposable
 
         Assert.Equal(200, _repository.SavedRows);
         Assert.Contains(_logs.Messages, m => m.Contains("50 model call rows", StringComparison.Ordinal) && m.Contains("dropped", StringComparison.Ordinal));
+        Assert.Equal(50, TestMetrics.Sum(_metrics.Dropped, ("reason", "drain_deadline")));
     }
 
     private void Enqueue(int count)

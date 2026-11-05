@@ -7,7 +7,7 @@ namespace SupportDesk.Api;
 /// Marks pending proposals older than 24 hours as expired, every 10 minutes (PLAN.md 10). Confirming checks the time
 /// itself, so this only keeps the stored status current between runs. A failed run is logged and the next one tries again.
 /// </summary>
-public sealed partial class ProposalExpiryService(IServiceScopeFactory scopes, TimeProvider time, ILogger<ProposalExpiryService> logger) : BackgroundService
+public sealed partial class ProposalExpiryService(IServiceScopeFactory scopes, SupportDeskMetrics metrics, TimeProvider time, ILogger<ProposalExpiryService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -37,6 +37,7 @@ public sealed partial class ProposalExpiryService(IServiceScopeFactory scopes, T
             await using var scope = scopes.CreateAsyncScope();
             var expired = await scope.ServiceProvider.GetRequiredService<IFollowUpRepository>().ExpireAsync(cancellationToken);
             activity?.SetTag(SupportDeskTelemetry.RowsChanged, expired);
+            metrics.RecordFollowUp(MetricValues.Expired, expired);
             if (expired > 0)
             {
                 LogExpired(expired);

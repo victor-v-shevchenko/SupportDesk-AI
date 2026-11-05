@@ -1,6 +1,7 @@
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SupportDesk.Core.Telemetry;
 
 namespace SupportDesk.Core.AI.Usage;
 
@@ -17,10 +18,11 @@ public interface IModelCallSink
 public sealed partial class ModelCallBuffer : IModelCallSink
 {
     private readonly Channel<ModelCall> _channel;
+    private readonly SupportDeskMetrics _metrics;
     private readonly ILogger<ModelCallBuffer> _logger;
     private volatile bool _closed;
 
-    public ModelCallBuffer(IOptions<AiOptions> options, ILogger<ModelCallBuffer> logger)
+    public ModelCallBuffer(IOptions<AiOptions> options, SupportDeskMetrics metrics, ILogger<ModelCallBuffer> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
 
@@ -30,6 +32,7 @@ public sealed partial class ModelCallBuffer : IModelCallSink
             FullMode = BoundedChannelFullMode.Wait,
             SingleReader = true,
         });
+        _metrics = metrics;
         _logger = logger;
     }
 
@@ -46,10 +49,12 @@ public sealed partial class ModelCallBuffer : IModelCallSink
 
         if (_closed)
         {
+            _metrics.RecordDropped(MetricValues.DropShutdown, 1);
             LogDroppedAfterClose(row.Feature, row.TicketId);
         }
         else
         {
+            _metrics.RecordDropped(MetricValues.DropBufferFull, 1);
             LogDropped(row.Feature, row.TicketId);
         }
     }

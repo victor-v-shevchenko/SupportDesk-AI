@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using SupportDesk.Core.AI.Usage;
+using SupportDesk.Core.Telemetry;
 
 namespace SupportDesk.Core.AI;
 
@@ -12,7 +13,7 @@ namespace SupportDesk.Core.AI;
 /// Prompt and ticket text are never logged.
 /// </summary>
 public sealed partial class UsageLoggingMiddleware(
-    IChatClient innerClient, IModelCallSink sink, PriceTable prices, TimeProvider timeProvider, ILogger<UsageLoggingMiddleware> logger)
+    IChatClient innerClient, IModelCallSink sink, PriceTable prices, SupportDeskMetrics metrics, TimeProvider timeProvider, ILogger<UsageLoggingMiddleware> logger)
     : DelegatingChatClient(innerClient)
 {
     public override async Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
@@ -115,6 +116,8 @@ public sealed partial class UsageLoggingMiddleware(
                 LogFailed(call.Context.Feature, call.Context.TicketId, error.GetType().Name, (error as ModelUnavailableException)?.StatusCode);
             }
 
+            // From the row just built, so the counters and the table can't drift apart. Before the sink: a row it drops is still a call that happened
+            metrics.RecordModelCall(row, call.Error);
             sink.Add(row);
         }
         catch (Exception exception)

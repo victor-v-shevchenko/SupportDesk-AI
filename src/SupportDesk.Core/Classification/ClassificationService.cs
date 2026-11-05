@@ -28,6 +28,7 @@ public sealed partial class ClassificationService(
     IChatClient chat,
     IPromptStore prompts,
     ITicketRepository tickets,
+    SupportDeskMetrics metrics,
     TimeProvider time,
     ILogger<ClassificationService> logger) : IClassificationService
 {
@@ -89,7 +90,10 @@ public sealed partial class ClassificationService(
                 PromptVersion = prompt.Version,
                 ClassifiedAt = time.GetUtcNow(),
             };
-            return await tickets.SaveClassificationAsync(ticket.Id, held, cancellationToken);
+            var savedHeld = await tickets.SaveClassificationAsync(ticket.Id, held, cancellationToken);
+            metrics.RecordGuardHits(MetricValues.ScopeClassification, signals);
+            metrics.RecordClassification(MetricValues.Held, null);
+            return savedHeld;
         }
 
         var options = new AiCallContext(AiFeature.Classification, prompt.Version, ticket.Id, ticket.Number).ApplyTo(new ChatOptions());
@@ -99,7 +103,18 @@ public sealed partial class ClassificationService(
         classification.PromptVersion = prompt.Version;
         classification.ClassifiedAt = time.GetUtcNow();
 
-        return await tickets.SaveClassificationAsync(ticket.Id, classification, cancellationToken);
+        var saved = await tickets.SaveClassificationAsync(ticket.Id, classification, cancellationToken);
+        if (classification.Status == ClassificationStatus.Done)
+        {
+            metrics.RecordClassification(MetricValues.Done, null);
+        }
+        else
+        {
+            metrics.RecordClassification(
+                MetricValues.NeedsManual, classification.Reason == OutputLimitReason ? MetricValues.ReasonOutputLimit : MetricValues.ReasonInvalidOutput);
+        }
+
+        return saved;
     }
 
     private async Task<TicketClassification> ClassifyAsync(

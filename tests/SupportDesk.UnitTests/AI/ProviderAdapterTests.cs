@@ -239,7 +239,8 @@ public class ProviderAdapterTests
             """, "application/x-ndjson");
         using var client = Pipeline(Ollama(handler), new OllamaErrorClassifier());
         var options = ReplyOptions;
-        options.Tools = [.. new ReplyToolFactory(new StubOrders(), new RecordingFollowUps()).Create(ReplyTestData.Ticket(), Guid.NewGuid()).Tools];
+        using var metrics = new SupportDesk.UnitTests.Telemetry.TestMetrics();
+        options.Tools = [.. new ReplyToolFactory(new StubOrders(), new RecordingFollowUps(), metrics.Metrics).Create(ReplyTestData.Ticket(), Guid.NewGuid()).Tools];
 
         await client.GetStreamingResponseAsync("hi", options, Ct).ToChatResponseAsync(Ct);
 
