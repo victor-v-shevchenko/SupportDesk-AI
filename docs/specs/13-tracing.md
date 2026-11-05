@@ -14,7 +14,7 @@ A request to the API can be followed end to end in a trace: the HTTP request, th
 - `OpenTelemetry.Extensions.Hosting` with tracing, the OTLP exporter, and instrumentation for ASP.NET Core, `HttpClient` and Npgsql (`Npgsql.OpenTelemetry`). EF Core's instrumentation is still prerelease and isn't used: Npgsql's spans already show each SQL command. Package versions go in `Directory.Packages.props` (stable releases only)
 - The exporter is on only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (the standard variable; `OTEL_SERVICE_NAME` defaults to `supportdesk-api`). Without it, nothing is exported and the app behaves as today
 - `GET /api/health` isn't traced, since it's polled
-- Logs already carry `TraceId` and `SpanId` in their scopes (the host's default `ActivityTrackingOptions`, and the JSON console format includes scopes), so a log line can be matched to its trace. Exporting logs and metrics over OTLP is out of scope (below)
+- Logs already carry `TraceId` and `SpanId` in their scopes (the host's default `ActivityTrackingOptions`, and the JSON console format includes scopes), so a log line can be matched to its trace. Exporting metrics ([step 14](14-metrics.md)) and logs ([step 15](15-logs.md)) over OTLP is out of scope here (below)
 
 **Model calls and embeddings**
 - `UseOpenTelemetry()` from Microsoft.Extensions.AI 10.11 (Gen AI semantic conventions v1.41) goes into the chat pipeline **directly under `FunctionInvokingChatClient`**, above `RequestCapCounterMiddleware`. That gives one `chat` span per inner model call (the same unit as a `ModelCalls` row: retries stay inside it, and their HTTP attempts show as child spans), and lets the tool loop emit `execute_tool` spans, which `FunctionInvokingChatClient` creates only when a telemetry client sits under it. The order test (`The_middleware_order_matches_the_plan`) and PLAN.md 6.2 change with it
@@ -54,7 +54,7 @@ Options with `ValidateOnStart`, documented in PLAN.md's new Telemetry section. N
 
 ## Out of scope
 
-- Metrics: [step 14](14-metrics.md). Log export over OTLP. The `ModelCalls` table stays the source for cost
+- Metrics: [step 14](14-metrics.md). Log export over OTLP: [step 15](15-logs.md). The `ModelCalls` table stays the source for cost
 - Tracing in the browser, and a trace ID in the reply stream's events (problem details already carry `traceId`)
 - The Anthropic SDK's own OpenTelemetry spans: model calls go through the shared pipeline, so its spans would duplicate the `chat` span
 - Sampling settings (the SDK default, parent-based always-on, is fine for one developer); a hosted backend

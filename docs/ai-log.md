@@ -348,3 +348,31 @@ Entry format (from CLAUDE.md):
 - What was wrong: `ClassificationService` recorded `classifications` and the guard hits after `SaveClassificationAsync`, even when it returned null because no row matched, so the counters could exceed what was saved.
 - Fix: the counters are recorded only when the save returned a value (step 14, 2d9ae4c).
 - Test: `ClassificationServiceTests.A_classification_that_matched_no_row_is_not_counted` and `A_held_classification_that_matched_no_row_counts_neither_the_hold_nor_the_hits`.
+
+## 2026-11-05 — EF Core's error logs put exception text in the exported body
+- Step: 15
+- Found by: review subagent
+- What was wrong: EF Core's `SaveChangesFailed` and `QueryIterationFailed` log the exception as a template value (`{error}`), not as the call's exception, so `LogSanitizer` (which only rewrote `LogRecord.Exception`) left `exception.ToString()`, with PostgreSQL's quoted values, in the formatted body and in an attribute.
+- Fix: any attribute whose value is an exception becomes its type name, and the formatted message is dropped when a record had an exception either way (step 15, 6db36c3).
+- Test: `LogExportTests.An_exception_given_as_a_template_argument_is_exported_as_its_type_and_the_body_is_the_template` (unit) and the integration `A_failed_ef_query_leaves_the_database_error_text_out_of_every_exported_record`; both fail without the fix.
+
+## 2026-11-05 — Hosting request lines put a search query in the exported logs
+- Step: 15
+- Found by: review subagent
+- What was wrong: with `Microsoft.AspNetCore` at Information, `Request starting` and `Request finished` carry the raw query string in the `QueryString` attribute and the formatted message, so `GET /api/search?q=<free text>` reached the export.
+- Fix: `LogSanitizer` replaces a non-empty `QueryString` with `?Redacted` in the attribute and the message (step 15, 6db36c3).
+- Test: `LogExportTests.A_query_string_is_exported_as_a_fixed_placeholder_and_the_rest_of_the_line_is_kept` (unit) and the integration `A_search_query_stays_out_of_every_exported_record_while_the_request_lines_are_still_exported`; both fail without the fix.
+
+## 2026-11-05 — Tool arguments and results logged by the AI library were exported at Trace
+- Step: 15
+- Found by: review subagent
+- What was wrong: `FunctionInvokingChatClient` logs tool arguments and results at Trace under a Microsoft.Extensions.AI category, which the content rule (an event ID only) didn't cover; the ID also matched across categories.
+- Fix: content rules are on category, level and event ID, checked where the category is known (`ContentLogFilteringProvider`) (step 15, 6db36c3).
+- Test: `LogExportTests.A_tool_calls_arguments_and_result_logged_at_trace_by_the_library_are_not_exported_unless_content_capture_is_on` and `The_content_rules_apply_to_their_category_only`; both fail without the fix.
+
+## 2026-11-05 — A later OpenTelemetry logging registration added an unfiltered provider
+- Step: 15
+- Found by: review subagent
+- What was wrong: the wrapped logger provider's descriptor no longer names the SDK's type, so OpenTelemetry logging registered after `WithSupportDeskLogging` added a second, unwrapped provider that would export content events, and a second call exported every record twice; the registration-time guard only caught an earlier registration.
+- Fix: `LogExportCheck` validates at startup that the resolved logger providers hold exactly one wrapper and no `OpenTelemetryLoggerProvider` (step 15, this commit).
+- Test: `TelemetryStartupTests.Log_export_fails_at_startup_when_OpenTelemetry_logging_is_registered_again_after_it` and `Log_export_fails_at_startup_when_it_is_set_up_twice`; both fail without the fix.

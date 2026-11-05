@@ -162,8 +162,9 @@ public sealed partial class ClassificationService(
         return new TicketClassification { Status = ClassificationStatus.NeedsManual };
     }
 
-    // The raw output can repeat the ticket, so it's only logged at debug level (CLAUDE.md, LLM rules)
-    [LoggerMessage(Level = LogLevel.Debug, Message = "Classification answer {Attempt} for ticket {TicketId} was rejected: {Errors} Raw output: {Output}")]
+    // The raw output can repeat the ticket, so it's only logged at debug level (CLAUDE.md, LLM rules), and its event ID is in
+    // ContentLogEvents, so the OpenTelemetry export drops it (PLAN.md 14)
+    [LoggerMessage(EventId = ContentLogEvents.ClassificationRejected, Level = LogLevel.Debug, Message = "Classification answer {Attempt} for ticket {TicketId} was rejected: {Errors} Raw output: {Output}")]
     private partial void LogRejected(int ticketId, int attempt, string errors, string output);
 
     // The signal names only: the matched text is ticket text

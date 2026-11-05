@@ -4,6 +4,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Hosting.Internal;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using OpenTelemetry;
+using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using SupportDesk.Api.Telemetry;
@@ -15,7 +17,10 @@ namespace SupportDesk.UnitTests.Telemetry;
 [Collection(FakeClockGroup.Name)]
 public class TelemetryStartupTests
 {
-    private static ServiceProvider Build(Dictionary<string, string?> settings, string environment = "Development", ILoggerProvider? logger = null)
+    private static ServiceProvider Build(Dictionary<string, string?> settings, string environment = "Development", ILoggerProvider? logger = null) =>
+        BuildCollection(settings, environment, logger).BuildServiceProvider();
+
+    private static ServiceCollection BuildCollection(Dictionary<string, string?> settings, string environment = "Development", ILoggerProvider? logger = null)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
         var services = new ServiceCollection();
@@ -29,7 +34,7 @@ public class TelemetryStartupTests
             }
         });
         services.AddSupportDeskTelemetry(configuration);
-        return services.BuildServiceProvider();
+        return services;
     }
 
     [Fact]
@@ -107,6 +112,91 @@ public class TelemetryStartupTests
         // The counters still exist, for the code that records to them
         Assert.NotNull(services.GetRequiredService<SupportDesk.Core.Telemetry.SupportDeskMetrics>());
     }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void Without_an_endpoint_no_OpenTelemetry_logger_provider_is_registered(string? endpoint)
+    {
+        using var services = Build(new() { ["OTEL_EXPORTER_OTLP_ENDPOINT"] = endpoint }, logger: new CapturingLoggerProvider());
+
+        Assert.Null(services.GetService<OpenTelemetry.Logs.LoggerProvider>());
+        Assert.DoesNotContain(services.GetServices<ILoggerProvider>(), IsOpenTelemetryProvider);
+    }
+
+    [Fact]
+    public void With_an_endpoint_one_OpenTelemetry_logger_provider_is_registered_next_to_the_others()
+    {
+        using var services = Build(new() { ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://localhost:4317" }, logger: new CapturingLoggerProvider());
+
+        Assert.NotNull(services.GetService<OpenTelemetry.Logs.LoggerProvider>());
+        // The wrapper is what the container hands out; the SDK's own provider is only inside it
+        var providers = services.GetServices<ILoggerProvider>().ToList();
+        Assert.IsType<ContentLogFilteringProvider>(Assert.Single(providers, IsOpenTelemetryProvider));
+        Assert.DoesNotContain(providers, p => p.GetType().Name == "OpenTelemetryLoggerProvider");
+        Assert.Contains(services.GetServices<ILoggerProvider>(), p => p is CapturingLoggerProvider);
+    }
+
+    [Fact]
+    public void Log_export_fails_at_startup_when_the_OpenTelemetry_provider_was_registered_before_it_could_be_wrapped()
+    {
+        // An earlier registration (Aspire service defaults, builder.Logging.AddOpenTelemetry) makes WithLogging's TryAddEnumerable
+        // add nothing, so there is no provider to wrap and content events would be exported unfiltered
+        var services = new ServiceCollection();
+        services.AddLogging(logging => logging.AddOpenTelemetry());
+
+        var error = Assert.Throws<InvalidOperationException>(
+            () => services.AddOpenTelemetry().WithSupportDeskLogging(_ => { }));
+
+        Assert.Contains("found 0", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Log_export_fails_at_startup_when_OpenTelemetry_logging_is_registered_again_after_it()
+    {
+        // A later registration (builder.Logging.AddOpenTelemetry, service defaults) adds a second provider that isn't wrapped,
+        // so content events would reach the export through it
+        var services = BuildCollection(new() { ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://localhost:4317" });
+        services.AddLogging(logging => logging.AddOpenTelemetry());
+        using var provider = services.BuildServiceProvider();
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => StartLogExportCheck(provider));
+
+        Assert.Equal(LogExportCheck.Failure, error.Message);
+    }
+
+    [Fact]
+    public async Task Log_export_fails_at_startup_when_it_is_set_up_twice()
+    {
+        // Each call wraps its own provider, so every record would be exported twice
+        var services = BuildCollection(new() { ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://localhost:4317" });
+        services.AddOpenTelemetry().WithSupportDeskLogging(_ => { });
+        using var provider = services.BuildServiceProvider();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => StartLogExportCheck(provider));
+    }
+
+    [Fact]
+    public async Task Log_export_set_up_once_passes_the_startup_check()
+    {
+        using var services = Build(new() { ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://localhost:4317" });
+
+        await StartLogExportCheck(services);
+    }
+
+    [Fact]
+    public void Without_an_endpoint_there_is_no_log_export_check()
+    {
+        using var services = Build(new() { ["OTEL_EXPORTER_OTLP_ENDPOINT"] = null });
+
+        Assert.Empty(services.GetServices<IHostedService>().OfType<LogExportCheck>());
+    }
+
+    private static Task StartLogExportCheck(ServiceProvider services) =>
+        Assert.Single(services.GetServices<IHostedService>().OfType<LogExportCheck>()).StartAsync(TestContext.Current.CancellationToken);
+
+    private static bool IsOpenTelemetryProvider(ILoggerProvider provider) =>
+        provider.GetType().GetCustomAttributes(typeof(ProviderAliasAttribute), inherit: false).Cast<ProviderAliasAttribute>().Any(a => a.Alias == "OpenTelemetry");
 
     [Fact]
     public void A_blank_endpoint_has_no_meter_provider_either()
