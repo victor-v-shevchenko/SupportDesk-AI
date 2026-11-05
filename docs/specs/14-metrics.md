@@ -55,7 +55,7 @@ The running app reports counters for what matters when it's used: model calls, t
 ## Acceptance criteria
 
 - [ ] With `OTEL_EXPORTER_OTLP_ENDPOINT` unset, nothing is exported and every test behaves as before
-- [ ] With step 13's `telemetry` profile up, the Aspire dashboard shows each counter above after a few replies, a summary and a classification (screenshot in the PR)
+- [ ] With step 13's `telemetry` profile up, the Aspire dashboard shows each counter above after a few replies (one with a tool call and a confirmed proposal), a summary and a classification (screenshot in the PR). `model_calls.dropped` is the exception: it's only recorded when rows are actually lost, so normal use doesn't show it, and the tests cover it instead
 - [ ] `model_calls` counts one per `ModelCalls` row, and `tokens` and `cost` sum to the table's values for the same requests
 - [ ] No tag holds an ID, a ticket number or text; every tag value is from its fixed set
 - [ ] Errors are counted by their client-facing code, cancellations separately, and dropped rows by reason
