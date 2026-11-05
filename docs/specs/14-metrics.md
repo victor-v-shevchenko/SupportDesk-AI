@@ -48,7 +48,7 @@ The running app reports counters for what matters when it's used: model calls, t
 ## Out of scope
 
 - Histograms of our own (Microsoft.Extensions.AI and ASP.NET Core already give durations), gauges, and runtime metrics
-- OTLP log export
+- OTLP log export (done in [step 15](15-logs.md))
 - Alerts, a hosted metrics backend, and dashboards beyond the Aspire one
 - Replacing the `ModelCalls` table or the cost readout: the table stays the source for per-ticket cost and the README's numbers
 
