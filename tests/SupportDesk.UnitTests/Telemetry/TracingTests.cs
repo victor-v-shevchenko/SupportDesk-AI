@@ -19,8 +19,6 @@ namespace SupportDesk.UnitTests.Telemetry;
 [Collection(FakeClockGroup.Name)]
 public sealed class TracingTests
 {
-    private const string CaptureVariable = "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT";
-
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private static StubOrders KnownOrder(string carrier = "FedEx") =>
@@ -187,17 +185,24 @@ public sealed class TracingTests
 
     // No text in spans
 
-    [Theory]
-    [InlineData(null)]
-    [InlineData("true")]
-    public async Task No_span_holds_ticket_reply_or_tool_text_even_with_the_capture_variable_set(string? variable)
+    [Fact]
+    public void The_capture_variable_is_on_in_this_process_so_the_tests_below_are_not_vacuous()
+    {
+        // A client nobody configured follows the variable, which HostileTelemetryEnvironment set before the library first ran
+        using var unconfigured = new OpenTelemetryChatClient(new ScriptedChatClient(TimeProvider.System, Scripted.Steps(Scripted.Text("x"))));
+
+        Assert.True(unconfigured.EnableSensitiveData);
+    }
+
+    [Fact]
+    public async Task No_span_holds_ticket_reply_or_tool_text_even_though_the_capture_variable_is_on()
     {
         const string TicketMarker = "TICKETMARKER-8f31";
         const string ReplyMarker = "REPLYMARKER-27c9";
         const string ToolMarker = "TOOLMARKER-5b04";
-        var spans = await RunWithVariableAsync(variable, capture: false, TicketMarker, ReplyMarker, ToolMarker);
+        var spans = await RunAsync(capture: false, TicketMarker, ReplyMarker, ToolMarker);
 
-        Assert.True(spans.Count >= 4, "reply, retrieval-less chat and tool spans expected");
+        Assert.True(spans.Count >= 4, "reply, chat and tool spans expected");
         foreach (var marker in new[] { TicketMarker, ReplyMarker, ToolMarker })
         {
             Assert.DoesNotContain(spans.SelectMany(TraceCapture.AllText), text => text.Contains(marker, StringComparison.Ordinal));
@@ -211,7 +216,7 @@ public sealed class TracingTests
         const string TicketMarker = "TICKETMARKER-8f31";
         const string ReplyMarker = "REPLYMARKER-27c9";
         const string ToolMarker = "TOOLMARKER-5b04";
-        var spans = await RunWithVariableAsync(variable: null, capture: true, TicketMarker, ReplyMarker, ToolMarker);
+        var spans = await RunAsync(capture: true, TicketMarker, ReplyMarker, ToolMarker);
 
         var text = spans.SelectMany(TraceCapture.AllText).ToList();
         Assert.Contains(text, t => t.Contains(TicketMarker, StringComparison.Ordinal));
@@ -219,60 +224,39 @@ public sealed class TracingTests
         Assert.Contains(text, t => t.Contains(ToolMarker, StringComparison.Ordinal));
     }
 
-    [Theory]
-    [InlineData(null)]
-    [InlineData("true")]
-    public async Task Prompt_text_and_additional_properties_stay_out_of_the_chat_span(string? variable)
+    [Fact]
+    public async Task Prompt_text_and_additional_properties_stay_out_of_the_chat_span()
     {
         const string Marker = "ADDPROPMARKER-61de";
-        var previous = Environment.GetEnvironmentVariable(CaptureVariable);
-        Environment.SetEnvironmentVariable(CaptureVariable, variable);
-        try
-        {
-            using var trace = new TraceCapture();
-            var time = new TrackedFakeTime();
-            using var pipeline = TestPipeline.Create(new ScriptedChatClient(time, Scripted.Steps(Scripted.Text("Reply " + Marker), Scripted.Usage(10, 2))), time);
-            var options = Options();
-            options.AdditionalProperties![Marker] = Marker;
-            options.Instructions = "System " + Marker;
-            options.ConversationId = null;
+        using var trace = new TraceCapture();
+        var time = new TrackedFakeTime();
+        using var pipeline = TestPipeline.Create(new ScriptedChatClient(time, Scripted.Steps(Scripted.Text("Reply " + Marker), Scripted.Usage(10, 2))), time);
+        var options = Options();
+        options.AdditionalProperties![Marker] = Marker;
+        options.Instructions = "System " + Marker;
 
-            await foreach (var update in pipeline.Client.GetStreamingResponseAsync("Prompt " + Marker, options, Ct))
-            {
-                Assert.NotNull(update);
-            }
-
-            var chat = Assert.Single(trace.Chat);
-            Assert.DoesNotContain(TraceCapture.AllText(chat), text => text.Contains(Marker, StringComparison.Ordinal));
-        }
-        finally
+        await foreach (var update in pipeline.Client.GetStreamingResponseAsync("Prompt " + Marker, options, Ct))
         {
-            Environment.SetEnvironmentVariable(CaptureVariable, previous);
+            Assert.NotNull(update);
         }
+
+        var chat = Assert.Single(trace.Chat);
+        Assert.DoesNotContain(TraceCapture.AllText(chat), text => text.Contains(Marker, StringComparison.Ordinal));
     }
 
-    private static async Task<IReadOnlyList<Activity>> RunWithVariableAsync(string? variable, bool capture, string ticketMarker, string replyMarker, string toolMarker)
+    private static async Task<IReadOnlyList<Activity>> RunAsync(bool capture, string ticketMarker, string replyMarker, string toolMarker)
     {
-        var previous = Environment.GetEnvironmentVariable(CaptureVariable);
-        Environment.SetEnvironmentVariable(CaptureVariable, variable);
-        try
-        {
-            using var trace = new TraceCapture();
-            using var rig = Create(
-                Turns(Turn(Lookup("KO-205002"), Usage()), Turn(Text("Your order is delayed. " + replyMarker), Usage())),
-                orders: KnownOrder(toolMarker),
-                captureMessageContent: capture);
+        using var trace = new TraceCapture();
+        using var rig = Create(
+            Turns(Turn(Lookup("KO-205002"), Usage()), Turn(Text("Your order is delayed. " + replyMarker), Usage())),
+            orders: KnownOrder(toolMarker),
+            captureMessageContent: capture);
 
-            var events = await rig.RunAsync(Ticket(subject: "Subject " + ticketMarker, body: "Body " + ticketMarker), Ct);
+        var events = await rig.RunAsync(Ticket(subject: "Subject " + ticketMarker, body: "Body " + ticketMarker), Ct);
 
-            Assert.IsType<ReplyDone>(events[^1]);
-            Assert.Contains(replyMarker, string.Concat(events.OfType<ReplyToken>().Select(t => t.Text)), StringComparison.Ordinal);
-            return trace.Spans;
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable(CaptureVariable, previous);
-        }
+        Assert.IsType<ReplyDone>(events[^1]);
+        Assert.Contains(replyMarker, string.Concat(events.OfType<ReplyToken>().Select(t => t.Text)), StringComparison.Ordinal);
+        return trace.Spans;
     }
 
     private static void AssertError(Activity span, string code, Type exceptionType)
