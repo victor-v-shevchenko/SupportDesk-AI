@@ -47,6 +47,38 @@ public class BackgroundSpanTests
         Assert.Equal(ActivityStatusCode.Unset, span.Status);
     }
 
+    [Fact]
+    public void StartRoot_puts_back_what_was_current_when_the_scope_ends()
+    {
+        using var trace = new TraceCapture();
+        var ambient = Activity.Current;
+        Assert.NotNull(ambient);
+
+        using (var root = SupportDeskTelemetry.StartRoot("probe"))
+        {
+            Assert.NotNull(root.Span);
+            Assert.Same(root.Span, Activity.Current);
+            Assert.Equal(default, root.Span.ParentSpanId);
+        }
+
+        Assert.Same(ambient, Activity.Current);
+    }
+
+    [Fact]
+    public void StartRoot_leaves_what_is_current_alone_when_nobody_listens()
+    {
+        // No TraceCapture here, and this collection runs alone, so nothing listens to the source
+        using var ambient = new Activity("ambient").Start();
+
+        using (var root = SupportDeskTelemetry.StartRoot("probe"))
+        {
+            Assert.Null(root.Span);
+            Assert.Same(ambient, Activity.Current);
+        }
+
+        Assert.Same(ambient, Activity.Current);
+    }
+
     private static ServiceProvider Services(IFollowUpRepository repository) =>
         new ServiceCollection().AddScoped(_ => repository).BuildServiceProvider();
 

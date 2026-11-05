@@ -33,13 +33,26 @@ public static class SupportDeskTelemetry
 
     /// <summary>
     /// Starts a span with no parent, for work a timer or a queue starts. <c>StartActivity</c> with a default parent context still
-    /// falls back to <see cref="Activity.Current"/>, so that is cleared first. Call it from an async method, whose caller doesn't
-    /// see the change: the new span is current for the rest of the method, so its SQL spans are its children.
+    /// falls back to <see cref="Activity.Current"/>, so that is cleared while the span starts. The new span is current until the
+    /// returned scope is disposed, so its SQL spans are its children; disposing ends it and puts back what was current before.
+    /// With nobody listening, or the span sampled out, <see cref="Activity.Current"/> is left as it was.
     /// </summary>
-    public static Activity? StartRoot(string name)
+    public static RootSpan StartRoot(string name)
     {
+        if (!Source.HasListeners())
+        {
+            return default;
+        }
+
+        var previous = Activity.Current;
         Activity.Current = null;
-        return Source.StartActivity(name);
+        var span = Source.StartActivity(name);
+        if (span is null)
+        {
+            Activity.Current = previous;
+        }
+
+        return new RootSpan(span, previous);
     }
 
     /// <summary>
@@ -76,5 +89,22 @@ public static class SupportDeskTelemetry
     {
         activity.RecordFailure(exception, cancellationToken);
         return false;
+    }
+}
+
+/// <summary>A root span from <see cref="SupportDeskTelemetry.StartRoot"/>; null <see cref="Span"/> when nothing is recording.</summary>
+public readonly struct RootSpan(Activity? span, Activity? previous) : IDisposable
+{
+    public Activity? Span { get; } = span;
+
+    public void Dispose()
+    {
+        if (Span is null)
+        {
+            return;
+        }
+
+        Span.Dispose();
+        Activity.Current = previous;
     }
 }

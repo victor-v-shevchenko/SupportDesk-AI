@@ -55,7 +55,8 @@ public sealed partial class ModelCallWriter(ModelCallBuffer queue, IServiceScope
         }
 
         // A background service, so each batch is a trace of its own
-        using var activity = SupportDeskTelemetry.StartRoot("model_calls.save");
+        using var root = SupportDeskTelemetry.StartRoot("model_calls.save");
+        var activity = root.Span;
         activity?.SetTag("supportdesk.row_count", batch.Count);
         try
         {

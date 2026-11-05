@@ -30,7 +30,8 @@ public sealed partial class ProposalExpiryService(IServiceScopeFactory scopes, T
     public async Task ExpireAsync(CancellationToken cancellationToken)
     {
         // The timer starts it, so it is a trace of its own
-        using var activity = SupportDeskTelemetry.StartRoot("proposal_expiry");
+        using var root = SupportDeskTelemetry.StartRoot("proposal_expiry");
+        var activity = root.Span;
         try
         {
             await using var scope = scopes.CreateAsyncScope();
