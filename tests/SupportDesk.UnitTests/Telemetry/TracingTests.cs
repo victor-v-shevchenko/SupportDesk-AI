@@ -250,9 +250,15 @@ public sealed class TracingTests
         await Assert.ThrowsAnyAsync<HttpRequestException>(() => client.GetAsync(new Uri("http://refused-host-marker.invalid:1/path?q=HTTPMARKER"), Ct));
 
         var span = Assert.Single(trace.Spans, a => a.Kind == ActivityKind.Client);
-        Assert.DoesNotContain(span.Events, e => e.Name == "exception");
+        Assert.Equal("GET", span.DisplayName);
         Assert.DoesNotContain(TraceCapture.AllText(span), text => text.Contains("HTTPMARKER", StringComparison.Ordinal));
-        Assert.Equal(span.GetTagItem("error.type"), span.StatusDescription ?? span.GetTagItem("error.type"));
+        Assert.Equal(ActivityStatusCode.Error, span.Status);
+        Assert.NotNull(span.StatusDescription);
+        Assert.Equal(span.GetTagItem("error.type"), span.StatusDescription);
+        // The scrub ran: the library recorded the exception, and the recorder had already put placeholders in its event
+        var tags = Assert.Single(span.Events, e => e.Name == "exception").Tags.ToDictionary(t => t.Key, t => t.Value as string);
+        Assert.Equal(tags["exception.type"], tags["exception.message"]);
+        Assert.Equal("", tags["exception.stacktrace"]);
     }
 
     // No text in spans
