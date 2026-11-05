@@ -6,7 +6,7 @@
 
 ## Goal
 
-A request to the API can be followed end to end in a trace: the HTTP request, the feature that handled it, retrieval and its embedding call, each model call with its tokens and outcome, each tool call, and the SQL it ran. Traces carry IDs and counts, never prompt or ticket text. Nothing changes when no collector is configured, so CI and the default dev setup run as before.
+A request to the API can be followed end to end in a trace: the HTTP request, the feature that handled it, retrieval and its embedding call, each model call with its tokens and outcome, each tool call, and the SQL it ran. Traces carry IDs and counts, never prompt or ticket text. Nothing changes in behavior when no collector is configured, so CI and the default dev setup run as before (the library's streaming client still buffers each streamed reply once, which is a cost, not a change).
 
 ## Scope
 
@@ -27,7 +27,7 @@ A request to the API can be followed end to end in a trace: the HTTP request, th
 **App spans (`ActivitySource` "SupportDesk")**
 - One span per feature operation, parent of its model calls: `reply` (ticket ID, reply run ID, whether the injection guard limited the tools and the signal names that caused it, chunks retrieved and kept, citations and removed markers, outcome), `summary`, `classification` (including a held one, with the strong signal names and no model call under it), `retrieval` (query length, `k`, results kept, minimum similarity; not the query)
 - `confirm_follow_up` and `proposal_expiry` (rows changed); `model_calls.save` for each batch the writer saves (row count), as a root span, since the writer runs in the background
-- `SpanSanitizer`, a span processor that runs before any exporter, replaces the status description of every failed span with the error code (instrumentation libraries put the exception message there) and turns a span tagged `supportdesk.cancelled` back to `Unset`
+- `SpanSanitizer`, a span processor that runs before any exporter (and, while it lives, an `ActivityListener` whose `ExceptionRecorder` puts placeholders in the `exception` events Npgsql and the HTTP libraries add, so the message and stack trace are never written), replaces the status description of every failed span with the error code (instrumentation libraries put the exception message there) and turns a span tagged `supportdesk.cancelled` back to `Unset`
 - Errors set the span status to `Error` with the exception type and the error code the client sees (`timeout`, `model_unavailable`, …); a caller's cancellation is `Unset` with a `supportdesk.cancelled` tag, not an error. Exception messages aren't recorded, for the same reason they aren't logged (PLAN.md 6.6)
 - A streamed reply's spans end when the stream ends, with `done`, `error`, or the caller's disconnect
 
@@ -72,4 +72,4 @@ Options with `ValidateOnStart`, documented in PLAN.md's new Telemetry section. N
 
 ## Review focus
 
-That no text from a ticket, prompt, reply or tool reaches a span by any path (including the environment variable and `ChatOptions.AdditionalProperties`); the pipeline position of the telemetry client and what it does to the one-row-per-call rule; that tracing off really costs nothing.
+That no text from a ticket, prompt, reply or tool reaches a span by any path (including the environment variable and `ChatOptions.AdditionalProperties`); the pipeline position of the telemetry client and what it does to the one-row-per-call rule; what tracing off still costs (the library buffers each streamed reply once; the app's own spans are a null check).

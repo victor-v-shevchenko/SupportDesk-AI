@@ -332,5 +332,5 @@ Entry format (from CLAUDE.md):
 - Step: 13
 - Found by: review subagent
 - What was wrong: Npgsql adds an `exception` event with `exception.message` and `exception.stacktrace` to a failed command's span, and `SpanSanitizer` only rewrote the status description. PostgreSQL's message can quote a value (`invalid input syntax for type integer: "<value>"`), so text could reach a trace.
-- Fix: the sanitizer keeps a span with an `exception` event out of the export and exports a copy without the event, with the exception type as its description (step 13).
-- Test: `TracingTests.A_failed_sql_command_leaves_no_exception_message_or_stack_in_any_span` (integration); it failed before the fix.
+- Fix: an `ActivityListener` with an `ExceptionRecorder` puts placeholder `exception.message` and `exception.stacktrace` tags in the event before the library's text is added; the span itself is untouched (step 13, e52e4dc; an earlier version replaced the span with a copy in bf9250a).
+- Test: `TracingTests.A_failed_sql_command_keeps_its_span_and_leaves_no_exception_message_or_stack_in_any_span` (integration) and the unit test `A_failed_outgoing_http_call_leaves_no_exception_message_in_its_span`; both fail without the recorder.
