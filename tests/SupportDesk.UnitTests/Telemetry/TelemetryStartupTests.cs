@@ -4,6 +4,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Hosting.Internal;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using OpenTelemetry;
+using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using SupportDesk.Api.Telemetry;
@@ -130,6 +132,20 @@ public class TelemetryStartupTests
         Assert.IsType<ContentLogFilteringProvider>(Assert.Single(providers, IsOpenTelemetryProvider));
         Assert.DoesNotContain(providers, p => p.GetType().Name == "OpenTelemetryLoggerProvider");
         Assert.Contains(services.GetServices<ILoggerProvider>(), p => p is CapturingLoggerProvider);
+    }
+
+    [Fact]
+    public void Log_export_fails_at_startup_when_the_OpenTelemetry_provider_was_registered_before_it_could_be_wrapped()
+    {
+        // An earlier registration (Aspire service defaults, builder.Logging.AddOpenTelemetry) makes WithLogging's TryAddEnumerable
+        // add nothing, so there is no provider to wrap and content events would be exported unfiltered
+        var services = new ServiceCollection();
+        services.AddLogging(logging => logging.AddOpenTelemetry());
+
+        var error = Assert.Throws<InvalidOperationException>(
+            () => services.AddOpenTelemetry().WithSupportDeskLogging(_ => { }));
+
+        Assert.Contains("found 0", error.Message, StringComparison.Ordinal);
     }
 
     private static bool IsOpenTelemetryProvider(ILoggerProvider provider) =>
