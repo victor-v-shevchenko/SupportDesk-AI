@@ -80,14 +80,14 @@ public class ProposalExpiryServiceTests
     [Fact]
     public async Task A_run_adds_the_rows_it_expired_to_the_follow_up_counter()
     {
-        var repository = new CountingRepository();
+        var repository = new CountingRepository { Expired = 7 };
         using var services = Services(repository);
         using var metrics = new TestMetrics();
         using var service = new ProposalExpiryService(services.GetRequiredService<IServiceScopeFactory>(), metrics.Metrics, TimeProvider.System, NullLogger<ProposalExpiryService>.Instance);
 
         await service.ExpireAsync(Ct);
 
-        Assert.Equal(1, TestMetrics.Sum(metrics.FollowUps, ("event", "expired")));
+        Assert.Equal(7, TestMetrics.Sum(metrics.FollowUps, ("event", "expired")));
     }
 
     [Fact]
@@ -124,6 +124,9 @@ public class ProposalExpiryServiceTests
 
         public bool FailFirst { get; init; }
 
+        /// <summary>How many rows each run says it expired.</summary>
+        public int Expired { get; init; } = 1;
+
         public Exception? FirstFailure { get; init; }
 
         public Task<int> ExpireAsync(CancellationToken cancellationToken)
@@ -134,7 +137,7 @@ public class ProposalExpiryServiceTests
                 throw failure;
             }
 
-            return Task.FromResult(1);
+            return Task.FromResult(Expired);
         }
 
         public Task<FollowUpProposal> UpsertProposalAsync(NewProposal proposal, CancellationToken cancellationToken) => throw new NotSupportedException();
