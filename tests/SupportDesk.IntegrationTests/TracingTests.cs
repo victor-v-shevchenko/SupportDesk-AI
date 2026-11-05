@@ -135,6 +135,8 @@ public class TracingTests(PostgresFixture postgres)
         using var tracing = new ActivityListener { ShouldListenTo = s => s.Name == enclosing.Name, Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded };
         ActivitySource.AddActivityListener(tracing);
 
+        // A fresh connection, as on a cold CI runner: its CONNECT span sits under the same parent as the commands
+        Npgsql.NpgsqlConnection.ClearAllPools();
         Activity? parent;
         using (parent = enclosing.StartActivity("enclosing"))
         using (var scope = api.Factory.Services.CreateScope())
@@ -150,7 +152,9 @@ public class TracingTests(PostgresFixture postgres)
         await WaitForAsync(spans, a => a.Status == ActivityStatusCode.Error && a.TagObjects.Any(t => t.Key.StartsWith("db.", StringComparison.Ordinal)));
         var all = Snapshot(spans);
         var failed = Assert.Single(all, a => a.Status == ActivityStatusCode.Error && a.TagObjects.Any(t => t.Key.StartsWith("db.", StringComparison.Ordinal)));
-        var good = all.First(a => a.Status != ActivityStatusCode.Error && a.Source.Name == "Npgsql" && a.ParentSpanId == parent.SpanId);
+        // The good command's own span, by its text: a fresh connection also gives a CONNECT span under the same parent
+        var good = Assert.Single(all, a => a.Status != ActivityStatusCode.Error && a.Source.Name == "Npgsql" && a.ParentSpanId == parent.SpanId
+            && a.TagObjects.Any(t => t.Value is string text && text.Contains("SELECT 1", StringComparison.Ordinal)));
 
         // The span is Npgsql's own, with its place in the trace
         Assert.Equal("Npgsql", failed.Source.Name);
