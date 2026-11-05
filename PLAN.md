@@ -474,6 +474,7 @@ These come from the current API and must be checked against the SDK version in u
 | 12 | [Final review and README](docs/specs/12-readme.md) | `step/12-readme` |
 | 13 | [OpenTelemetry tracing](docs/specs/13-tracing.md) | `step/13-tracing` |
 | 14 | [OpenTelemetry metrics](docs/specs/14-metrics.md) | `step/14-metrics` |
+| 15 | [OpenTelemetry structured logs](docs/specs/15-logs.md) | `step/15-logs` |
 
 ## 13. Decisions
 
