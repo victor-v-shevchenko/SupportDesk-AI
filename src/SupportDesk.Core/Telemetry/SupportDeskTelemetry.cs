@@ -35,15 +35,10 @@ public static class SupportDeskTelemetry
     /// Starts a span with no parent, for work a timer or a queue starts. <c>StartActivity</c> with a default parent context still
     /// falls back to <see cref="Activity.Current"/>, so that is cleared while the span starts. The new span is current until the
     /// returned scope is disposed, so its SQL spans are its children; disposing ends it and puts back what was current before.
-    /// With nobody listening, or the span sampled out, <see cref="Activity.Current"/> is left as it was.
+    /// If no span starts (nobody listening, or sampled out), <see cref="Activity.Current"/> is put back at once.
     /// </summary>
     public static RootSpan StartRoot(string name)
     {
-        if (!Source.HasListeners())
-        {
-            return default;
-        }
-
         var previous = Activity.Current;
         Activity.Current = null;
         var span = Source.StartActivity(name);

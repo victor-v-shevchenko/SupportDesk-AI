@@ -65,7 +65,7 @@ public class BackgroundSpanTests
     }
 
     [Fact]
-    public void StartRoot_leaves_what_is_current_alone_when_nobody_listens()
+    public void StartRoot_leaves_what_is_current_as_it_was_when_nobody_listens()
     {
         // No TraceCapture here, and this collection runs alone, so nothing listens to the source
         using var ambient = new Activity("ambient").Start();
