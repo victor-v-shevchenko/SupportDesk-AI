@@ -85,8 +85,9 @@ public sealed partial class SupportDeskMetrics
         }
         catch (ArgumentOutOfRangeException exception)
         {
-            // An outcome this code doesn't know is a programming error; it must not reach the call
-            LogFailed(exception);
+            // An outcome this code doesn't know is a programming error; it must not reach the call, but the counters now
+            // miss a row the table has, so it is a warning, not a debug line
+            LogUnknownOutcome(exception);
             return;
         }
 
@@ -171,9 +172,12 @@ public sealed partial class SupportDeskMetrics
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Unknown model call outcome."),
     };
 
-    // Debug level: a metric is never worth a warning, and the exception comes from a listener or from this code, not from a call
+    // Debug level: a listener's failure is outside the app and never worth a warning (an unknown outcome is, below)
     [LoggerMessage(Level = LogLevel.Debug, Message = "Recording a metric failed")]
     private partial void LogFailed(Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "A model call wasn't counted, so the counters miss a row the table has")]
+    private partial void LogUnknownOutcome(Exception exception);
 }
 
 /// <summary>The fixed tag values of <see cref="SupportDeskMetrics"/>; the tests check every recorded value against these.</summary>

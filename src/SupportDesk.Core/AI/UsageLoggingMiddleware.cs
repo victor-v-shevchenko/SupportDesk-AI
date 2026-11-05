@@ -124,7 +124,8 @@ public sealed partial class UsageLoggingMiddleware(
         }
 
         // The counters and the sink are separate: neither can stop the other, and neither can reach the call. From the row just
-        // built, so the counters and the table can't drift apart; a row the sink loses is still a call that happened
+        // built, so the counters and the table can't drift apart; a row the sink loses is still a call that happened.
+        // This runs in the call's finally outside a try: it relies on SupportDeskMetrics never throwing (MetricsCannotChangeOutcomeTests)
         metrics.RecordModelCall(row, call.Error);
         try
         {

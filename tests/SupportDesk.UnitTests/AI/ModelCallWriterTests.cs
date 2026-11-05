@@ -101,7 +101,7 @@ public sealed class ModelCallWriterTests : IDisposable
         _time.Advance(TimeSpan.FromSeconds(5));
         await stopping.WaitAsync(TimeSpan.FromSeconds(30), Ct);
 
-        Assert.Contains(_logs.Messages, m => m.Contains("Shutdown interrupted saving 50 model call rows", StringComparison.Ordinal));
+        Assert.Contains(_logs.Messages, m => m.Contains("Shutdown interrupted saving 50 model call rows; they are dropped (drain_deadline)", StringComparison.Ordinal));
         Assert.Equal(50, TestMetrics.Sum(_metrics.Dropped, ("reason", "drain_deadline")));
         Assert.Equal(100, _repository.SavedRows);
     }
@@ -118,6 +118,7 @@ public sealed class ModelCallWriterTests : IDisposable
 
         Assert.Equal(30, TestMetrics.Sum(_metrics.Dropped, ("reason", "shutdown")));
         Assert.Equal(0, TestMetrics.Sum(_metrics.Dropped, ("reason", "drain_deadline")));
+        Assert.Contains(_logs.Messages, m => m.Contains("Shutdown interrupted saving 30 model call rows; they are dropped (shutdown)", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -136,7 +137,7 @@ public sealed class ModelCallWriterTests : IDisposable
         await stopping.WaitAsync(TimeSpan.FromSeconds(30), Ct);
 
         // The batch in flight (100) and the 50 behind it; the 100 saved first are not lost
-        Assert.Contains(_logs.Messages, m => m.Contains("Shutdown interrupted saving 150 model call rows", StringComparison.Ordinal));
+        Assert.Contains(_logs.Messages, m => m.Contains("Shutdown interrupted saving 150 model call rows; they are dropped (drain_deadline)", StringComparison.Ordinal));
         Assert.Equal(150, TestMetrics.Sum(_metrics.Dropped, ("reason", "drain_deadline")));
         Assert.Equal(100, _repository.SavedRows);
     }

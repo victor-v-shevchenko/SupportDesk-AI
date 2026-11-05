@@ -72,8 +72,9 @@ public sealed partial class ModelCallWriter(ModelCallBuffer queue, IServiceScope
             // While draining, nothing will save what is still queued behind this batch
             var lost = draining ? batch.Count + queue.Reader.Count : batch.Count;
             // While draining, the deadline is what cut it short; otherwise the stop signal came during a normal save
-            metrics.RecordDropped(draining ? MetricValues.DropDrainDeadline : MetricValues.DropShutdown, lost);
-            LogSaveCancelled(lost);
+            var reason = draining ? MetricValues.DropDrainDeadline : MetricValues.DropShutdown;
+            metrics.RecordDropped(reason, lost);
+            LogSaveCancelled(lost, reason);
             throw;
         }
         catch (Exception exception)
@@ -84,8 +85,8 @@ public sealed partial class ModelCallWriter(ModelCallBuffer queue, IServiceScope
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Shutdown interrupted saving {Count} model call rows; they are dropped")]
-    private partial void LogSaveCancelled(int count);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Shutdown interrupted saving {Count} model call rows; they are dropped ({Reason})")]
+    private partial void LogSaveCancelled(int count, string reason);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Shutdown ran out of time saving model call rows; {Count} model call rows are dropped")]
     private partial void LogDrainLeftRows(int count);

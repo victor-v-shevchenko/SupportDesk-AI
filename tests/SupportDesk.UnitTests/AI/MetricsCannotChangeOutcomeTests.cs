@@ -1,6 +1,7 @@
 using Microsoft.Extensions.AI;
 using SupportDesk.Core.AI;
 using SupportDesk.Core.AI.Usage;
+using SupportDesk.Core.Telemetry;
 using SupportDesk.UnitTests.Telemetry;
 using static SupportDesk.UnitTests.AI.ScriptedChatClient;
 
@@ -87,11 +88,15 @@ public class MetricsCannotChangeOutcomeTests
     public void An_unknown_outcome_is_a_programming_error_that_is_logged_and_never_reaches_the_call()
     {
         using var metrics = new TestMetrics();
+        var logger = new Microsoft.Extensions.Logging.Testing.FakeLogger<SupportDeskMetrics>();
+        var recorder = new SupportDeskMetrics(metrics.Factory, logger);
         var row = new ModelCall { Provider = "fake", Model = "fake", PromptVersion = "reply.v1", Feature = AiFeature.Reply, Outcome = (ModelCallOutcome)99 };
 
-        var failure = Record.Exception(() => metrics.Metrics.RecordModelCall(row, null));
+        var failure = Record.Exception(() => recorder.RecordModelCall(row, null));
 
         Assert.Null(failure);
         Assert.Empty(metrics.ModelCalls.GetMeasurementSnapshot());
+        // The counters now miss a row the table has, so it must be visible at the default level
+        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Warning, logger.LatestRecord.Level);
     }
 }

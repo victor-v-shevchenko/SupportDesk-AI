@@ -109,18 +109,18 @@ public sealed partial class ClassificationService(
         classification.ClassifiedAt = time.GetUtcNow();
 
         var saved = await tickets.SaveClassificationAsync(ticket.Id, classification, cancellationToken);
-        if (saved is null)
+        // When no row matched, nothing was saved and nothing is counted
+        if (saved is not null)
         {
-            // No row matched, so nothing was saved and nothing is counted
-        }
-        else if (classification.Status == ClassificationStatus.Done)
-        {
-            metrics.RecordClassification(MetricValues.Done, null);
-        }
-        else
-        {
-            metrics.RecordClassification(
-                MetricValues.NeedsManual, classification.Reason == OutputLimitReason ? MetricValues.ReasonOutputLimit : MetricValues.ReasonInvalidOutput);
+            if (classification.Status == ClassificationStatus.Done)
+            {
+                metrics.RecordClassification(MetricValues.Done, null);
+            }
+            else
+            {
+                metrics.RecordClassification(
+                    MetricValues.NeedsManual, classification.Reason == OutputLimitReason ? MetricValues.ReasonOutputLimit : MetricValues.ReasonInvalidOutput);
+            }
         }
 
         return saved;
