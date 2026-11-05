@@ -103,7 +103,8 @@ public static class AiServiceCollectionExtensions
             _ => throw new InvalidOperationException($"AI:Embeddings:Provider '{embeddings.Provider}' isn't supported."),
         };
 
-        // Retrieval and the startup sync show embeddings spans. Content capture is set explicitly (PLAN.md 14), so the
+        // Retrieval shows embeddings spans; the startup sync runs before the host starts the tracer provider, so it has none
+        // (PLAN.md 14). Content capture is set explicitly (PLAN.md 14), so the
         // environment variable can't turn it on; no logger factory, since the client would log a failure's exception
         var captureContent = services.GetService<IOptions<TelemetryOptions>>()?.Value.CaptureMessageContent ?? false;
         return new EmbeddingGeneratorBuilder<string, Embedding<float>>(generator)

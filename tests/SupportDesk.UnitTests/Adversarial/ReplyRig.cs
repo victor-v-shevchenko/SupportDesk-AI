@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -56,8 +57,7 @@ internal sealed class ReplyRig : IDisposable
             retrieval,
             new ReplyToolFactory(orders, followUps, _pipeline.Metrics.Metrics),
             new PromptStore(settings),
-            new PriceTable(settings, NullLogger<PriceTable>.Instance),
-            new ReplySettings(settings, Options.Create(new RetrievalOptions { ReplyChunks = 10 })),
+            new ReplySettings(settings, Options.Create(new RetrievalOptions { ReplyChunks = 10 }), new PriceTable(settings, NullLogger<PriceTable>.Instance)),
             _pipeline.Metrics.Metrics,
             _loggerFactory.CreateLogger<ReplyService>());
     }
@@ -76,6 +76,8 @@ internal sealed class ReplyRig : IDisposable
     public IReadOnlyList<ModelCall> Rows => _pipeline.Rows.All;
 
     public IReadOnlyList<string> Logs => _logs.Messages;
+
+    public IReadOnlyList<(string Message, ActivitySpanId SpanId)> LogSpans => _logs.MessageSpans;
 
     /// <summary>Builds a rig whose provider plays <paramref name="turns"/> for <see cref="TicketNumber"/>'s reply.</summary>
     public static ReplyRig Create(

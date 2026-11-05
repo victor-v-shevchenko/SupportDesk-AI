@@ -24,12 +24,18 @@ public interface IReplyService
     IAsyncEnumerable<ReplyEvent> StreamAsync(Ticket ticket, CancellationToken cancellationToken);
 }
 
-/// <summary>The two settings the reply reads, from <see cref="AiOptions"/> and <see cref="RetrievalOptions"/>.</summary>
-public sealed class ReplySettings(IOptions<AiOptions> aiOptions, IOptions<RetrievalOptions> retrievalOptions)
+/// <summary>
+/// What the reply reads from configuration: two settings from <see cref="AiOptions"/> and <see cref="RetrievalOptions"/>,
+/// and the configured prices (<see cref="PriceTable"/>) for the cost of the whole reply.
+/// </summary>
+public sealed class ReplySettings(IOptions<AiOptions> aiOptions, IOptions<RetrievalOptions> retrievalOptions, PriceTable prices)
 {
     public int ReplyChunks => retrievalOptions.Value.ReplyChunks;
 
     public int MaxInputTokensPerCall => aiOptions.Value.Budget.MaxInputTokensPerCall;
+
+    /// <summary>The cost of <paramref name="inputTokens"/> and <paramref name="outputTokens"/>, or null when the model has no price.</summary>
+    public decimal? Cost(string model, long inputTokens, long outputTokens) => prices.Cost(model, inputTokens, outputTokens);
 }
 
 /// <summary>
@@ -41,7 +47,6 @@ public sealed partial class ReplyService(
     IRetrievalService retrieval,
     ReplyToolFactory toolFactory,
     IPromptStore prompts,
-    PriceTable prices,
     ReplySettings settings,
     SupportDeskMetrics metrics,
     ILogger<ReplyService> logger) : IReplyService
@@ -103,6 +108,10 @@ public sealed partial class ReplyService(
                 }
 
                 yield return next;
+
+                // Activity.Current doesn't survive a yield (the reader resumes the iterator with its own context), so the work
+                // and log lines after it would belong to the caller's span instead of the reply's (dotnet/runtime#47802)
+                RestoreCurrent(activity);
                 if (finished)
                 {
                     yield break;
@@ -114,11 +123,20 @@ public sealed partial class ReplyService(
             // The caller cancelled or stopped reading; the model call's own row says Cancelled too (UsageLoggingMiddleware)
             if (!finished)
             {
+                RestoreCurrent(activity);
                 activity?.SetTag(SupportDeskTelemetry.Outcome, "cancelled");
                 activity?.SetTag(SupportDeskTelemetry.Cancelled, true);
                 metrics.RecordReply(MetricValues.Cancelled, run.Guarded);
                 LogCancelled(replyRunId, ticket.Id);
             }
+        }
+    }
+
+    private static void RestoreCurrent(Activity? activity)
+    {
+        if (activity is not null)
+        {
+            Activity.Current = activity;
         }
     }
 
@@ -208,7 +226,7 @@ public sealed partial class ReplyService(
 
         var used = tokens.Resolve(prompt.Messages, options);
         var model = options.ModelId ?? chat.GetService<ChatClientMetadata>()?.DefaultModelId ?? "unknown";
-        yield return new ReplyUsage(used.Input, used.Output, prices.Cost(model, used.Input, used.Output), used.IsEstimated, calls);
+        yield return new ReplyUsage(used.Input, used.Output, settings.Cost(model, used.Input, used.Output), used.IsEstimated, calls);
         yield return new ReplyDone(replyRunId);
     }
 

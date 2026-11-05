@@ -50,6 +50,25 @@ public class BackgroundSpanTests
     }
 
     [Fact]
+    public async Task A_driver_error_after_shutdown_began_is_tagged_cancelled_and_is_not_an_error()
+    {
+        using var trace = new TraceCapture();
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        // A driver stopping mid-command can throw its own exception rather than an OperationCanceledException
+        using var services = Services(new Repository(Expired: 0) { Failure = new InvalidOperationException("connection closed") });
+        using var metrics = new TestMetrics();
+        var service = new ProposalExpiryService(services.GetRequiredService<IServiceScopeFactory>(), metrics.Metrics, TimeProvider.System, NullLogger<ProposalExpiryService>.Instance);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.ExpireAsync(cts.Token));
+
+        var span = Assert.Single(trace.AllSpans, a => a.OperationName == "proposal_expiry");
+        Assert.Equal(true, span.GetTagItem(SupportDeskTelemetry.Cancelled));
+        Assert.Equal(ActivityStatusCode.Unset, span.Status);
+        Assert.Null(span.GetTagItem("error.type"));
+    }
+
+    [Fact]
     public void StartRoot_puts_back_what_was_current_when_the_scope_ends()
     {
         using var trace = new TraceCapture();

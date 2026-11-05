@@ -181,6 +181,39 @@ public sealed class TracingTests
     }
 
     [Fact]
+    public async Task A_failure_logged_after_streamed_text_carries_the_reply_span()
+    {
+        using var trace = new TraceCapture();
+        // The refusal is thrown when the stream ends, after its text has been handed to the reader
+        using var rig = Create(Turn(Text("I can't help with "), Usage(310, 6), Finish("content_filter")));
+
+        var events = await rig.RunAsync(Ticket(), Ct);
+
+        Assert.IsType<ReplyToken>(events[0]);
+        Assert.Equal(ReplyErrorCodes.ModelRefused, Assert.IsType<ReplyError>(events[^1]).Code);
+        var reply = Assert.Single(trace.Named("reply"));
+        var failed = Assert.Single(rig.LogSpans, log => log.Message.Contains("failed", StringComparison.Ordinal));
+        Assert.Equal(reply.SpanId, failed.SpanId);
+    }
+
+    [Fact]
+    public async Task A_cancelled_reply_logs_its_cancellation_under_the_reply_span()
+    {
+        using var trace = new TraceCapture();
+        using var rig = Create(Turn(Text("First part. "), Usage(), Text("Second part.")));
+
+        await foreach (var reply in rig.Service.StreamAsync(Ticket(), Ct))
+        {
+            Assert.IsType<ReplyToken>(reply);
+            break;
+        }
+
+        var span = Assert.Single(trace.Named("reply"));
+        var cancelled = Assert.Single(rig.LogSpans, log => log.Message.Contains("cancel", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(span.SpanId, cancelled.SpanId);
+    }
+
+    [Fact]
     public async Task A_timeout_is_an_error_span_with_the_timeout_code()
     {
         using var trace = new TraceCapture();
