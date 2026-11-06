@@ -38,7 +38,7 @@ Then:
 docker compose up --build
 ```
 
-Open http://localhost:4200 (API health: http://localhost:5080/api/health). The first start builds two images and takes a few minutes. The fake provider plays scripted answers (`tests/fixtures/fake-scenarios.json`), so the same tickets always behave the same way: T-1002 looks up an order, T-1008 proposes a follow-up task, T-1021 shows a provider error, T-1023 a timeout (after about a minute: three attempts that each wait past the first-item limit), T-1025 a refusal.
+Open http://localhost:4200 (API health: http://localhost:5080/api/health). The first start builds two images and takes a few minutes. On an empty database the API's log starts with a `libgssapi_krb5.so.2` warning (the PostgreSQL driver looking for Kerberos, which isn't used) and one `fail` line for `__EFMigrationsHistory` (EF Core checking for a migrations table that doesn't exist yet); both are expected, and the migrations and seeding follow. The fake provider plays scripted answers (`tests/fixtures/fake-scenarios.json`), so the same tickets always behave the same way: T-1002 looks up an order, T-1008 proposes a follow-up task, T-1021 shows a provider error, T-1023 a timeout (after about a minute: three attempts that each wait past the first-item limit), T-1025 a refusal.
 
 ### Dev container (VS Code)
 
