@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging;
 using SupportDesk.Core.AI;
@@ -30,6 +29,9 @@ public sealed partial class SupportDeskMetrics
     public const string GuardHitsName = "supportdesk.injection_guard.hits";
     public const string ClassificationsName = "supportdesk.classifications";
     public const string FollowUpsName = "supportdesk.follow_ups";
+
+    private const string FeatureTag = "feature";
+    private const string ModelTag = "model";
 
     private readonly Counter<long> _modelCalls;
     private readonly Counter<long> _tokens;
@@ -73,9 +75,9 @@ public sealed partial class SupportDeskMetrics
         {
             calls = new TagList
             {
-                { "feature", row.Feature.ToString() },
+                { FeatureTag, row.Feature.ToString() },
                 { "provider", row.Provider },
-                { "model", row.Model },
+                { ModelTag, row.Model },
                 { "outcome", OutcomeName(row.Outcome) },
             };
             if (error is not null)
@@ -94,11 +96,11 @@ public sealed partial class SupportDeskMetrics
         var feature = row.Feature.ToString();
         Add(_modelCalls, 1, calls);
         var estimated = row.IsEstimated;
-        Add(_tokens, row.InputTokens, new TagList { { "feature", feature }, { "model", row.Model }, { "direction", "input" }, { "estimated", estimated } });
-        Add(_tokens, row.OutputTokens, new TagList { { "feature", feature }, { "model", row.Model }, { "direction", "output" }, { "estimated", estimated } });
+        Add(_tokens, row.InputTokens, new TagList { { FeatureTag, feature }, { ModelTag, row.Model }, { "direction", "input" }, { "estimated", estimated } });
+        Add(_tokens, row.OutputTokens, new TagList { { FeatureTag, feature }, { ModelTag, row.Model }, { "direction", "output" }, { "estimated", estimated } });
         if (row.CostUsd is { } cost)
         {
-            Add(_cost, (double)cost, new TagList { { "feature", feature }, { "model", row.Model } });
+            Add(_cost, (double)cost, new TagList { { FeatureTag, feature }, { ModelTag, row.Model } });
         }
     }
 
@@ -150,7 +152,6 @@ public sealed partial class SupportDeskMetrics
     }
 
     /// <summary>One guarded add: a listener that throws is logged and the next measurement still goes in.</summary>
-    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Measurement listeners run inside Counter.Add; whatever one throws must never change the outcome of the call being counted.")]
     private void Add<T>(Counter<T> counter, T value, TagList tags)
         where T : struct
     {

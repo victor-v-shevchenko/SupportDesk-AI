@@ -1,6 +1,6 @@
 # AI log
 
-Bugs found in AI-written code, how they were found, and the test that now covers each one. Newest first.
+Bugs found in AI-written code, how they were found, and the test that now covers each one. Mostly oldest first: a few early entries were added at the top before the log switched to appending at the end.
 
 Entry format (from CLAUDE.md):
 
@@ -376,3 +376,24 @@ Entry format (from CLAUDE.md):
 - What was wrong: the wrapped logger provider's descriptor no longer names the SDK's type, so OpenTelemetry logging registered after `WithSupportDeskLogging` added a second, unwrapped provider that would export content events, and a second call exported every record twice; the registration-time guard only caught an earlier registration.
 - Fix: `LogExportCheck` validates at startup that the resolved logger providers hold exactly one wrapper and no `OpenTelemetryLoggerProvider` (step 15, this commit).
 - Test: `TelemetryStartupTests.Log_export_fails_at_startup_when_OpenTelemetry_logging_is_registered_again_after_it` and `Log_export_fails_at_startup_when_it_is_set_up_twice`; both fail without the fix.
+
+## 2026-11-05 — Reply log lines after the first streamed event lost the reply span
+- Step: 15 (found in the follow-up whole-project review)
+- Found by: review subagent
+- What was wrong: `Activity.Current` doesn't survive a `yield return` in an async iterator, so `ReplyService`'s lines written after the stream had handed out an event (a refusal or mid-stream timeout, removed citations, a cancellation) carried another span's ID instead of the `reply` span's; the integration test only checked the trace ID.
+- Fix: `StreamEventsAsync` sets `Activity.Current` back to the reply span after each `yield return` and before the cancellation log (`fix/review-after-telemetry`).
+- Test: `TracingTests.A_failure_logged_after_streamed_text_carries_the_reply_span` and `A_cancelled_reply_logs_its_cancellation_under_the_reply_span`; both fail without the fix.
+
+## 2026-11-05 — A driver error during shutdown made the expiry check's span an error
+- Step: 13 (found in the follow-up whole-project review)
+- Found by: review subagent
+- What was wrong: `ProposalExpiryService` marked a run cut short by shutdown as cancelled only when an `OperationCanceledException` was thrown; a driver that threw its own exception while stopping left an `Error` span with `internal_error`.
+- Fix: once shutdown has begun, the span is tagged cancelled whatever was thrown (`RecordedCancellation`; `fix/review-after-telemetry`). The exception still leaves `ExecuteAsync`, so the host still logs it as a failed background service; that predates step 13 and is left as it is.
+- Test: `BackgroundSpanTests.A_driver_error_after_shutdown_began_is_tagged_cancelled_and_is_not_an_error`, which fails without the fix.
+
+## 2026-11-05 — Integration tests failed to start with the OTLP endpoint in the environment
+- Step: 15 (found in the follow-up whole-project review)
+- Found by: review subagent
+- What was wrong: with `OTEL_EXPORTER_OTLP_ENDPOINT` exported for the dashboard, as CLAUDE.md suggests, the app turned its own log export on beside the one the tests add, so `LogExportCheck` stopped every host in `LogExportTests`, and the tracing tests sent spans to the real collector.
+- Fix: `ApiFactory` sets the variable blank as a host setting (`UseSetting`), which applies before `Program` reads it (`fix/review-after-telemetry`).
+- Test: none of its own (test setup); `LogExportTests`, `TracingTests` and `MetricsTests` failed 4 of 13 with `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:1` and pass with the fix.

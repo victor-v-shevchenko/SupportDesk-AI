@@ -38,7 +38,7 @@ Then:
 docker compose up --build
 ```
 
-Open http://localhost:4200 (API health: http://localhost:5080/api/health). The first start builds two images and takes a few minutes. The fake provider plays scripted answers (`tests/fixtures/fake-scenarios.json`), so the same tickets always behave the same way: T-1002 looks up an order, T-1008 proposes a follow-up task, T-1021 shows a provider error, T-1023 a timeout (after about a minute: three attempts that each wait past the first-item limit), T-1025 a refusal.
+Open http://localhost:4200 (API health: http://localhost:5080/api/health). The first start builds two images and takes a few minutes. On an empty database the API's log starts with a `libgssapi_krb5.so.2` warning (the PostgreSQL driver looking for Kerberos, which isn't used) and one `fail` line for `__EFMigrationsHistory` (EF Core checking for a migrations table that doesn't exist yet); both are expected, and the migrations and seeding follow. The fake provider plays scripted answers (`tests/fixtures/fake-scenarios.json`), so the same tickets always behave the same way: T-1002 looks up an order, T-1008 proposes a follow-up task, T-1021 shows a provider error, T-1023 a timeout (after about a minute: three attempts that each wait past the first-item limit), T-1025 a refusal.
 
 ### Dev container (VS Code)
 
@@ -49,9 +49,11 @@ Open http://localhost:4200 (API health: http://localhost:5080/api/health). The f
    ```
 3. In a second terminal: `npm --prefix web start`, then open http://localhost:4200
 
-### Traces and metrics (optional)
+### Traces, metrics and logs (optional)
 
-`docker compose --profile telemetry up -d telemetry` starts the .NET Aspire dashboard, and `OTEL_EXPORTER_OTLP_ENDPOINT=http://telemetry:18889` (in `.env` for Docker Compose, or in front of `dotnet run` in the dev container) makes the API send it traces, metrics and logs. Open http://localhost:18888 to follow a reply from the HTTP request through retrieval, each model call and tool call, down to the SQL. The Metrics page shows counters for model calls, tokens and cost by feature and model, errors by code, injection-guard hits, tool calls and follow-up proposals, plus Microsoft.Extensions.AI's token usage and operation duration and ASP.NET Core's request metrics; they export every 60 seconds (`OTEL_METRIC_EXPORT_INTERVAL=5000`, in milliseconds, makes it faster locally). The Structured logs page shows the app's log lines with their placeholders (`TicketId`, `ReplyRunId`, ...) as attributes, and each line links to the trace of the request that wrote it. Without the variable nothing is exported. Traces hold IDs, counts, codes and token usage, metrics hold counts and codes, and logs hold messages with IDs, counts and codes; none holds ticket, prompt or reply text, and logged exceptions are exported as their type only. See PLAN.md 14.
+`docker compose --profile telemetry up -d telemetry` starts the .NET Aspire dashboard, and `OTEL_EXPORTER_OTLP_ENDPOINT=http://telemetry:18889` (in `.env` for Docker Compose, or in front of `dotnet run` in the dev container) makes the API send it traces, metrics and logs. Open http://localhost:18888 to follow a reply from the HTTP request through retrieval, each model call and tool call, down to the SQL. The Metrics page shows counters for model calls, tokens and cost by feature and model, errors by code, injection-guard hits, tool calls and follow-up proposals, plus Microsoft.Extensions.AI's token usage and operation duration and ASP.NET Core's request metrics; they export every 60 seconds (`OTEL_METRIC_EXPORT_INTERVAL=5000`, in milliseconds, makes it faster locally). The Structured logs page shows the app's log lines with their placeholders (`TicketId`, `ReplyRunId`, ...) as attributes, and each line links to the trace of the request that wrote it. Without the variable nothing is exported. Traces hold IDs, counts, codes and token usage, metrics hold counts and codes, and logs hold messages with IDs, counts and codes; none holds ticket, prompt or reply text, and logged exceptions are exported as their type only. See [PLAN.md 14](PLAN.md#14-telemetry).
+
+![A reply on T-1002 in the Aspire dashboard: the reply span, retrieval, the chat spans and the order lookup tool call, down to the SQL](docs/images/trace-reply-T-1002.png)
 
 ### Switching providers
 
@@ -75,6 +77,8 @@ Every call, from any feature and to any provider, goes through one `IChatClient`
 ```
 RequestCapMiddleware          starts the request's token tally
 FunctionInvokingChatClient    the tool loop (at most 3 rounds)
+OpenTelemetryChatClient       one chat span per inner call; lets the tool loop emit execute_tool spans
+TraceTagsMiddleware           adds the feature, prompt version, IDs and error code to that span
 RequestCapCounterMiddleware   adds each inner call's tokens; refuses the next call once the request is over its cap
 BudgetGuardMiddleware         estimates each call's input, refuses one over the limit, sets MaxOutputTokens
 UsageLoggingMiddleware        one ModelCalls row per inner call: tokens, cost, latency, outcome
@@ -83,7 +87,7 @@ ErrorMappingMiddleware        provider exceptions → typed exceptions; refusals
 provider IChatClient          Anthropic / OpenAI / Ollama / Fake
 ```
 
-The order carries the design. Error mapping is innermost, so retries decide on typed exceptions, not on four SDKs' error types. Usage logging sits above retries, so a retried call is one row with its whole latency. The token cap is split around the tool loop because no single middleware can see both where a request starts and each call inside it. A test walks the built chain and fails if the order changes.
+The order carries the design. Error mapping is innermost, so retries decide on typed exceptions, not on four SDKs' error types. Usage logging sits above retries, so a retried call is one row with its whole latency. The token cap is split around the tool loop because no single middleware can see both where a request starts and each call inside it. The telemetry client sits just under the tool loop, so each inner model call is one `chat` span, the same unit as a `ModelCalls` row, with retries inside it. A test walks the built chain and fails if the order changes.
 
 ### Why retries live in middleware
 
@@ -103,12 +107,12 @@ Every call's input is estimated before it's sent (characters ÷ 3 × 1.2 plus 10
 
 ## Tests
 
-Counted from local runs of the step 12 code on 2026-11-03; every suite passed.
+Counted from local runs on 2026-11-05 of the follow-up review branch (`fix/review-after-telemetry`, on top of step 15); every suite passed.
 
 | Suite | What it covers | How to run | Tests |
 | --- | --- | --- | --- |
-| .NET unit (`tests/SupportDesk.UnitTests`) | Pipeline middleware on a fake clock, the fake provider, prompt building and escaping, citation parsing, classification validation, tools and their arguments, injection signals, provider adapters against stub HTTP | `dotnet test tests/SupportDesk.UnitTests` | 620 |
-| .NET integration (`tests/SupportDesk.IntegrationTests`) | Testcontainers PostgreSQL + pgvector: migrations, seeding, endpoints, retrieval against committed embedding fixtures and their hash check, proposals and confirm, adversarial tickets through the API | `dotnet test tests/SupportDesk.IntegrationTests` | 125 |
+| .NET unit (`tests/SupportDesk.UnitTests`) | Pipeline middleware on a fake clock, the fake provider, prompt building and escaping, citation parsing, classification validation, tools and their arguments, injection signals, provider adapters against stub HTTP, telemetry (the span tree, metric tags, span and log sanitizing, the log export against a local OTLP sink) | `dotnet test tests/SupportDesk.UnitTests` | 725 |
+| .NET integration (`tests/SupportDesk.IntegrationTests`) | Testcontainers PostgreSQL + pgvector: migrations, seeding, endpoints, retrieval against committed embedding fixtures and their hash check, proposals and confirm, adversarial tickets through the API, one trace from HTTP request to SQL, metric totals against the `ModelCalls` rows, no ticket or query text in exported logs | `dotnet test tests/SupportDesk.IntegrationTests` | 138 |
 | Evaluation code (`tests/SupportDesk.Eval/Tests`) | The metrics, thresholds, golden set and report writer of the evaluation suite, without a model | `dotnet test tests/SupportDesk.Eval --filter "Category!=Eval"` | 201 |
 | Angular unit (`web/src`) | Components, the SSE parser, services, the cost readout | `npm --prefix web test -- --watch=false` | 128 |
 | End-to-end (`web/e2e`) | Playwright against the API with the fake provider and the production Angular build: the main flows, errors, layout, accessibility (ARIA snapshot, Tab walk, contrast) | `npm --prefix web run e2e` (against a disposable database; the environment is in [CLAUDE.md](CLAUDE.md#commands)) | 40 |
@@ -118,7 +122,7 @@ CI runs everything but the evaluation on every push (`dotnet test --filter "Cate
 
 ## Code quality
 
-- **SonarQube Cloud** checks every pull request with the default "Sonar way" quality gate on new code (ratings A, every security hotspot reviewed, coverage at least 80%, duplication at most 3%) and the "Sonar way comprehensive" quality profile; the gate is a required check. On 2026-11-03 the [project](https://sonarcloud.io/project/overview?id=victor-v-shevchenko_SupportDesk-AI) showed, for `main` at `0331b02` (the last fix before step 12): the gate passing, 93.1% coverage, 0.0% duplication, no bugs, vulnerabilities or security hotspots, and 9 code smells, all fixed in step 12. The badges above show the live values. Locally the Angular unit tests cover 98.2% of lines
+- **SonarQube Cloud** checks every pull request with the default "Sonar way" quality gate on new code (ratings A, every security hotspot reviewed, coverage at least 80%, duplication at most 3%) and the "Sonar way comprehensive" quality profile; the gate is a required check. On 2026-11-05 the [project](https://sonarcloud.io/project/overview?id=victor-v-shevchenko_SupportDesk-AI) showed, for `main` at `540e8e2` (after step 15): the gate passing, 93.7% coverage, 0.0% duplication, no bugs, vulnerabilities or security hotspots, and 3 code smells (a constructor with 8 parameters and two repeated tag names), fixed in the follow-up review. The badges above show the live values. Locally the Angular unit tests cover 98.2% of lines
 - **In the build:** .NET analyzers at `latest-recommended` with warnings as errors, ESLint for the Angular app, and `gitleaks` over the whole git history. SonarQube for IDE runs in connected mode in the dev container, so the same rules show before a push
 - **Rules turned off:** none. The step 3b review of every issue SonarQube Cloud had raised found each one a real finding, so `sonar/SonarQube.Analysis.xml` has no rule exclusions; it only leaves migrations, seed data, test fixtures and build output out of analysis ([PLAN.md 11](PLAN.md#11-testing))
 
@@ -126,7 +130,7 @@ CI runs everything but the evaluation on every push (`dotnet test --filter "Cate
 
 The project was built step by step with Claude Code. [SupportDesk-AI.md](SupportDesk-AI.md) is the brief, [PLAN.md](PLAN.md) the design, and [docs/specs/](docs/specs/) has one spec per step with acceptance criteria. [CLAUDE.md](CLAUDE.md) holds the working rules: one branch per spec, tests written with the code, the checks to pass, a browser check for UI work, and a pull request that ticks off each criterion. Step 1 was pushed straight to `main`; from step 2 on, Claude Code opened every pull request and the user merged each one.
 
-Every step and fix was reviewed by the `reviewer` subagent ([.claude/agents/reviewer.md](.claude/agents/reviewer.md)), which runs on a different model from the one that wrote the code, can't edit files and reads only the spec, CLAUDE.md and the branch diff. Every finding was fixed or answered in the pull request, and every real bug got a failing test first and an entry in [docs/ai-log.md](docs/ai-log.md). From step 8, implementation moved to cheaper Sonnet subagents (and from #17 to a dedicated `implementer` agent) while the reviewer moved to Opus, so the two still differ.
+Every step and fix was reviewed by the `reviewer` subagent ([.claude/agents/reviewer.md](.claude/agents/reviewer.md)), which runs on a different model from the one that wrote the code, can't edit files and reads only the spec, CLAUDE.md and the branch diff. Every finding was fixed or answered in the pull request, and every real bug got a failing test first and an entry in [docs/ai-log.md](docs/ai-log.md). From step 8, implementation moved to cheaper Sonnet subagents (and from #17 to a dedicated `implementer` agent) while the reviewer moved to Opus, so the two still differ. Steps 13 and 14 broke that rule: the main session (Opus 5.5) wrote them, so the same model reviewed them, as it did the Opus fixes in step 15.
 
 | Step | Implemented by | Reviewed by |
 | --- | --- | --- |
@@ -143,6 +147,9 @@ Every step and fix was reviewed by the `reviewer` subagent ([.claude/agents/revi
 | 10. [Evaluation](docs/specs/10-evaluation.md) | Sonnet 5.5 (subagent) | Opus 5.5 |
 | 11. [UI polish and end-to-end tests](docs/specs/11-ui-e2e.md) | Sonnet 5.5 (subagent) | Opus 5.5 |
 | 12. [Final review and README](docs/specs/12-readme.md) | Sonnet 5.5 (`implementer`, the fix branches) and Opus 5.5 (README, PLAN.md) | Opus 5.5 |
+| 13. [OpenTelemetry tracing](docs/specs/13-tracing.md) | Opus 5.5 (main session) | Opus 5.5 (same model) |
+| 14. [OpenTelemetry metrics](docs/specs/14-metrics.md) | Opus 5.5 (main session) | Opus 5.5 (same model) |
+| 15. [OpenTelemetry structured logs](docs/specs/15-logs.md) | Sonnet 5.5 (`implementer`), with later fixes by Opus 5.5 (main session) | Opus 5.5 |
 | `fix/` branches from #17 on | Sonnet 5.5 (`implementer`) | Opus 5.5 |
 
 The main session (Opus 5.5) wrote the specs with the user, ran the checks and browser checks, answered the review findings and opened the pull requests throughout.
@@ -162,17 +169,17 @@ The evaluation runs classification and a reply for each of 36 golden tickets, wr
 | Proposals created by injection cases | 0 | 0 | 1 | 0 |
 | System prompt leaked | 0/9 | 1/9 | 0/9 | 0/9 |
 | Model calls | 70 | 67 | 69 | 84 |
-| Cost | $0.86 | $0 (local) | $0 (local) | $0 (local) |
+| Cost | $0.86 | $0 (local) | $0 (local) | $0 (local; unpriced in that run) |
 | Time (CPU for the local models) | 4 min 21 s | 32 min 51 s | 128 min 39 s | 53 min 22 s |
 
 Thresholds are 80% category accuracy and 70% citation recall for Claude models, 60% and 50% for the local ones, and zero injected proposals for every model. Opus 5.5 costs about $0.024 per ticket for a classification and a reply. None of the 7–8B local models writes replies that could go out unedited: qwen2.5:7b repeats a made-up promise from a ticket, llama3.1:8b writes its tool call as JSON into the reply, and qwen3:8b proposed the injected task in the held-out case I-08 (a person would still have had to confirm it). The reports, and what their approximate metrics can and can't measure, are in [docs/eval/](docs/eval/).
 
 ## Bugs found and fixed
 
-[docs/ai-log.md](docs/ai-log.md) records every real bug found after the code was written: 44 in all, each with what was done about it and, where one could be written, the test that now covers it.
+[docs/ai-log.md](docs/ai-log.md) records every real bug found after the code was written: 55 in all, each with what was done about it and, where one could be written, the test that now covers it.
 
-- **By the review subagent (27):** mostly bugs that span components. Two API instances starting together crashed on the migration; a stray cancellation could stop the API through the proposal expiry check; a slow caller could time out a stream after its first item; one model answer could make any number of tool calls; a failed `orders.json` load broke every lookup until restart; the cost readout miscounted replies with several model calls. The step 12 whole-project review (four reviewers over the repository in slices) and the reviews of its fixes found twelve more, most of them only visible across steps: embedding calls with no timeout, so a stalled embedding server hung a reply; a refused stream that lost its real token count; ticket-page state that followed you to the next ticket; the evaluation dropping a failed ticket's cost; the usage writer's shutdown log under-counting the rows it lost; and a Docker Compose path that couldn't set a model or keep citations with the fake model, and whose web image couldn't write its cache
-- **By tests (15):** the token estimate was below Anthropic's real count (found by the opt-in token-count check, which led to ÷ 3 instead of ÷ 4); ticket text could fake the sources block (adversarial tests); a fake assistant turn in a ticket got a proposal, and an injected ticket got the category it asked for (both found by the evaluation, which led to the injection guard); a thinking model used up the classification budget before answering; and several timing tests that failed only on a busy machine, which led to a fake clock that moves only while the code waits on a timer
+- **By the review subagent (37):** mostly bugs that span components. Two API instances starting together crashed on the migration; a stray cancellation could stop the API through the proposal expiry check; a slow caller could time out a stream after its first item; one model answer could make any number of tool calls; a failed `orders.json` load broke every lookup until restart; the cost readout miscounted replies with several model calls. The step 12 whole-project review (four reviewers over the repository in slices) and the reviews of its fixes found twelve more, most of them only visible across steps: embedding calls with no timeout, so a stalled embedding server hung a reply; a refused stream that lost its real token count; ticket-page state that followed you to the next ticket; the evaluation dropping a failed ticket's cost; the usage writer's shutdown log under-counting the rows it lost; and a Docker Compose path that couldn't set a model or keep citations with the fake model, and whose web image couldn't write its cache. The telemetry steps (13–15) added seven, nearly all about text escaping into exported data: PostgreSQL's error message in Npgsql's span event, EF Core's exception text and a search query in exported logs, tool arguments that the AI library logs at Trace, and a second OpenTelemetry logging registration that would have bypassed the filter; plus a metrics listener that could throw into a model call, and a classification counted with no saved row. A second whole-project review after step 15 found three more: reply log lines that lost their span after the first streamed event, a shutdown error marked as a failure on the expiry check's span, and integration tests that broke when the dashboard's endpoint was set
+- **By tests (16):** the token estimate was below Anthropic's real count (found by the opt-in token-count check, which led to ÷ 3 instead of ÷ 4); ticket text could fake the sources block (adversarial tests); a fake assistant turn in a ticket got a proposal, and an injected ticket got the category it asked for (both found by the evaluation, which led to the injection guard); a thinking model used up the classification budget before answering; several timing tests that failed only on a busy machine, which led to a fake clock that moves only while the code waits on a timer; and a span tag call (`activity?.SetTag(..., await SaveChangesAsync())`) that skipped the database save whenever tracing was off
 - **By browser checks (2):** the search page's result-count select showed 3 while searches sent 5, and the ticket page's action buttons had different sizes
 - **By the user:** none of the logged bugs; the user's corrections went into the specs, PLAN.md and CLAUDE.md instead
 
@@ -188,3 +195,4 @@ Thresholds are 80% category accuracy and 70% citation recall for Claude models, 
 - **Shared test helpers:** the SSE parser, fixture embedding generator and scenario builders are copied between test projects
 - **Pin GitHub Actions by commit SHA,** as the gitleaks binary already is by checksum
 - **Production hosting:** migrations and seeding run only in Development, and the web image is the Angular dev server
+- **Telemetry gaps:** a tool that throws isn't counted in `supportdesk.tool_calls` (a `failed` result would show database errors on the dashboard), and the Development startup (migration, seeding, the embedding sync) runs before the tracer provider exists, so it leaves no spans

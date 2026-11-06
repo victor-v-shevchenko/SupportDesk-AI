@@ -85,6 +85,17 @@ public static class SupportDeskTelemetry
         activity.RecordFailure(exception, cancellationToken);
         return false;
     }
+
+    /// <summary>
+    /// Marks the span as cancelled whatever was thrown, for work the caller has already cancelled (a driver stopping
+    /// mid-command can throw its own exception, not an <see cref="OperationCanceledException"/>). An exception filter like
+    /// <see cref="RecordedFailure"/>: always false, so the exception goes on unchanged.
+    /// </summary>
+    public static bool RecordedCancellation(this Activity? activity)
+    {
+        activity?.SetTag(Cancelled, true);
+        return false;
+    }
 }
 
 /// <summary>A root span from <see cref="SupportDeskTelemetry.StartRoot"/>; null <see cref="Span"/> when nothing is recording.</summary>

@@ -34,6 +34,11 @@ public sealed class ApiFactory(
         values["ConnectionStrings:SupportDesk"] = connectionString;
 
         builder.UseEnvironment(environment);
+
+        // A developer's OTEL_EXPORTER_OTLP_ENDPOINT (set for the dashboard) would turn the app's own export on: a second log
+        // provider beside the tests' (LogExportCheck stops the host) and spans sent to the real collector. Program reads it while
+        // registering services, before the in-memory values below apply, so it goes in as a host setting; blank means unset
+        builder.UseSetting("OTEL_EXPORTER_OTLP_ENDPOINT", "");
         if (logger is not null)
         {
             builder.ConfigureLogging(logging => logging.AddProvider(logger));

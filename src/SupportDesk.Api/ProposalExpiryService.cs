@@ -43,8 +43,8 @@ public sealed partial class ProposalExpiryService(IServiceScopeFactory scopes, S
                 LogExpired(expired);
             }
         }
-        // Shutdown is a cancellation, not an error; the span says so and the exception goes on
-        catch (Exception exception) when (cancellationToken.IsCancellationRequested && activity.RecordedFailure(exception, cancellationToken))
+        // Shutdown is a cancellation, not an error, whatever the driver threw; the span says so and the exception goes on
+        catch (Exception) when (cancellationToken.IsCancellationRequested && activity.RecordedCancellation())
         {
             throw;
         }

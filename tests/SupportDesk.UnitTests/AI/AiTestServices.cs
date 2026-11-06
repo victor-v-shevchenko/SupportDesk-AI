@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -62,6 +63,7 @@ internal static class AiTestServices
 internal sealed class CapturingLoggerProvider : ILoggerProvider
 {
     private readonly List<string> _messages = [];
+    private readonly List<(string Message, ActivitySpanId SpanId)> _spans = [];
 
     public IReadOnlyList<string> Messages
     {
@@ -70,6 +72,18 @@ internal sealed class CapturingLoggerProvider : ILoggerProvider
             lock (_messages)
             {
                 return [.. _messages];
+            }
+        }
+    }
+
+    /// <summary>Each message with the span that was current when it was logged (default when none was), which is what an exporter links it to.</summary>
+    public IReadOnlyList<(string Message, ActivitySpanId SpanId)> MessageSpans
+    {
+        get
+        {
+            lock (_messages)
+            {
+                return [.. _spans];
             }
         }
     }
@@ -92,7 +106,9 @@ internal sealed class CapturingLoggerProvider : ILoggerProvider
         {
             lock (owner._messages)
             {
-                owner._messages.Add(formatter(state, exception) + " " + exception);
+                var message = formatter(state, exception);
+                owner._messages.Add(message + " " + exception);
+                owner._spans.Add((message, Activity.Current?.SpanId ?? default));
             }
         }
     }
