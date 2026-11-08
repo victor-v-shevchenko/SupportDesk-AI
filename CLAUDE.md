@@ -148,3 +148,18 @@ Keep this table correct: when a step changes a command, update it in the same pu
 - Testcontainers works through the `docker-outside-of-docker` feature
 - Ollama runs on the host at `http://host.docker.internal:11434`, or in the optional `ollama` compose service at `http://ollama:11434`
 - Chromium needs `--no-sandbox` in the container; the Playwright MCP server runs headless
+
+
+## Risk-first workflow for future milestones
+
+See [AI workflow findings](docs/ai-workflow-findings.md) and [risk-first spec template](docs/specs/TEMPLATE-risk-first.md). These supplement the existing milestone rules; they do not retroactively rewrite completed specs.
+
+- Before implementing a new milestone, identify its invariants, affected execution paths, trust boundaries, and relevant failure matrix. For complex or high-risk work, request an independent read-only design critique before coding.
+- Build adversarial and failure-path tests with each feature rather than postponing them to a late hardening milestone. Use deterministic barriers and clocks; never infer a test precondition solely from elapsed wall time.
+- Ask the reviewer to inspect the diff **and relevant surrounding paths**, including consumers, persistence, provider adapters and observability. Explicitly ask whether a broken implementation could still pass the tests.
+- When a test claims to cover a critical invariant, demonstrate a targeted negative/mutation probe where practical, or document why it was not performed.
+- Add cross-feature architecture checkpoints after major boundaries (persistence, AI pipeline, tool execution, release), instead of relying only on the final whole-project review.
+- Run small opt-in real-model evaluations when model-dependent behavior is introduced. Never equate valid citation syntax with grounded factual claims; hosted evaluations still require user approval.
+- Treat logging, metrics and tracing as noninterfering and privacy-sensitive. Verify business outcomes with instrumentation disabled and under simulated instrumentation failures where relevant.
+- Record defect root cause, missed invariant, detection stage and prevention rule in addition to the existing ai-log fields. Keep unresolved semantic failures explicitly marked as unresolved.
+- Scale verification to risk: documentation-only changes do not require model evaluations or UI E2E unless they alter behavior or test infrastructure.
