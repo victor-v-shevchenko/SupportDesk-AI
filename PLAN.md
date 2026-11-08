@@ -568,3 +568,15 @@ Steps 13 to 15. A request can be followed end to end in a trace, counters ([step
 **Viewing locally:** the optional `telemetry` Compose profile runs the .NET Aspire dashboard (image `mcr.microsoft.com/dotnet/aspire-dashboard:9.5.2`; port 18888 for the UI and 18889 for OTLP, both bound to `127.0.0.1`; no login). `docker compose --profile telemetry up -d telemetry`, then `OTEL_EXPORTER_OTLP_ENDPOINT=http://telemetry:18889` for the API (the dev container and the `api` service reach it by name). Its Structured logs page lists the log lines with their placeholders as attributes; a line opens its trace, and a trace page lists its log lines.
 
 **Tests:** CI needs no collector; span tests use `OpenTelemetry.Exporter.InMemory` (log tests use a local OTLP sink, above). Unit tests check the span tree through the real pipeline and reply service, the error and cancellation rules, and that no marker text from a ticket, reply, tool result or `ChatOptions.AdditionalProperties` reaches a span; integration tests check one trace from the HTTP request to the SQL, `chat` spans equal to `ModelCalls` rows, and no span for `GET /api/health`.
+
+
+## Retrospective: risk-first milestone planning
+
+The original milestones remain historical records. For new work, use [the risk-first spec template](docs/specs/TEMPLATE-risk-first.md) and [findings](docs/ai-workflow-findings.md).
+
+- **Shift-left verification:** include failure, cancellation, retry, concurrency, recovery, and injection cases in the feature milestone that introduces the behavior; retain a separate adversarial milestone for broad exploration, not first coverage.
+- **Cross-feature contracts:** explicitly document and verify provider-error mapping, persistence side effects, stream terminal events, UI invalidation and observability noninterference across all applicable features.
+- **Independent checkpoints:** review design before high-risk implementation and review architecture after persistence, AI pipeline, tools and before release. Step 12 remains a final audit, not the first system-wide audit.
+- **Evaluation:** distinguish deterministic schema/citation validation from semantic grounding. The fabricated refund promise documented in docs/ai-log.md remains an unresolved model-specific behavior until an evaluation proves otherwise; add a metric that fails on unsupported policy claims even if no invalid citation marker appears.
+- **Evidence:** acceptance criteria should specify how the test establishes the scenario it claims to exercise and, for critical behavior, how a representative broken implementation would be detected.
+- **Telemetry:** exporting traces, metrics or logs must not change persistence, response outcomes, cancellation or privacy. Test disabled and failure modes.
