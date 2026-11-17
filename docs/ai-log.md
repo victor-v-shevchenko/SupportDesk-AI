@@ -397,3 +397,10 @@ Entry format (from CLAUDE.md):
 - What was wrong: with `OTEL_EXPORTER_OTLP_ENDPOINT` exported for the dashboard, as CLAUDE.md suggests, the app turned its own log export on beside the one the tests add, so `LogExportCheck` stopped every host in `LogExportTests`, and the tracing tests sent spans to the real collector.
 - Fix: `ApiFactory` sets the variable blank as a host setting (`UseSetting`), which applies before `Program` reads it (`fix/review-after-telemetry`).
 - Test: none of its own (test setup); `LogExportTests`, `TracingTests` and `MetricsTests` failed 4 of 13 with `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:1` and pass with the fix.
+
+## 2026-11-17 — A log export check passed whatever was exported
+- Step: 15
+- Found by: user (CI build warning S3415, hidden from the run's annotations, found in the build log)
+- What was wrong: `A_failed_ef_query_leaves_the_database_error_text_out_of_every_exported_record` called `Assert.DoesNotContain(failure.Text, "invalid input syntax")`, which asks whether the phrase contains the exported record, not the other way round, so it passed whether or not the PostgreSQL error text was exported.
+- Fix: the arguments are in xUnit's order, expected substring first (`fix/ci-warnings`).
+- Test: the same test. With the phrase checked to be in the console log it passes, and with `LogSanitizer` keeping the formatted message the test fails (on its marker check, which runs first).
