@@ -45,7 +45,7 @@ public class BackgroundSpanTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.ExpireAsync(cts.Token));
 
         var span = Assert.Single(trace.AllSpans, a => a.OperationName == "proposal_expiry");
-        Assert.Equal(true, span.GetTagItem(SupportDeskTelemetry.Cancelled));
+        Assert.True(Assert.IsType<bool>(span.GetTagItem(SupportDeskTelemetry.Cancelled)));
         Assert.Equal(ActivityStatusCode.Unset, span.Status);
     }
 
@@ -63,7 +63,7 @@ public class BackgroundSpanTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.ExpireAsync(cts.Token));
 
         var span = Assert.Single(trace.AllSpans, a => a.OperationName == "proposal_expiry");
-        Assert.Equal(true, span.GetTagItem(SupportDeskTelemetry.Cancelled));
+        Assert.True(Assert.IsType<bool>(span.GetTagItem(SupportDeskTelemetry.Cancelled)));
         Assert.Equal(ActivityStatusCode.Unset, span.Status);
         Assert.Null(span.GetTagItem("error.type"));
     }

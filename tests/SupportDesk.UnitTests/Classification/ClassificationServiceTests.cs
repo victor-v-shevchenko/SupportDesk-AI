@@ -100,7 +100,7 @@ public sealed class ClassificationServiceTests : IDisposable
         await Service(pipeline.Client).ClassifyAsync(ticket.Id, Ct);
 
         var span = Assert.Single(trace.Named("classification"));
-        Assert.Equal(true, span.GetTagItem("supportdesk.held"));
+        Assert.True(Assert.IsType<bool>(span.GetTagItem("supportdesk.held")));
         Assert.Equal(["system override"], Assert.IsType<string[]>(span.GetTagItem("supportdesk.injection_signals")));
         Assert.Equal("NeedsManual", span.GetTagItem(SupportDeskTelemetry.Outcome));
         Assert.Empty(trace.Chat);

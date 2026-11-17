@@ -192,7 +192,7 @@ public sealed partial class LogExportTests
     }
 
     [Fact]
-    public void An_idle_app_with_export_on_writes_no_log_record_of_its_own()
+    public async Task An_idle_app_with_export_on_writes_no_log_record_of_its_own()
     {
         using var capture = new LogCapture(LogLevel.Trace);
         var marker = Guid.NewGuid();
@@ -201,7 +201,7 @@ public sealed partial class LogExportTests
         Finished(logger, marker, 1, 1);
         capture.Flush();
         var requests = capture.Sink.Requests;
-        Thread.Sleep(1_500);
+        await Task.Delay(1_500, Ct);
         capture.Flush();
 
         // The one record we wrote was exported (a request reached the sink); sending it made no record, and idling made none
@@ -213,7 +213,7 @@ public sealed partial class LogExportTests
     }
 
     [Fact]
-    public void A_failing_export_writes_no_log_record_either()
+    public async Task A_failing_export_writes_no_log_record_either()
     {
         using var capture = new LogCapture(LogLevel.Trace, sinkStatus: HttpStatusCode.ServiceUnavailable);
         var marker = Guid.NewGuid();
@@ -221,7 +221,7 @@ public sealed partial class LogExportTests
         var logger = capture.Logger<LogExportTests>();
         Finished(logger, marker, 1, 1);
         capture.Flush();
-        Thread.Sleep(1_500);
+        await Task.Delay(1_500, Ct);
 
         Assert.True(capture.Sink.Requests >= 1);
         Assert.Single(capture.Logs, l => l.Attributes.GetValueOrDefault("ReplyRunId") == marker.ToString());
@@ -328,7 +328,7 @@ public sealed partial class LogExportTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void An_idle_app_writes_no_log_record_of_its_own_with_an_http_client_factory_registered(bool failing)
+    public async Task An_idle_app_writes_no_log_record_of_its_own_with_an_http_client_factory_registered(bool failing)
     {
         // With IHttpClientFactory registered the OTLP exporter sends through a named client, which logs through ILogger
         // unless exporting is suppressed while it sends (and the exporter filters its category to Warning)
@@ -338,7 +338,7 @@ public sealed partial class LogExportTests
 
         Finished(logger, marker, 1, 1);
         capture.Flush();
-        Thread.Sleep(1_500);
+        await Task.Delay(1_500, Ct);
         capture.Flush();
 
         Assert.True(capture.Sink.Requests >= 1);

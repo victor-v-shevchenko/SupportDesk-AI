@@ -123,7 +123,7 @@ public class RetrievalServiceTests
 
         var span = Assert.Single(trace.Named("retrieval"));
         Assert.Equal(ActivityStatusCode.Unset, span.Status);
-        Assert.Equal(true, span.GetTagItem(SupportDeskTelemetry.Cancelled));
+        Assert.True(Assert.IsType<bool>(span.GetTagItem(SupportDeskTelemetry.Cancelled)));
     }
 
     private static RetrievalService Service(IEmbeddingGenerator<string, Embedding<float>> generator) =>
