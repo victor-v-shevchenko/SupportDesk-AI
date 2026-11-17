@@ -83,7 +83,7 @@ import { TicketStatusBadge } from './ticket-status';
       .split.detail-open .list, .split:not(.detail-open) .detail { display: block; }
       /* The window less the one-line header and the content's padding above and below, so the page itself doesn't scroll
          until the ticket beside the list is taller than the window */
-      .list { position: sticky; top: 1rem; box-sizing: border-box; max-height: calc(100dvh - var(--header-height) - 3rem); overflow-y: auto; padding: 0.25rem; }
+      .list { position: sticky; top: 1rem; box-sizing: border-box; max-height: calc(100vh - var(--header-height) - 2 * var(--content-padding)); max-height: calc(100dvh - var(--header-height) - 2 * var(--content-padding)); overflow-y: auto; padding: 0.25rem; }
     }
   `,
 })

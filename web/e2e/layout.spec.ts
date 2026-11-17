@@ -19,6 +19,8 @@ test.describe('at 1440 px wide', () => {
     await expect(page.getByText('1,200 input + 48 output tokens')).toBeVisible();
     await page.getByRole('button', { name: 'Summarize' }).click();
     await expect(page.getByRole('button', { name: 'Regenerate' })).toBeVisible();
+    await page.getByRole('button', { name: 'Classify', exact: true }).click();
+    await expect(page.getByText('General question with no urgency.')).toBeVisible();
 
     const list = await page.getByRole('region', { name: 'Tickets' }).boundingBox();
     const detail = await page.getByRole('region', { name: 'Ticket', exact: true }).boundingBox();
@@ -29,26 +31,12 @@ test.describe('at 1440 px wide', () => {
 
     // The text uses the column's width rather than a fixed line length
     const column = await page.getByRole('region', { name: 'Ticket', exact: true }).evaluate((el) => el.clientWidth);
-    for (const selector of ['.body', 'app-ticket-summary .text', '.reply-text']) {
+    for (const selector of ['.body', 'app-ticket-summary .text', '.reason', '.reply-text']) {
       const width = await page.locator(selector).evaluate((el) => el.getBoundingClientRect().width);
       expect(width, selector).toBeGreaterThan(column * 0.95);
     }
 
     await page.screenshot({ path: `${shots}/ticket-1440.png`, fullPage: true });
-  });
-
-  test('the page has no vertical scrollbar when the list scrolls on its own', async ({ page }) => {
-    await page.goto('/tickets');
-    await expect(page.getByText('Select a ticket to see its details.')).toBeVisible();
-    const list = page.getByRole('region', { name: 'Tickets' });
-    await expect(list.getByRole('link').nth(20)).toBeAttached();
-
-    // The seeded list is taller than the window, so it scrolls inside its own box, and the page under the header fits
-    expect(await list.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
-    const overflow = await page.evaluate(() => document.documentElement.scrollHeight - document.documentElement.clientHeight);
-    expect(overflow).toBeLessThanOrEqual(0);
-    const box = await list.boundingBox();
-    expect(box && box.y + box.height <= 900).toBe(true);
   });
 
   test('the dark theme follows the system setting', async ({ page }) => {
@@ -65,7 +53,37 @@ test.describe('at 1440 px wide', () => {
     await expect(page.getByRole('link', { name: 'Refunds' }).first()).toBeVisible();
     await page.screenshot({ path: `${shots}/articles-1440.png`, fullPage: true });
   });
+
+  test('an article uses the page width', async ({ page }) => {
+    await page.goto('/articles/refunds');
+    const body = page.locator('.body');
+    await expect(body).toBeVisible();
+    const width = await body.evaluate((el) => el.getBoundingClientRect().width);
+    const content = await page.locator('main').evaluate((el) => el.clientWidth);
+    expect(width).toBeGreaterThan(content * 0.9);
+  });
 });
+
+// From 900 px the list sits beside the ticket and scrolls in its own box: the page fits under the header at the
+// narrowest two-pane width, where the header comes closest to wrapping, and on a short window
+for (const viewport of [{ width: 1440, height: 900 }, { width: 900, height: 700 }]) {
+  test.describe(`at ${viewport.width} x ${viewport.height}`, () => {
+    test.use({ viewport });
+
+    test('the page has no vertical scrollbar when the list scrolls on its own', async ({ page }) => {
+      await page.goto('/tickets');
+      await expect(page.getByText('Select a ticket to see its details.')).toBeVisible();
+      const list = page.getByRole('region', { name: 'Tickets' });
+      await expect(list.getByRole('link').nth(20)).toBeAttached();
+
+      expect(await list.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+      const overflow = await page.evaluate(() => document.documentElement.scrollHeight - document.documentElement.clientHeight);
+      expect(overflow).toBeLessThanOrEqual(0);
+      const box = await list.boundingBox();
+      expect(box && box.y + box.height <= viewport.height).toBe(true);
+    });
+  });
+}
 
 test.describe('at 375 px wide', () => {
   test.use({ viewport: { width: 375, height: 812 } });
