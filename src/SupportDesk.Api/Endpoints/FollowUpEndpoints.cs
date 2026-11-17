@@ -43,7 +43,7 @@ public static class FollowUpEndpoints
     /// proposal is a <c>409</c>.
     /// </summary>
     public static async Task<Results<Ok<FollowUpTaskResponse>, ProblemHttpResult>> ConfirmProposal(
-        Guid proposalId, IFollowUpRepository followUps, CancellationToken cancellationToken)
+        Guid proposalId, IFollowUpService followUps, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(followUps);
 

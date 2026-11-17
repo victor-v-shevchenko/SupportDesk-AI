@@ -186,7 +186,7 @@ public class MetricTagTests
         buffer.Complete();
         buffer.Reader.TryRead(out _);
         buffer.Add(row);
-        // These four happen in the writer and the follow-up repository, which this test doesn't run. They are recorded directly so
+        // These four happen in the writer and the follow-up service, which this test doesn't run. They are recorded directly so
         // their tag values are checked too; the real paths are covered by ModelCallWriterTests and the integration MetricsTests
         metrics.Metrics.RecordDropped(MetricValues.DropSaveFailed, 1);
         metrics.Metrics.RecordDropped(MetricValues.DropDrainDeadline, 1);

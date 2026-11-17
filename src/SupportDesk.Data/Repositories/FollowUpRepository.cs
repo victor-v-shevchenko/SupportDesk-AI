@@ -1,11 +1,9 @@
 using Microsoft.EntityFrameworkCore;
-using System.Diagnostics;
 using SupportDesk.Core.FollowUps;
-using SupportDesk.Core.Telemetry;
 
 namespace SupportDesk.Data.Repositories;
 
-internal sealed class FollowUpRepository(SupportDeskDbContext db, SupportDeskMetrics metrics, TimeProvider time) : IFollowUpRepository
+internal sealed class FollowUpRepository(SupportDeskDbContext db, TimeProvider time) : IFollowUpRepository
 {
     public async Task<FollowUpProposal> UpsertProposalAsync(NewProposal proposal, CancellationToken cancellationToken)
     {
@@ -33,23 +31,6 @@ internal sealed class FollowUpRepository(SupportDeskDbContext db, SupportDeskMet
 
     public async Task<ConfirmResult> ConfirmAsync(Guid proposalId, CancellationToken cancellationToken)
     {
-        using var activity = SupportDeskTelemetry.Source.StartActivity("confirm_follow_up");
-        activity?.SetTag("supportdesk.proposal_id", proposalId.ToString());
-        try
-        {
-            var result = await ConfirmCoreAsync(proposalId, activity, cancellationToken);
-            activity?.SetTag(SupportDeskTelemetry.Outcome, result.Outcome.ToString());
-            return result;
-        }
-        catch (Exception exception) when (activity.RecordedFailure(exception, cancellationToken))
-        {
-            throw;
-        }
-    }
-
-    private async Task<ConfirmResult> ConfirmCoreAsync(Guid proposalId, Activity? activity, CancellationToken cancellationToken)
-    {
-        activity?.SetTag(SupportDeskTelemetry.RowsChanged, 0);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
         // Locks the row until the commit, so two confirms at once take turns and the second finds the first one's task.
@@ -73,12 +54,10 @@ internal sealed class FollowUpRepository(SupportDeskDbContext db, SupportDeskMet
         if (proposal.Status == ProposalStatus.Expired || proposal.ExpiresAt <= now)
         {
             proposal.Status = ProposalStatus.Expired;
+            // 0 when the proposal was already marked expired
             var expiredRows = await db.SaveChangesAsync(cancellationToken);
-            activity?.SetTag(SupportDeskTelemetry.RowsChanged, expiredRows);
             await transaction.CommitAsync(cancellationToken);
-            // Only when this call changed the status; an already expired proposal was counted then
-            metrics.RecordFollowUp(MetricValues.Expired, expiredRows);
-            return new ConfirmResult(ConfirmOutcome.Expired, null);
+            return new ConfirmResult(ConfirmOutcome.Expired, null, expiredRows);
         }
 
         var task = new FollowUpTask
@@ -93,11 +72,8 @@ internal sealed class FollowUpRepository(SupportDeskDbContext db, SupportDeskMet
         proposal.Status = ProposalStatus.Confirmed;
         db.FollowUpTasks.Add(task);
         var rows = await db.SaveChangesAsync(cancellationToken);
-        activity?.SetTag(SupportDeskTelemetry.RowsChanged, rows);
         await transaction.CommitAsync(cancellationToken);
-        // Only the confirm that created the task; a repeat returns the existing one above
-        metrics.RecordFollowUp(MetricValues.Confirmed);
-        return new ConfirmResult(ConfirmOutcome.Confirmed, task);
+        return new ConfirmResult(ConfirmOutcome.Confirmed, task, rows);
     }
 
     public async Task<TicketFollowUps?> ListAsync(int ticketId, CancellationToken cancellationToken)
