@@ -120,7 +120,8 @@ public class LogExportTests(PostgresFixture postgres)
         Assert.Contains(marker, console.All, StringComparison.Ordinal);
         var failure = await WaitForAsync(() => exporter.Records.FirstOrDefault(r => r.Category == "Microsoft.EntityFrameworkCore.Query" && r.Attributes.Any(a => a.StartsWith("error=", StringComparison.Ordinal) && !a.Contains(marker, StringComparison.Ordinal))));
         Assert.DoesNotContain(exporter.Records.SelectMany(r => r.AllText), text => text.Contains(marker, StringComparison.Ordinal));
-        Assert.DoesNotContain(failure.Text, "invalid input syntax", StringComparison.Ordinal);
+        // Expected substring first: reversed, this asked whether the phrase contains the record, and passed whatever was exported
+        Assert.DoesNotContain("invalid input syntax", failure.Text, StringComparison.Ordinal);
     }
 
     private Task<SeededApi> StartAsync(List<Activity> spans, CapturingExporter exporter, ILoggerProvider console) =>
