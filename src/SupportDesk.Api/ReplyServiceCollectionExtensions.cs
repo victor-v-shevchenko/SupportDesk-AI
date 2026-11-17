@@ -1,3 +1,4 @@
+using SupportDesk.Core.FollowUps;
 using SupportDesk.Core.Replies;
 using SupportDesk.Core.Replies.Tools;
 
@@ -14,6 +15,8 @@ public static class ReplyServiceCollectionExtensions
         services.AddScoped<ReplySettings>();
         services.AddScoped<IReplyService, ReplyService>();
         services.AddScoped<ReplyToolFactory>();
+        // The confirm endpoint's service; the follow-ups belong to the reply's tools, so they're registered here
+        services.AddScoped<IFollowUpService, FollowUpService>();
         services.AddSingleton<ProposalExpiryService>();
         services.AddHostedService(provider => provider.GetRequiredService<ProposalExpiryService>());
         return services;

@@ -154,6 +154,12 @@ public sealed class AiBudgetSettings
 
     /// <summary>Input and output tokens across all the calls of one request (the tool loop).</summary>
     public int MaxTokensPerRequest { get; set; } = 20_000;
+
+    /// <summary>
+    /// Reply, summary and classification requests are refused once today's <c>ModelCalls</c> cost (UTC day) reaches this,
+    /// in USD (PLAN.md 6.4). Checked when a request starts, so it's a soft limit.
+    /// </summary>
+    public decimal DailySpendLimitUsd { get; set; } = 5m;
 }
 
 public sealed class ModelPrice

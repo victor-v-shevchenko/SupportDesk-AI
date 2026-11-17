@@ -7,6 +7,7 @@ using SupportDesk.Data;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSupportDeskApi();
+builder.Services.AddSupportDeskRequestLimits();
 builder.Services.AddSupportDeskTelemetry(builder.Configuration);
 builder.Services.AddSupportDeskData();
 builder.Services.AddSupportDeskAi();
@@ -19,6 +20,7 @@ var app = builder.Build();
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
+app.UseRateLimiter();
 
 if (app.Environment.IsDevelopment())
 {

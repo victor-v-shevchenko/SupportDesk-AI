@@ -120,4 +120,15 @@ describe('ArticlesPage', () => {
 
     expect((fixture.nativeElement as HTMLElement).querySelector('[role=alert]')?.textContent).toContain('The search failed');
   });
+
+  it('says the search was rate limited instead of blaming the embedding model', async () => {
+    const fixture = await create();
+
+    (await search(fixture, 'refund')).flush({ code: 'rate_limited' }, { status: 429, statusText: 'Too Many Requests' });
+    await fixture.whenStable();
+
+    const alert = (fixture.nativeElement as HTMLElement).querySelector('[role=alert]')?.textContent;
+    expect(alert).toContain('Too many AI requests');
+    expect(alert).not.toContain('embedding model');
+  });
 });

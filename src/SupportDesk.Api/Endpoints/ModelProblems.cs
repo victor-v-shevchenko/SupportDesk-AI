@@ -24,6 +24,14 @@ public static class ModelProblems
     public static ProblemHttpResult BudgetExceeded() =>
         Problem(StatusCodes.Status413PayloadTooLarge, "budget_exceeded", "Over the token budget", "This ticket is too long for the model's token budget.");
 
+    /// <summary>The AI endpoints' rate limit (PLAN.md 5); the caller sets <c>Retry-After</c>.</summary>
+    public static ProblemHttpResult RateLimited() =>
+        Problem(StatusCodes.Status429TooManyRequests, "rate_limited", "Too many requests", "Too many AI requests in a short time. Try again in a moment.");
+
+    /// <summary>The daily spending limit (PLAN.md 6.4); the caller sets <c>Retry-After</c> to the next UTC midnight.</summary>
+    public static ProblemHttpResult DailyLimitReached() =>
+        Problem(StatusCodes.Status429TooManyRequests, "daily_limit", "Daily spending limit reached", "The model's spending limit for today has been reached. It resets at midnight UTC.");
+
     public static ProblemHttpResult InvalidOutput() =>
         Problem(StatusCodes.Status502BadGateway, "invalid_output", "The model's answer was unusable", "The model's answer was empty or unusable, so nothing was saved. Try again.");
 

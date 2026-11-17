@@ -8,7 +8,7 @@ public static class ClassificationEndpoints
 {
     public static IEndpointRouteBuilder MapClassificationEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapPost("/api/tickets/{id:int}/classification", ClassifyTicket).WithName("ClassifyTicket");
+        app.MapPost("/api/tickets/{id:int}/classification", ClassifyTicket).WithName("ClassifyTicket").WithModelSpendLimits();
         return app;
     }
 

@@ -286,5 +286,8 @@ public sealed class ModelCallWriterTests : IDisposable
 
         public Task<IReadOnlyList<ModelCall>> ListAsync(int? ticketId, int limit, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
+
+        public Task<decimal> SumCostSinceAsync(DateTimeOffset since, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 }

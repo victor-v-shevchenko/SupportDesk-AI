@@ -52,4 +52,7 @@ public interface IModelCallRepository
 
     /// <summary>Newest first, at most <paramref name="limit"/> rows.</summary>
     Task<IReadOnlyList<ModelCall>> ListAsync(int? ticketId, int limit, CancellationToken cancellationToken);
+
+    /// <summary>The summed <see cref="ModelCall.CostUsd"/> of calls that started at or after <paramref name="since"/>; unpriced calls add nothing.</summary>
+    Task<decimal> SumCostSinceAsync(DateTimeOffset since, CancellationToken cancellationToken);
 }

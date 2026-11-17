@@ -48,9 +48,15 @@ export type ReplyEvent =
   | { type: 'error'; code: string; message: string }
   | { type: 'done'; replyRunId: string };
 
-/** The reply request failed before its stream started (an unknown ticket, a server error). */
+/**
+ * The reply request failed before its stream started (an unknown ticket, a limit, a server error). `detail` is the
+ * problem details' text for people, when the response had one.
+ */
 export class ReplyRequestError extends Error {
-  constructor(readonly status: number) {
+  constructor(
+    readonly status: number,
+    readonly detail?: string,
+  ) {
     super(`The reply request failed with status ${status}.`);
     this.name = 'ReplyRequestError';
   }

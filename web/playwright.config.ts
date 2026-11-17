@@ -33,7 +33,7 @@ export default defineConfig({
       command: 'dotnet run --project ../src/SupportDesk.Api',
       url: 'http://localhost:5080/api/health',
       // A server that is already running is reused locally: start it with the same environment as below (the fake providers,
-      // Retrieval__MinSimilarity=0 and the three AI__Pricing__6__* values), or the replies and the cost test fail confusingly
+      // Retrieval__MinSimilarity=0, the three AI__Pricing__6__* values and the two raised limits), or the replies and the cost test fail confusingly
       reuseExistingServer: !ci,
       timeout: 180_000,
       env: {
@@ -47,6 +47,9 @@ export default defineConfig({
         AI__Pricing__6__Model: 'fake',
         AI__Pricing__6__InputPerMTok: '1000',
         AI__Pricing__6__OutputPerMTok: '2000',
+        // At that price a few replies pass the $5 daily spending limit, and parallel tests pass 20 AI requests a minute (PLAN.md 5, 6.4)
+        AI__Budget__DailySpendLimitUsd: '1000000',
+        RateLimiting__Ai__PermitLimit: '100000',
       },
     },
     {

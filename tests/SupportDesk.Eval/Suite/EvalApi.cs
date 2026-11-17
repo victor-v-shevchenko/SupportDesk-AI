@@ -34,6 +34,9 @@ public sealed class EvalApi(string connectionString, FixtureEmbeddingGenerator e
             ["ConnectionStrings:SupportDesk"] = connectionString,
             ["AI:Embeddings:Provider"] = "Fake",
             ["AI:Embeddings:Model"] = embeddings.Model,
+            // A run sends many requests in a few minutes on its own database; its cost is projected by the dry run instead
+            ["RateLimiting:Ai:PermitLimit"] = "100000",
+            ["AI:Budget:DailySpendLimitUsd"] = "1000000",
         }));
         builder.ConfigureTestServices(services => services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(embeddings));
     }

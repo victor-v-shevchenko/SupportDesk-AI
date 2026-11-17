@@ -122,4 +122,23 @@ describe('RepliesService', () => {
     expect(error).toBeInstanceOf(ReplyRequestError);
     expect((error as ReplyRequestError).status).toBe(404);
   });
+
+  it("carries a refusal's problem detail, or the text for its code when there is none", async () => {
+    const problem = (body: object) => new Response(JSON.stringify(body), { status: 429, headers: { 'Content-Type': 'application/problem+json' } });
+    fetchMock.mockResolvedValueOnce(problem({ code: 'daily_limit', detail: 'Spent for today.' }));
+    fetchMock.mockResolvedValueOnce(problem({ code: 'rate_limited' }));
+    fetchMock.mockResolvedValueOnce(new Response('busy', { status: 503 }));
+    const service = TestBed.inject(RepliesService);
+    const fail = async (id: number): Promise<ReplyRequestError> => {
+      const error = await collect(service.stream(id, new AbortController().signal)).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ReplyRequestError);
+      return error as ReplyRequestError;
+    };
+
+    expect((await fail(1)).detail).toBe('Spent for today.');
+    expect((await fail(2)).detail).toBe('Too many AI requests in a short time. Try again in a moment.');
+    const plain = await fail(3);
+    expect(plain.status).toBe(503);
+    expect(plain.detail).toBeUndefined();
+  });
 });

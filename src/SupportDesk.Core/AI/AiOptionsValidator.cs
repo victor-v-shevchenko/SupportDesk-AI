@@ -56,6 +56,11 @@ public sealed class AiOptionsValidator : IValidateOptions<AiOptions>
         Range(errors, "AI:Retry:MaxDelayMs", options.Retry.MaxDelayMs, 0, 300_000);
         Range(errors, "AI:Budget:MaxInputTokensPerCall", options.Budget.MaxInputTokensPerCall, 1, 1_000_000);
         Range(errors, "AI:Budget:MaxTokensPerRequest", options.Budget.MaxTokensPerRequest, 1, 10_000_000);
+        if (options.Budget.DailySpendLimitUsd is < 0.01m or > 1_000_000m)
+        {
+            errors.Add("AI:Budget:DailySpendLimitUsd must be between 0.01 and 1000000.");
+        }
+
         Range(errors, "AI:Usage:QueueCapacity", options.Usage.QueueCapacity, 1, 1_000_000);
         foreach (var (feature, maxOutput) in options.Budget.MaxOutputTokens)
         {

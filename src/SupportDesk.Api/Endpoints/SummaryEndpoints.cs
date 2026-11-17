@@ -8,7 +8,7 @@ public static class SummaryEndpoints
 {
     public static IEndpointRouteBuilder MapSummaryEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapPost("/api/tickets/{id:int}/summary", GenerateSummary).WithName("GenerateSummary");
+        app.MapPost("/api/tickets/{id:int}/summary", GenerateSummary).WithName("GenerateSummary").WithModelSpendLimits();
         return app;
     }
 

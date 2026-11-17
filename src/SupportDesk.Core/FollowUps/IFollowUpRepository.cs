@@ -10,8 +10,11 @@ public enum ConfirmOutcome
     Expired,
 }
 
-/// <summary>The task, for <see cref="ConfirmOutcome.Confirmed"/>: the new one, or the one an earlier confirm created.</summary>
-public sealed record ConfirmResult(ConfirmOutcome Outcome, FollowUpTask? Task);
+/// <summary>
+/// The task, for <see cref="ConfirmOutcome.Confirmed"/>: the new one, or the one an earlier confirm created.
+/// <paramref name="RowsChanged"/> is what this call saved: 0 when it changed nothing, such as a repeat confirm.
+/// </summary>
+public sealed record ConfirmResult(ConfirmOutcome Outcome, FollowUpTask? Task, int RowsChanged = 0);
 
 public sealed record TicketFollowUps(IReadOnlyList<FollowUpProposal> Proposals, IReadOnlyList<FollowUpTask> Tasks);
 
