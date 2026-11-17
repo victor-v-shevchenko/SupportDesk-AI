@@ -50,7 +50,7 @@ import { ProposalCard } from './proposal-card';
     .tasks li { margin-bottom: 0.5rem; }
     .title { font-weight: 600; }
     .due { margin-left: 0.5rem; color: var(--muted); font-size: 0.85rem; }
-    .notes { margin: 0.125rem 0 0; max-width: 70ch; }
+    .notes { margin: 0.125rem 0 0; }
     app-proposal-card { margin-bottom: 0.5rem; }
     .loading, .empty { color: var(--muted); }
     .error { color: var(--danger); }

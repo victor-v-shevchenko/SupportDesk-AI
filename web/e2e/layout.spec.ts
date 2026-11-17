@@ -27,7 +27,28 @@ test.describe('at 1440 px wide', () => {
     await expect(page.getByRole('link', { name: '← All tickets' })).toBeHidden();
     await expectNoHorizontalScroll(page);
 
+    // The text uses the column's width rather than a fixed line length
+    const column = await page.getByRole('region', { name: 'Ticket', exact: true }).evaluate((el) => el.clientWidth);
+    for (const selector of ['.body', 'app-ticket-summary .text', '.reply-text']) {
+      const width = await page.locator(selector).evaluate((el) => el.getBoundingClientRect().width);
+      expect(width, selector).toBeGreaterThan(column * 0.95);
+    }
+
     await page.screenshot({ path: `${shots}/ticket-1440.png`, fullPage: true });
+  });
+
+  test('the page has no vertical scrollbar when the list scrolls on its own', async ({ page }) => {
+    await page.goto('/tickets');
+    await expect(page.getByText('Select a ticket to see its details.')).toBeVisible();
+    const list = page.getByRole('region', { name: 'Tickets' });
+    await expect(list.getByRole('link').nth(20)).toBeAttached();
+
+    // The seeded list is taller than the window, so it scrolls inside its own box, and the page under the header fits
+    expect(await list.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+    const overflow = await page.evaluate(() => document.documentElement.scrollHeight - document.documentElement.clientHeight);
+    expect(overflow).toBeLessThanOrEqual(0);
+    const box = await list.boundingBox();
+    expect(box && box.y + box.height <= 900).toBe(true);
   });
 
   test('the dark theme follows the system setting', async ({ page }) => {

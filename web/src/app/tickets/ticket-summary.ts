@@ -47,7 +47,7 @@ export interface GeneratedSummary {
   styles: `
     .header { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; }
     h2 { font-size: 1rem; margin: 0; }
-    .text { margin: 0 0 0.25rem; line-height: 1.5; max-width: 70ch; }
+    .text { margin: 0 0 0.25rem; line-height: 1.5; }
     .generated { margin: 0; font-size: 0.75rem; color: var(--muted); }
     .loading, .empty { color: var(--muted); }
     .error { color: var(--danger); }

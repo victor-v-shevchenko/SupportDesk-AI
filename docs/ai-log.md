@@ -404,3 +404,17 @@ Entry format (from CLAUDE.md):
 - What was wrong: `A_failed_ef_query_leaves_the_database_error_text_out_of_every_exported_record` called `Assert.DoesNotContain(failure.Text, "invalid input syntax")`, which asks whether the phrase contains the exported record, not the other way round, so it passed whether or not the PostgreSQL error text was exported.
 - Fix: the arguments are in xUnit's order, expected substring first (`fix/ci-warnings`).
 - Test: the same test. With the phrase checked to be in the console log it passes, and with `LogSanitizer` keeping the formatted message the test fails (on its marker check, which runs first).
+
+## 2026-11-17 — The ticket list ran past the window
+- Step: 11
+- Found by: user (browser check)
+- What was wrong: at 900 px and wider the ticket list was `100vh - 2rem` tall but sat below the header and the page padding, so its bottom was cut off and the page got a vertical scrollbar with nothing to scroll to.
+- Fix: the header is at least `--header-height` (3rem) tall, and the list's height is the window less that and the page padding (`fix/page-scrollbar`).
+- Test: `the page has no vertical scrollbar when the list scrolls on its own` (e2e `layout.spec.ts`).
+
+## 2026-11-17 — Ticket text stayed narrow on wide screens
+- Step: 11
+- Found by: user (browser check)
+- What was wrong: the ticket body, summary, classification reason, reply, follow-up notes and article body had `max-width: 70ch`, so on a wide screen they used about half of the detail column.
+- Fix: the caps are removed, so the text fills its column (`fix/page-scrollbar`).
+- Test: `the list is on the left and the ticket on the right` (e2e `layout.spec.ts`) now checks that the body, summary and reply span the column.

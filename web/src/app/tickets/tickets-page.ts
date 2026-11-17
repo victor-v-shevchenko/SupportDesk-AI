@@ -81,7 +81,9 @@ import { TicketStatusBadge } from './ticket-status';
     @media (min-width: 900px) {
       .split { grid-template-columns: minmax(18rem, 24rem) minmax(0, 1fr); align-items: start; }
       .split.detail-open .list, .split:not(.detail-open) .detail { display: block; }
-      .list { position: sticky; top: 1rem; max-height: calc(100vh - 2rem); overflow-y: auto; padding: 0.25rem; }
+      /* The window less the one-line header and the content's padding above and below, so the page itself doesn't scroll
+         until the ticket beside the list is taller than the window */
+      .list { position: sticky; top: 1rem; box-sizing: border-box; max-height: calc(100dvh - var(--header-height) - 3rem); overflow-y: auto; padding: 0.25rem; }
     }
   `,
 })

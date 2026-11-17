@@ -103,8 +103,8 @@ type ReplyStatus = 'idle' | 'streaming' | 'done' | 'stopped' | 'error';
   `,
   styles: `
     .actions { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
-    .tool-calls { display: grid; gap: 0.5rem; margin-bottom: 0.75rem; max-width: 70ch; }
-    .reply-text { white-space: pre-wrap; line-height: 1.5; max-width: 70ch; }
+    .tool-calls { display: grid; gap: 0.5rem; margin-bottom: 0.75rem; }
+    .reply-text { white-space: pre-wrap; line-height: 1.5; }
     .cite a { color: var(--link); }
     h3 { font-size: 0.875rem; margin: 1rem 0 0.25rem; }
     .citations { padding-left: 1.25rem; margin: 0; }

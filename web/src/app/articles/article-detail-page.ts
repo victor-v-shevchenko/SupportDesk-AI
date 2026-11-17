@@ -37,7 +37,7 @@ import { ArticlesService } from '../api/articles.service';
     .back { display: inline-block; margin-bottom: 1rem; color: var(--link); text-decoration: none; }
     h1 { margin: 0 0 0.25rem; font-size: 1.5rem; }
     .meta { color: var(--muted); font-size: 0.85rem; margin: 0 0 1rem; }
-    .body { white-space: pre-wrap; line-height: 1.5; max-width: 70ch; }
+    .body { white-space: pre-wrap; line-height: 1.5; }
     .loading, .empty { color: var(--muted); }
     .error { color: var(--danger); }
   `,
