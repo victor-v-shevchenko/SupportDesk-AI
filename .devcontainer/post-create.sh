@@ -26,5 +26,13 @@ fi
 # The Playwright MCP server (.mcp.json) pins its own browser build, separate from @playwright/test's
 if [[ -f .mcp.json ]]; then
   mcp_package=$(grep -o '@playwright/mcp@[0-9.]*' .mcp.json)
-  npx --ignore-scripts -y "$mcp_package" install-browser chrome-for-testing
+  # Claude Code can start the same npx package while this runs, and the two
+  # installs can leave the npx cache entry without its package.json. Remove
+  # such entries and try once more.
+  if ! npx --ignore-scripts -y "$mcp_package" install-browser chrome-for-testing; then
+    for dir in "$(npm config get cache)"/_npx/*/; do
+      [[ -f "$dir/package.json" ]] || rm -rf "$dir"
+    done
+    npx --ignore-scripts -y "$mcp_package" install-browser chrome-for-testing
+  fi
 fi
