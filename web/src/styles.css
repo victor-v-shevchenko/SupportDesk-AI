@@ -2,6 +2,10 @@
    on each page by axe in the end-to-end tests; --control-border is at least 3:1 (WCAG 1.4.11) against the page and surface. */
 :root {
   color-scheme: light dark;
+  /* The app header's height on one line (it's at least this tall), for pages that fit the window below it */
+  --header-height: 3rem;
+  /* The padding around each page's content, for pages that size themselves to the window */
+  --content-padding: 1.5rem;
   --bg: #ffffff;
   --fg: #1f2937;
   --muted: #4b5563;

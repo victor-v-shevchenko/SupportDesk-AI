@@ -96,12 +96,12 @@ import { GeneratedSummary, TicketSummaryBox } from './ticket-summary';
     .meta { display: flex; flex-wrap: wrap; gap: 0.75rem 2rem; margin: 0 0 1.25rem; }
     .meta dt { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
     .meta dd { margin: 0.125rem 0 0; }
-    .body { white-space: pre-wrap; line-height: 1.5; max-width: 70ch; padding: 1rem; background: var(--surface); border-radius: 6px; }
+    .body { white-space: pre-wrap; line-height: 1.5; padding: 1rem; background: var(--surface); border-radius: 6px; }
     .slot { margin-top: 1.5rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
     .slot h2 { font-size: 1rem; margin: 0 0 0.5rem; }
     .loading, .empty { color: var(--muted); }
     .error { color: var(--danger); }
-    .reason { margin: 0.25rem 0; max-width: 70ch; }
+    .reason { margin: 0.25rem 0; }
     .provenance { margin: 0.25rem 0; font-size: 0.75rem; color: var(--muted); }
     .actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.5rem; }
   `,

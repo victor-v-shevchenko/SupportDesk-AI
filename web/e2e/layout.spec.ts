@@ -19,6 +19,8 @@ test.describe('at 1440 px wide', () => {
     await expect(page.getByText('1,200 input + 48 output tokens')).toBeVisible();
     await page.getByRole('button', { name: 'Summarize' }).click();
     await expect(page.getByRole('button', { name: 'Regenerate' })).toBeVisible();
+    await page.getByRole('button', { name: 'Classify', exact: true }).click();
+    await expect(page.getByText('General question with no urgency.')).toBeVisible();
 
     const list = await page.getByRole('region', { name: 'Tickets' }).boundingBox();
     const detail = await page.getByRole('region', { name: 'Ticket', exact: true }).boundingBox();
@@ -26,6 +28,13 @@ test.describe('at 1440 px wide', () => {
     expect(list && detail && Math.abs(list.y - detail.y) < 60).toBe(true);
     await expect(page.getByRole('link', { name: '← All tickets' })).toBeHidden();
     await expectNoHorizontalScroll(page);
+
+    // The text uses the column's width rather than a fixed line length
+    const column = await page.getByRole('region', { name: 'Ticket', exact: true }).evaluate((el) => el.clientWidth);
+    for (const selector of ['.body', 'app-ticket-summary .text', '.reason', '.reply-text']) {
+      const width = await page.locator(selector).evaluate((el) => el.getBoundingClientRect().width);
+      expect(width, selector).toBeGreaterThan(column * 0.95);
+    }
 
     await page.screenshot({ path: `${shots}/ticket-1440.png`, fullPage: true });
   });
@@ -43,6 +52,58 @@ test.describe('at 1440 px wide', () => {
     await page.goto('/articles');
     await expect(page.getByRole('link', { name: 'Refunds' }).first()).toBeVisible();
     await page.screenshot({ path: `${shots}/articles-1440.png`, fullPage: true });
+  });
+
+  test('an article uses the page width', async ({ page }) => {
+    await page.goto('/articles/refunds');
+    const body = page.locator('.body');
+    await expect(body).toBeVisible();
+    const width = await body.evaluate((el) => el.getBoundingClientRect().width);
+    const content = await page.locator('main').evaluate((el) => el.clientWidth);
+    expect(width).toBeGreaterThan(content * 0.9);
+  });
+});
+
+// From 900 px the list and the ticket sit side by side under the header, and each scrolls in its own pane: the page itself
+// never scrolls. Checked at the narrowest two-pane width, where the header comes closest to wrapping, and on a short window
+for (const viewport of [{ width: 1440, height: 900 }, { width: 900, height: 700 }]) {
+  test.describe(`at ${viewport.width} x ${viewport.height}`, () => {
+    test.use({ viewport });
+
+    test('the list and the ticket scroll in their own panes, not the page', async ({ page }) => {
+      await openTicket(page, /T-1008/);
+      await page.getByRole('button', { name: 'Suggest reply' }).click();
+      await expect(page.getByRole('region', { name: 'Suggested reply' }).getByRole('button', { name: 'Confirm' })).toBeVisible();
+
+      const list = page.getByRole('region', { name: 'Tickets' });
+      const detail = page.getByRole('region', { name: 'Ticket', exact: true });
+      // The seeded list and the ticket with its reply are both taller than the window
+      for (const pane of [list, detail]) {
+        expect(await pane.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+        const box = await pane.boundingBox();
+        expect(box && box.y + box.height <= viewport.height).toBe(true);
+      }
+      const overflow = await page.evaluate(() => document.documentElement.scrollHeight - document.documentElement.clientHeight);
+      expect(overflow).toBeLessThanOrEqual(0);
+    });
+  });
+}
+
+test.describe('on a short wide window', () => {
+  test.use({ viewport: { width: 1200, height: 500 } });
+
+  test('another ticket opens at its top, not where the last one was scrolled to', async ({ page }) => {
+    await openTicket(page, /T-1008/);
+    const detail = page.getByRole('region', { name: 'Ticket', exact: true });
+    await detail.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+    expect(await detail.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+
+    await page.getByRole('region', { name: 'Tickets' }).getByRole('link', { name: /T-1002/ }).click();
+    await expect(page.getByRole('heading', { level: 1 }).filter({ hasText: 'T-1002' })).toBeVisible();
+    // This ticket is taller than its pane too, so a kept scroll position would show. Today the loading state, which is
+    // shorter than the pane, takes it back to the top
+    expect(await detail.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeGreaterThan(100);
+    expect(await detail.evaluate((el) => el.scrollTop)).toBe(0);
   });
 });
 
