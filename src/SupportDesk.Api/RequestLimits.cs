@@ -52,6 +52,8 @@ public static class RequestLimits
                     QueueLimit = 0,
                 });
             });
+            // 429 even if writing the problem fails; the default is 503
+            limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
             limiter.OnRejected = WriteRejectedAsync;
         });
         return services;

@@ -1,4 +1,9 @@
-using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Testing;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using SupportDesk.Api;
@@ -57,16 +62,66 @@ public class DailySpendLimitTests
     }
 
     [Theory]
-    [InlineData(0, 60, false)]
-    [InlineData(1, 60, true)]
-    [InlineData(100_000, 3600, true)]
-    [InlineData(20, 0, false)]
-    [InlineData(20, 3601, false)]
-    public void The_rate_limit_settings_must_be_in_range(int permitLimit, int windowSeconds, bool valid)
+    [InlineData("0", "60", false)]
+    [InlineData("1", "60", true)]
+    [InlineData("100000", "3600", true)]
+    [InlineData("20", "0", false)]
+    [InlineData("20", "3601", false)]
+    public void The_rate_limit_settings_are_validated_where_the_app_registers_them(string permitLimit, string windowSeconds, bool valid)
     {
-        var options = new AiRateLimitOptions { PermitLimit = permitLimit, WindowSeconds = windowSeconds };
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["RateLimiting:Ai:PermitLimit"] = permitLimit,
+            ["RateLimiting:Ai:WindowSeconds"] = windowSeconds,
+        }).Build();
+        using var services = new ServiceCollection().AddSingleton<IConfiguration>(configuration).AddSupportDeskRequestLimits().BuildServiceProvider();
 
-        Assert.Equal(valid, Validator.TryValidateObject(options, new ValidationContext(options), null, validateAllProperties: true));
+        var failure = Record.Exception(() => services.GetRequiredService<IOptions<AiRateLimitOptions>>().Value);
+
+        Assert.Equal(valid, failure is null);
+        if (!valid)
+        {
+            Assert.IsType<OptionsValidationException>(failure);
+        }
+    }
+
+    [Fact]
+    public async Task A_request_over_the_daily_limit_is_refused_with_retry_after_and_a_warning_holding_only_the_amounts()
+    {
+        var time = new FakeTimeProvider(Now);
+        var logger = new FakeLogger<DailySpendLimitFilter>();
+        var filter = new DailySpendLimitFilter(Limit(new SummingRepository(5.5m), 5m, time), time, logger);
+        var http = new DefaultHttpContext();
+        var handlerRan = false;
+
+        var result = await filter.InvokeAsync(new DefaultEndpointFilterInvocationContext(http), _ =>
+        {
+            handlerRan = true;
+            return ValueTask.FromResult<object?>(null);
+        });
+
+        Assert.False(handlerRan);
+        var problem = Assert.IsType<ProblemHttpResult>(result);
+        Assert.Equal(StatusCodes.Status429TooManyRequests, problem.StatusCode);
+        Assert.Equal("daily_limit", problem.ProblemDetails.Extensions["code"]);
+        // 21:30 UTC, so midnight is 2.5 hours away
+        Assert.Equal("9000", http.Response.Headers.RetryAfter.ToString());
+        var record = Assert.Single(logger.Collector.GetSnapshot());
+        Assert.Equal(LogLevel.Warning, record.Level);
+        Assert.Equal(["SpentUsd", "LimitUsd", "{OriginalFormat}"], record.StructuredState!.Select(p => p.Key));
+    }
+
+    [Fact]
+    public async Task A_request_under_the_daily_limit_runs_its_handler()
+    {
+        var time = new FakeTimeProvider(Now);
+        var logger = new FakeLogger<DailySpendLimitFilter>();
+        var filter = new DailySpendLimitFilter(Limit(new SummingRepository(4.99m), 5m, time), time, logger);
+
+        var result = await filter.InvokeAsync(new DefaultEndpointFilterInvocationContext(new DefaultHttpContext()), _ => ValueTask.FromResult<object?>("handled"));
+
+        Assert.Equal("handled", result);
+        Assert.Empty(logger.Collector.GetSnapshot());
     }
 
     private static DailySpendLimit Limit(IModelCallRepository calls, decimal limit, TimeProvider time) =>

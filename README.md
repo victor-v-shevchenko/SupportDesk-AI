@@ -113,10 +113,10 @@ Counted from local runs on 2026-11-17 of `fix/request-limits` (request limits, o
 
 | Suite | What it covers | How to run | Tests |
 | --- | --- | --- | --- |
-| .NET unit (`tests/SupportDesk.UnitTests`) | Pipeline middleware on a fake clock, the fake provider, prompt building and escaping, citation parsing, classification validation, tools and their arguments, injection signals, provider adapters against stub HTTP, telemetry (the span tree, metric tags, span and log sanitizing, the log export against a local OTLP sink) | `dotnet test tests/SupportDesk.UnitTests` | 745 |
+| .NET unit (`tests/SupportDesk.UnitTests`) | Pipeline middleware on a fake clock, the fake provider, prompt building and escaping, citation parsing, classification validation, tools and their arguments, injection signals, provider adapters against stub HTTP, telemetry (the span tree, metric tags, span and log sanitizing, the log export against a local OTLP sink) | `dotnet test tests/SupportDesk.UnitTests` | 747 |
 | .NET integration (`tests/SupportDesk.IntegrationTests`) | Testcontainers PostgreSQL + pgvector: migrations, seeding, endpoints, retrieval against committed embedding fixtures and their hash check, proposals and confirm, adversarial tickets through the API, one trace from HTTP request to SQL, metric totals against the `ModelCalls` rows, no ticket or query text in exported logs | `dotnet test tests/SupportDesk.IntegrationTests` | 141 |
 | Evaluation code (`tests/SupportDesk.Eval/Tests`) | The metrics, thresholds, golden set and report writer of the evaluation suite, without a model | `dotnet test tests/SupportDesk.Eval --filter "Category!=Eval"` | 201 |
-| Angular unit (`web/src`) | Components, the SSE parser, services, the cost readout | `npm --prefix web test -- --watch=false` | 131 |
+| Angular unit (`web/src`) | Components, the SSE parser, services, the cost readout | `npm --prefix web test -- --watch=false` | 132 |
 | End-to-end (`web/e2e`) | Playwright against the API with the fake provider and the production Angular build: the main flows, errors, layout, accessibility (ARIA snapshot, Tab walk, contrast) | `npm --prefix web run e2e` (against a disposable database; the environment is in [CLAUDE.md](CLAUDE.md#commands)) | 40 |
 | Evaluation (`Category=Eval`, opt-in) | The golden set against a real chat model; writes a report to `docs/eval/` (below) | `dotnet test tests/SupportDesk.Eval --filter Category=Eval` | 36 golden tickets |
 

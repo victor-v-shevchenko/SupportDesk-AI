@@ -2,6 +2,7 @@ import { DecimalPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { problemMessage } from '../api/api-errors';
 import { ArticlesService } from '../api/articles.service';
 import { SearchQuery } from '../api/articles.models';
 
@@ -125,9 +126,13 @@ export class ArticlesPage {
 
   protected readonly searchError = computed(() => {
     const error = this.results.error();
-    return error instanceof HttpErrorResponse && error.status === 400
-      ? 'That search isn’t valid. Use at most 500 characters.'
-      : 'The search failed. Is the embedding model running?';
+    if (error instanceof HttpErrorResponse && error.status === 400) {
+      return 'That search isn’t valid. Use at most 500 characters.';
+    }
+
+    // The AI endpoints' rate limit (PLAN.md 5): the embedding model is fine, so say what happened
+    const limited = error instanceof HttpErrorResponse && error.status === 429 ? problemMessage(error) : undefined;
+    return limited ?? 'The search failed. Is the embedding model running?';
   });
 
   protected submit(event: Event): void {

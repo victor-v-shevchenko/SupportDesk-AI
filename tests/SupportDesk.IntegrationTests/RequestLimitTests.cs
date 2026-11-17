@@ -41,6 +41,7 @@ public class RequestLimitTests(PostgresFixture postgres)
     [Fact]
     public async Task Once_today_s_cost_reaches_the_limit_the_model_endpoints_are_refused_until_midnight_UTC()
     {
+        await WaitPastMidnightIfCloseAsync();
         await using var api = await SeededApi.StartAsync(postgres, Ct, new Dictionary<string, string?> { ["AI:Budget:DailySpendLimitUsd"] = "2" });
         var id = await IdAsync(api, "T-1001");
         await AddCallsAsync(api, (DateTimeOffset.UtcNow, 1.5m), (DateTimeOffset.UtcNow, 0.5m));
@@ -64,6 +65,7 @@ public class RequestLimitTests(PostgresFixture postgres)
     [Fact]
     public async Task Calls_before_midnight_UTC_and_unpriced_calls_do_not_count_toward_today()
     {
+        await WaitPastMidnightIfCloseAsync();
         await using var api = await SeededApi.StartAsync(postgres, Ct, new Dictionary<string, string?> { ["AI:Budget:DailySpendLimitUsd"] = "2" });
         var id = await IdAsync(api, "T-1001");
         var midnight = new DateTimeOffset(DateTimeOffset.UtcNow.UtcDateTime.Date, TimeSpan.Zero);
@@ -72,6 +74,20 @@ public class RequestLimitTests(PostgresFixture postgres)
         var response = await api.Client.PostAsync($"/api/tickets/{id}/summary", null, Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    /// <summary>
+    /// The API reads the real clock, so a test that crosses midnight UTC would move its rows into yesterday. Each test takes a
+    /// few seconds; one that would start in the last minute of the day waits for the next instead.
+    /// </summary>
+    private static async Task WaitPastMidnightIfCloseAsync()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var untilMidnight = now.UtcDateTime.Date.AddDays(1) - now.UtcDateTime;
+        if (untilMidnight < TimeSpan.FromMinutes(1))
+        {
+            await Task.Delay(untilMidnight + TimeSpan.FromSeconds(1), Ct);
+        }
     }
 
     private static async Task<int> IdAsync(SeededApi api, string number)
