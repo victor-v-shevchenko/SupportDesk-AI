@@ -64,26 +64,48 @@ test.describe('at 1440 px wide', () => {
   });
 });
 
-// From 900 px the list sits beside the ticket and scrolls in its own box: the page fits under the header at the
-// narrowest two-pane width, where the header comes closest to wrapping, and on a short window
+// From 900 px the list and the ticket sit side by side under the header, and each scrolls in its own pane: the page itself
+// never scrolls. Checked at the narrowest two-pane width, where the header comes closest to wrapping, and on a short window
 for (const viewport of [{ width: 1440, height: 900 }, { width: 900, height: 700 }]) {
   test.describe(`at ${viewport.width} x ${viewport.height}`, () => {
     test.use({ viewport });
 
-    test('the page has no vertical scrollbar when the list scrolls on its own', async ({ page }) => {
-      await page.goto('/tickets');
-      await expect(page.getByText('Select a ticket to see its details.')).toBeVisible();
-      const list = page.getByRole('region', { name: 'Tickets' });
-      await expect(list.getByRole('link').nth(20)).toBeAttached();
+    test('the list and the ticket scroll in their own panes, not the page', async ({ page }) => {
+      await openTicket(page, /T-1008/);
+      await page.getByRole('button', { name: 'Suggest reply' }).click();
+      await expect(page.getByRole('region', { name: 'Suggested reply' }).getByRole('button', { name: 'Confirm' })).toBeVisible();
 
-      expect(await list.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+      const list = page.getByRole('region', { name: 'Tickets' });
+      const detail = page.getByRole('region', { name: 'Ticket', exact: true });
+      // The seeded list and the ticket with its reply are both taller than the window
+      for (const pane of [list, detail]) {
+        expect(await pane.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+        const box = await pane.boundingBox();
+        expect(box && box.y + box.height <= viewport.height).toBe(true);
+      }
       const overflow = await page.evaluate(() => document.documentElement.scrollHeight - document.documentElement.clientHeight);
       expect(overflow).toBeLessThanOrEqual(0);
-      const box = await list.boundingBox();
-      expect(box && box.y + box.height <= viewport.height).toBe(true);
     });
   });
 }
+
+test.describe('on a short wide window', () => {
+  test.use({ viewport: { width: 1200, height: 500 } });
+
+  test('another ticket opens at its top, not where the last one was scrolled to', async ({ page }) => {
+    await openTicket(page, /T-1008/);
+    const detail = page.getByRole('region', { name: 'Ticket', exact: true });
+    await detail.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+    expect(await detail.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+
+    await page.getByRole('region', { name: 'Tickets' }).getByRole('link', { name: /T-1002/ }).click();
+    await expect(page.getByRole('heading', { level: 1 }).filter({ hasText: 'T-1002' })).toBeVisible();
+    // This ticket is taller than its pane too, so a kept scroll position would show. Today the loading state, which is
+    // shorter than the pane, takes it back to the top
+    expect(await detail.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeGreaterThan(100);
+    expect(await detail.evaluate((el) => el.scrollTop)).toBe(0);
+  });
+});
 
 test.describe('at 375 px wide', () => {
   test.use({ viewport: { width: 375, height: 812 } });

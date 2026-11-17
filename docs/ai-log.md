@@ -409,8 +409,8 @@ Entry format (from CLAUDE.md):
 - Step: 11
 - Found by: user (browser check)
 - What was wrong: at 900 px and wider the ticket list was `100vh - 2rem` tall but sat below the header and the page padding, so its bottom was cut off and the page got a vertical scrollbar with nothing to scroll to.
-- Fix: the header is at least `--header-height` (3rem) tall, and the list's height is the window less that and the page padding (`fix/page-scrollbar`).
-- Test: `the page has no vertical scrollbar when the list scrolls on its own` (e2e `layout.spec.ts`).
+- Fix: from 900 px the header is `--header-height` (3rem) tall, and the two panes are the window less that and the page padding, each scrolling on its own, so the page itself never scrolls (`fix/page-scrollbar`).
+- Test: `the list and the ticket scroll in their own panes, not the page` (e2e `layout.spec.ts`, at 1440 x 900 and 900 x 700).
 
 ## 2026-11-17 — Ticket text stayed narrow on wide screens
 - Step: 11

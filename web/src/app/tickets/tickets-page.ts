@@ -79,11 +79,17 @@ import { TicketStatusBadge } from './ticket-status';
     .split:not(.detail-open) .detail { display: none; }
 
     @media (min-width: 900px) {
-      .split { grid-template-columns: minmax(18rem, 24rem) minmax(0, 1fr); align-items: start; }
+      /* The window less the one-line header and the content's padding above and below: the page itself never scrolls,
+         and the list and the ticket each scroll in their own pane (the vh line is for browsers without dvh) */
+      .split {
+        grid-template-columns: minmax(18rem, 24rem) minmax(0, 1fr);
+        height: calc(100vh - var(--header-height) - 2 * var(--content-padding));
+        height: calc(100dvh - var(--header-height) - 2 * var(--content-padding));
+      }
       .split.detail-open .list, .split:not(.detail-open) .detail { display: block; }
-      /* The window less the one-line header and the content's padding above and below, so the page itself doesn't scroll
-         until the ticket beside the list is taller than the window */
-      .list { position: sticky; top: 1rem; box-sizing: border-box; max-height: calc(100vh - var(--header-height) - 2 * var(--content-padding)); max-height: calc(100dvh - var(--header-height) - 2 * var(--content-padding)); overflow-y: auto; padding: 0.25rem; }
+      /* The padding leaves room for the focus outlines, which the pane's overflow would clip */
+      .list, .detail { box-sizing: border-box; min-height: 0; overflow-y: auto; padding: 0.25rem; }
+      .detail { padding-right: 1rem; }
     }
   `,
 })
