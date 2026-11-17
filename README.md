@@ -105,16 +105,18 @@ The model gets two tools: `lookup_order_status`, which only reads, and `propose_
 
 Every call's input is estimated before it's sent (characters ÷ 3 × 1.2 plus 10 per message, checked against Anthropic's token counter to stay above the real count), and a call over 6,000 input tokens is refused before anything reaches the provider. Each feature has its own output limit, and a whole reply, tool rounds included, is capped at 20,000 tokens. The reply's prompt builder adds article chunks in score order until the estimate reaches the limit ([PLAN.md 6.4](PLAN.md#64-token-budget)).
 
+Those caps bound one request, not a loop of them. The AI endpoints share a rate limit (20 requests a minute for the whole app by default), and reply, summary and classification stop for the day once the `ModelCalls` rows since midnight UTC cost $5. Both are settings, both answer `429` problem details before any model call, and the spending limit is soft: requests already running finish ([PLAN.md 5](PLAN.md#5-api)).
+
 ## Tests
 
-Counted from local runs on 2026-11-05 of the follow-up review branch (`fix/review-after-telemetry`, on top of step 15); every suite passed.
+Counted from local runs on 2026-11-17 of `fix/request-limits` (request limits, on top of step 15 and its review); every suite passed.
 
 | Suite | What it covers | How to run | Tests |
 | --- | --- | --- | --- |
-| .NET unit (`tests/SupportDesk.UnitTests`) | Pipeline middleware on a fake clock, the fake provider, prompt building and escaping, citation parsing, classification validation, tools and their arguments, injection signals, provider adapters against stub HTTP, telemetry (the span tree, metric tags, span and log sanitizing, the log export against a local OTLP sink) | `dotnet test tests/SupportDesk.UnitTests` | 725 |
-| .NET integration (`tests/SupportDesk.IntegrationTests`) | Testcontainers PostgreSQL + pgvector: migrations, seeding, endpoints, retrieval against committed embedding fixtures and their hash check, proposals and confirm, adversarial tickets through the API, one trace from HTTP request to SQL, metric totals against the `ModelCalls` rows, no ticket or query text in exported logs | `dotnet test tests/SupportDesk.IntegrationTests` | 138 |
+| .NET unit (`tests/SupportDesk.UnitTests`) | Pipeline middleware on a fake clock, the fake provider, prompt building and escaping, citation parsing, classification validation, tools and their arguments, injection signals, provider adapters against stub HTTP, telemetry (the span tree, metric tags, span and log sanitizing, the log export against a local OTLP sink) | `dotnet test tests/SupportDesk.UnitTests` | 745 |
+| .NET integration (`tests/SupportDesk.IntegrationTests`) | Testcontainers PostgreSQL + pgvector: migrations, seeding, endpoints, retrieval against committed embedding fixtures and their hash check, proposals and confirm, adversarial tickets through the API, one trace from HTTP request to SQL, metric totals against the `ModelCalls` rows, no ticket or query text in exported logs | `dotnet test tests/SupportDesk.IntegrationTests` | 141 |
 | Evaluation code (`tests/SupportDesk.Eval/Tests`) | The metrics, thresholds, golden set and report writer of the evaluation suite, without a model | `dotnet test tests/SupportDesk.Eval --filter "Category!=Eval"` | 201 |
-| Angular unit (`web/src`) | Components, the SSE parser, services, the cost readout | `npm --prefix web test -- --watch=false` | 128 |
+| Angular unit (`web/src`) | Components, the SSE parser, services, the cost readout | `npm --prefix web test -- --watch=false` | 131 |
 | End-to-end (`web/e2e`) | Playwright against the API with the fake provider and the production Angular build: the main flows, errors, layout, accessibility (ARIA snapshot, Tab walk, contrast) | `npm --prefix web run e2e` (against a disposable database; the environment is in [CLAUDE.md](CLAUDE.md#commands)) | 40 |
 | Evaluation (`Category=Eval`, opt-in) | The golden set against a real chat model; writes a report to `docs/eval/` (below) | `dotnet test tests/SupportDesk.Eval --filter Category=Eval` | 36 golden tickets |
 
@@ -186,7 +188,7 @@ Thresholds are 80% category accuracy and 70% citation recall for Claude models, 
 ## Possible improvements
 
 - **LLM-as-judge grading.** Reply quality and the "not covered" and leak metrics are phrase-list and word-overlap approximations; a judge model with a rubric would measure tone, correctness and paraphrased leaks
-- **Authentication and roles.** Out of scope by design; with it, per-user rate limits on the model endpoints, since a hosted model costs money per click
+- **Authentication and roles.** Out of scope by design; with it, per-user rate limits and spending limits on the model endpoints instead of today's app-wide ones
 - **Real intake:** email or chat into tickets, instead of seed data and a form
 - **Prompt caching** for the system prompt and tool definitions with Anthropic, which would cut the reply's input cost
 - **A manual classification override,** so a person can classify a ticket the injection guard held
@@ -196,3 +198,7 @@ Thresholds are 80% category accuracy and 70% citation recall for Claude models, 
 - **Pin GitHub Actions by commit SHA,** as the gitleaks binary already is by checksum
 - **Production hosting:** migrations and seeding run only in Development, and the web image is the Angular dev server
 - **Telemetry gaps:** a tool that throws isn't counted in `supportdesk.tool_calls` (a `failed` result would show database errors on the dashboard), and the Development startup (migration, seeding, the embedding sync) runs before the tracer provider exists, so it leaves no spans
+
+## License
+
+[MIT](LICENSE)

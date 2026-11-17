@@ -127,6 +127,10 @@ All routes are under `/api`. Errors use RFC 7807 problem details.
 - **Classify:** `POST /api/tickets/{id}/classification` takes no body and returns `200` with the saved classification (the same shape as the detail's `classification`); calling it again replaces it. An answer that fails validation twice is saved and returned as `NeedsManual`, not as an error
 - **Model errors** on the non-streaming AI endpoints (classification, summary) and on search (its query embedding) are problem details with fixed messages, never the provider's (`ModelProblems`, table in section 9). A failed call leaves the saved result as it was
 - An unknown ticket ID or article slug returns `404` problem details
+- **Limits on the AI endpoints** (`RequestLimits`, fix spec 16). They are checked before the handler, so a refused request reaches no model and looks up no ticket:
+  - **Rate limit:** reply, summary, classification and search share one fixed window (`AddRateLimiter`, policy `ai`): `RateLimiting:Ai:PermitLimit` requests per `RateLimiting:Ai:WindowSeconds`, with no queue. Over it, the request is `429` problem details with `code` `rate_limited` and `Retry-After`. The window is for the whole app, not per client: with no sign-in the only key would be an IP address, which the web container's proxy hides and a forwarded header lets a client choose. Its job is to cap how fast a hosted provider's key is spent; per-user limits need authentication
+  - **Daily spending limit:** reply, summary and classification are refused with `429`, `code` `daily_limit` and `Retry-After` (seconds to the next UTC midnight) once today's model cost reaches `AI:Budget:DailySpendLimitUsd` (6.4). Search writes no `ModelCalls` rows, so only the rate limit covers it
+  - The reply's `429` comes before the stream starts, so it's problem details, not an `error` event. The reply panel shows the problem's `detail`
 - **Health:** `GET /api/health` returns `200` with `{ "status": "ok", "database": "ok" }`, or `503` with `degraded` / `unavailable` when the database can't be reached within `Database:HealthCheckTimeoutSeconds`
 
 | Key | Default | Meaning |
@@ -134,6 +138,8 @@ All routes are under `/api`. Errors use RFC 7807 problem details.
 | `ConnectionStrings:SupportDesk` | none | PostgreSQL connection string; from `.env` (Compose builds it from `POSTGRES_*`), user secrets or the environment, never `appsettings.json` |
 | `Database:HealthCheckTimeoutSeconds` | `3` | How long the health check waits for the database (1–60) |
 | `Seed:Path` | `seed` | Seed folder, from the app's base directory (section 4) |
+| `RateLimiting:Ai:PermitLimit` | `20` | AI requests the whole app accepts per window (1–100000); see Limits above |
+| `RateLimiting:Ai:WindowSeconds` | `60` | The rate limit's fixed window (1–3600) |
 | `Logging:LogLevel` | `Default` `Information`; `Microsoft.AspNetCore` and `Microsoft.EntityFrameworkCore.Database.Command` `Warning` | Log levels for the console and, unless `Logging:OpenTelemetry:LogLevel` is set, the OTLP export (14) |
 | `Logging:Console:FormatterName` | `json` (`simple`, one line, in Development) | Console log format |
 
@@ -240,10 +246,12 @@ provider IChatClient          Anthropic (wrapped in AnthropicOptionsMiddleware) 
 | `AI:Budget:MaxOutputTokens:Summary` | 200 |
 | `AI:Budget:MaxOutputTokens:Classification` | 200 |
 | `AI:Budget:MaxTokensPerRequest` | 20000 |
+| `AI:Budget:DailySpendLimitUsd` | 5 (USD, 0.01–1000000) |
 
 - **Prompt builder** (`ReplyPromptBuilder.Build`, called by `ReplyService`): adds chunks in score order until the estimate reaches the input limit minus the room the system prompt, ticket and tool definitions need. It sizes the first call only: each round of tool calls adds a call and a `<tool_result>` (about 100–200 tokens), so a near-maximum ticket with large chunks can fit the first call and have a later one refused with `budget_exceeded` after its `tool_call` event. With the seed data that takes a ticket close to the 5,000-character limit; a reserve for tool rounds is a possible improvement
 - **Per-call guard:** estimates each call's input; if it's over `MaxInputTokensPerCall`, the call is refused with `BudgetExceededException`
 - **Request cap:** after each inner call, adds input and output tokens; the next call is refused once the total passes `MaxTokensPerRequest`
+- **Daily spending limit:** before a reply, summary or classification request runs, an endpoint filter (`DailySpendLimitFilter`) sums today's `ModelCalls.CostUsd` (`DailySpendLimit`; the UTC day, one query on the indexed `Timestamp`) and refuses the request at or over `DailySpendLimitUsd` (section 5 has the response). It's a soft limit, checked when a request starts: a request already running finishes, and rows reach the table a moment after their call (6.6), so the overshoot is at most the requests running at once, each held to `MaxTokensPerRequest`. Calls with no price (`CostUsd` null) don't count, so a hosted model needs its `AI:Pricing` entry for the limit to work. Not cached, so there's no shared state; the rate limit bounds how often it runs. The integration, evaluation and end-to-end hosts raise it and the rate limit, since they send many requests in a few minutes (and the end-to-end tests price the fake model at $1000 per million input tokens)
 - **Estimate:** characters ÷ 3 × 1.2, rounded up, plus 10 tokens per message (`TokenEstimator`), over the text of every message, tool calls and results, thinking text, and each tool's name, description and JSON schema. Anthropic has a token-counting endpoint (`Messages.CountTokens`), but calling it before every request adds latency and a request, so it's only used in a test that checks the estimate stays on the safe side: `TokenEstimateTests` in `SupportDesk.Eval` (opt-in, needs `AI:Anthropic:ApiKey`, skipped without it; counting is free). It counts the three prompts with the shortest seeded ticket, the longest and the one with `</ticket>` (today the longest is also that one), the reply with five whole seeded articles as sources. It counts the reply without its tool definitions, so the tool-schema part of the estimate isn't checked against the real count
 - **Why ÷ 3 and not ÷ 4:** the first run of that check (2026-11-01, `claude-opus-5-5`) found the original ÷ 4 × 1.2 estimate 7–25% *below* the real count on 5 of 6 prompts: these prompts (Markdown, tags, short lines) come to about 2.6–3.1 characters per token, and short prompts showed a fixed cost per message. With ÷ 3 × 1.2 + 10 per message, all six are above the real count, by 11–25%:
 
@@ -388,6 +396,8 @@ These come from the current API and must be checked against the SDK version in u
   | `ModelRefusedException` | 422 | `model_refused` |
   | `BudgetExceededException` | 413 | `budget_exceeded` |
   | `ModelOutputException` (output failed the check, such as an empty summary) | 502 | `invalid_output` |
+  | Rate limit, before the handler (section 5) | 429 | `rate_limited` |
+  | Daily spending limit, before the handler (section 5, 6.4) | 429 | `daily_limit` |
 
 ## 10. Tools
 
@@ -476,6 +486,7 @@ These come from the current API and must be checked against the SDK version in u
 | 13 | [OpenTelemetry tracing](docs/specs/13-tracing.md) | `step/13-tracing` |
 | 14 | [OpenTelemetry metrics](docs/specs/14-metrics.md) | `step/14-metrics` |
 | 15 | [OpenTelemetry structured logs](docs/specs/15-logs.md) | `step/15-logs` |
+| 16 (fix) | [Request limits, follow-up telemetry and license](docs/specs/16-request-limits.md) | `fix/request-limits` |
 
 ## 13. Decisions
 
@@ -535,7 +546,7 @@ Steps 13 to 15. A request can be followed end to end in a trace, counters ([step
 | `summary`, `classification` | the services | `supportdesk.ticket_id`; a classification also `supportdesk.outcome` (its status), and when held `supportdesk.held` and the strong signal names, with no model call under it |
 | `retrieval` | `RetrievalService` | `supportdesk.query_length` (not the query), `supportdesk.k`, `supportdesk.min_similarity`, `supportdesk.results_kept` |
 | `embeddings <model>`, `chat <model>`, `execute_tool <name>` | Microsoft.Extensions.AI (Gen AI conventions v1.41) | the library's `gen_ai.*` tags (model, token usage, finish reason); a `chat` span also gets `supportdesk.feature`, `supportdesk.prompt_version`, `supportdesk.ticket_id`, `supportdesk.reply_run_id` from `AiCallContext` |
-| `confirm_follow_up` | `FollowUpRepository` | `supportdesk.proposal_id`, `supportdesk.outcome`, `supportdesk.rows_changed` |
+| `confirm_follow_up` | `FollowUpService`, around the repository's transaction (the repository has no telemetry code) | `supportdesk.proposal_id`, `supportdesk.outcome`, `supportdesk.rows_changed` |
 | `proposal_expiry` | `ProposalExpiryService` (a real root span: `StartRoot` clears the ambient activity first, since a default parent context still falls back to it) | `supportdesk.rows_changed` |
 | `model_calls.save` | `ModelCallWriter` (a root span per batch, started the same way) | `supportdesk.row_count` |
 | SQL | Npgsql | `db.*` tags and the parameterized statement |
@@ -560,10 +571,10 @@ Steps 13 to 15. A request can be followed end to end in a trace, counters ([step
 | `supportdesk.tool_calls` | `{call}` | `tool`, `result` (`ran`, `invalid_arguments`, `over_limit`) | the reply tools, once the call's result is known; a tool that throws (a database error, say) isn't counted, by design so far (`A_lookup_that_throws_is_not_counted_as_a_tool_call`; a `failed` result is a possible improvement) |
 | `supportdesk.injection_guard.hits` | `{ticket}` | `scope` (`reply`, `classification`), `signal` (the signal's name, one count per signal found) | `ReplyService` (every signal, 10) and `ClassificationService` (the strong signals that hold the ticket, 9) |
 | `supportdesk.classifications` | `{classification}` | `status` (`done`, `needs_manual`, `held`), `reason` for `needs_manual` (`invalid_output`, `output_limit`) | `ClassificationService`, after the result is saved; a model error saves nothing and isn't counted here |
-| `supportdesk.follow_ups` | `{proposal}` | `event` (`proposed`, `updated`, `confirmed`, `expired`) | the proposal tool (the run's first saved proposal is `proposed`, later calls in the run `updated`; one already confirmed or expired counts neither), `FollowUpRepository.ConfirmAsync` after the commit (`confirmed` only for the confirm that created the task; `expired` when a confirm finds a pending proposal past its expiry) and `ProposalExpiryService` (`expired`, by rows) |
+| `supportdesk.follow_ups` | `{proposal}` | `event` (`proposed`, `updated`, `confirmed`, `expired`) | the proposal tool (the run's first saved proposal is `proposed`, later calls in the run `updated`; one already confirmed or expired counts neither), `FollowUpService.ConfirmAsync` after the commit, from the rows the repository reports changed (`confirmed` only for the confirm that created the task; `expired` when a confirm finds a pending proposal past its expiry) and `ProposalExpiryService` (`expired`, by rows) |
 
 - **Low cardinality:** a tag is a name from a fixed set or comes from configuration (`model`, `provider`); never an ID, reply run ID, ticket number or text. A unit test records the scenarios of the suite and checks every tag key and value against its set (`MetricTagTests`)
-- **Tests:** unit tests per instrument (`ModelCallMetricsTests`, `ReplyServiceTests`, `ClassificationServiceTests`, `ReplyToolsTests`, `ModelCallWriterTests`, `ProposalExpiryServiceTests`, `TelemetryStartupTests`) and an integration test that the summed `tokens` and `cost` equal the sums of the `ModelCalls` rows the requests wrote (`MetricsTests`)
+- **Tests:** unit tests per instrument (`ModelCallMetricsTests`, `ReplyServiceTests`, `ClassificationServiceTests`, `ReplyToolsTests`, `ModelCallWriterTests`, `ProposalExpiryServiceTests`, `FollowUpServiceTests`, `TelemetryStartupTests`) and an integration test that the summed `tokens` and `cost` equal the sums of the `ModelCalls` rows the requests wrote (`MetricsTests`)
 
 **Viewing locally:** the optional `telemetry` Compose profile runs the .NET Aspire dashboard (image `mcr.microsoft.com/dotnet/aspire-dashboard:9.5.2`; port 18888 for the UI and 18889 for OTLP, both bound to `127.0.0.1`; no login). `docker compose --profile telemetry up -d telemetry`, then `OTEL_EXPORTER_OTLP_ENDPOINT=http://telemetry:18889` for the API (the dev container and the `api` service reach it by name). Its Structured logs page lists the log lines with their placeholders as attributes; a line opens its trace, and a trace page lists its log lines.
 
