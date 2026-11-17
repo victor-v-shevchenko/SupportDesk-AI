@@ -11,6 +11,8 @@ export const errorMessages: Record<string, string> = {
   model_refused: 'The model declined to write a reply for this ticket.',
   invalid_output: "The model's answer was unusable, so nothing was saved. Try again.",
   internal_error: 'Something went wrong while writing the reply. Try again.',
+  rate_limited: 'Too many AI requests in a short time. Try again in a moment.',
+  daily_limit: "The model's spending limit for today has been reached. It resets at midnight UTC.",
 };
 
 /**

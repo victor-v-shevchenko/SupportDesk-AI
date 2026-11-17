@@ -245,7 +245,11 @@ export class ReplyPanel {
 
 function describe(error: unknown): string {
   if (error instanceof ReplyRequestError) {
-    return error.status === 404 ? 'This ticket no longer exists.' : `Couldn't start the reply (status ${error.status}).`;
+    if (error.status === 404) {
+      return 'This ticket no longer exists.';
+    }
+
+    return error.detail ?? `Couldn't start the reply (status ${error.status}).`;
   }
 
   if (error instanceof ReplyStreamEndedError) {

@@ -25,6 +25,9 @@ public sealed class ApiFactory(
         {
             ["AI:Chat:Provider"] = "Fake",
             ["AI:Embeddings:Provider"] = "Fake",
+            // Tests send many AI requests in a few seconds; the limits' own tests set low ones
+            ["RateLimiting:Ai:PermitLimit"] = "100000",
+            ["AI:Budget:DailySpendLimitUsd"] = "1000000",
         };
         foreach (var (key, value) in settings ?? new Dictionary<string, string?>())
         {

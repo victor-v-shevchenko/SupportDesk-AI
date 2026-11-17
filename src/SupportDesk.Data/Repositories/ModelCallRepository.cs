@@ -22,4 +22,7 @@ internal sealed class ModelCallRepository(SupportDeskDbContext db) : IModelCallR
         // Id breaks ties between calls that started in the same instant
         return await query.OrderByDescending(c => c.Timestamp).ThenByDescending(c => c.Id).Take(limit).ToListAsync(cancellationToken);
     }
+
+    public async Task<decimal> SumCostSinceAsync(DateTimeOffset since, CancellationToken cancellationToken) =>
+        await db.ModelCalls.Where(c => c.Timestamp >= since).SumAsync(c => c.CostUsd, cancellationToken) ?? 0m;
 }

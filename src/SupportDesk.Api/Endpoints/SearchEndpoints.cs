@@ -12,7 +12,8 @@ public static class SearchEndpoints
 
     public static IEndpointRouteBuilder MapSearchEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/search", Search).WithName("Search");
+        // Embeddings write no ModelCalls rows, so search has the rate limit but no spending limit
+        app.MapGet("/api/search", Search).WithName("Search").RequireRateLimiting(RequestLimits.AiPolicy);
         return app;
     }
 

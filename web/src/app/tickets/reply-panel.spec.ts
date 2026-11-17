@@ -320,12 +320,18 @@ describe('ReplyPanel', () => {
     expect(el.querySelector('[role=alert]')?.textContent).toContain('This ticket no longer exists');
 
     click(el, '.suggest');
-    streams[1].fail(new ReplyStreamEndedError());
+    streams[1].fail(new ReplyRequestError(429, 'Too many AI requests in a short time. Try again in a moment.'));
+    el = await settle(fixture);
+    expect(el.querySelector('[role=alert]')?.textContent).toContain('Too many AI requests');
+    expect(el.querySelector('[role=alert]')?.textContent).not.toContain('status 429');
+
+    click(el, '.suggest');
+    streams[2].fail(new ReplyStreamEndedError());
     el = await settle(fixture);
     expect(el.querySelector('[role=alert]')?.textContent).toContain('connection dropped');
 
     click(el, '.suggest');
-    streams[2].fail(new TypeError('Failed to fetch'));
+    streams[3].fail(new TypeError('Failed to fetch'));
     el = await settle(fixture);
     expect(el.querySelector('[role=alert]')?.textContent).toContain("Couldn't reach the server");
   });

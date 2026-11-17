@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { errorMessages } from './api-errors';
 import { ReplyEvent, ReplyRequestError, ReplyStreamEndedError } from './replies.models';
 import { SseParser } from './sse';
 
@@ -19,7 +20,7 @@ export class RepliesService {
       signal,
     });
     if (!response.ok || !response.body) {
-      throw new ReplyRequestError(response.status);
+      throw new ReplyRequestError(response.status, await problemText(response));
     }
 
     const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
@@ -47,5 +48,20 @@ export class RepliesService {
       // Stops the download when the caller stops early; a no-op once the stream has ended
       reader.cancel().catch(() => undefined);
     }
+  }
+}
+
+/** The problem details' `detail`, else the text for its `code` (as `problemMessage` does for `HttpClient` errors). */
+async function problemText(response: Response): Promise<string | undefined> {
+  try {
+    const body = (await response.json()) as { detail?: unknown; code?: unknown } | null;
+    if (typeof body?.detail === 'string' && body.detail.length > 0) {
+      return body.detail;
+    }
+
+    return typeof body?.code === 'string' ? errorMessages[body.code] : undefined;
+  } catch {
+    // Not JSON: there is no text to show
+    return undefined;
   }
 }

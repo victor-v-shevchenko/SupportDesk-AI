@@ -12,7 +12,7 @@ public static class TicketEndpoints
         group.MapGet("/", ListTickets).WithName("ListTickets");
         group.MapGet("/{id:int}", GetTicket).WithName("GetTicket");
         group.MapPost("/", CreateTicket).WithName("CreateTicket");
-        group.MapPost("/{id:int}/reply", SuggestReply).WithName("SuggestReply");
+        group.MapPost("/{id:int}/reply", SuggestReply).WithName("SuggestReply").WithModelSpendLimits();
         return app;
     }
 
